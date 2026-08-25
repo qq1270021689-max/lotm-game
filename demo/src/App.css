@@ -1,0 +1,31 @@
+/* 《诡秘之主·灰雾人生》Demo 主题 */
+
+.panel {
+  @apply rounded border border-stone-800 bg-stone-950/70 p-3;
+}
+.panel-title {
+  @apply text-xs text-stone-500 tracking-widest mb-2;
+}
+.sheet-title {
+  @apply text-xs text-stone-500 tracking-widest mb-2 border-b border-stone-800 pb-1;
+}
+
+.act-btn {
+  @apply flex flex-col items-center justify-center gap-0.5 rounded border border-stone-700 bg-stone-900/60 py-3
+    hover:border-amber-200/60 hover:bg-amber-100/5 disabled:opacity-40 disabled:cursor-not-allowed transition;
+}
+.act-btn small {
+  @apply text-[10px] text-stone-500;
+}
+
+.log-info { @apply text-stone-300; }
+.log-good { @apply text-emerald-300/90; }
+.log-bad { @apply text-red-300/90; }
+.log-event { @apply text-amber-100/90; }
+.log-system { @apply text-stone-500 italic; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #44403c; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #57534e; }

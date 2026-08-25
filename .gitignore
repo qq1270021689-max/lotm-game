@@ -1,0 +1,6 @@
+node_modules/
+dist/
+bin/
+demo.zip
+*.log
+.DS_Store
