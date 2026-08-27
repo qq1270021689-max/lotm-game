@@ -1000,10 +1000,11 @@ export function acceptCommission(s: GameState, id: string): ActionResult {
   const c = s.board.find(x => x.id === id);
   if (!c) return { ok: false, msg: '委托已被人捷足先登。' };
   if (!isLocationUnlocked(s, c.locationId)) return { ok: false, msg: '这份委托的去向尚无法核实。' };
+  const client = findAnyNPC(s, c.client);
+  if (!client) return { ok: false, msg: '这份差事缺少可核实的委托人，不能正式接取。' };
   s.activeCommission = c;
   s.board = s.board.filter(x => x.id !== id);
-  const client = findAnyNPC(s, c.client);
-  if (client && !isMet(s, c.client)) {
+  if (!isMet(s, c.client)) {
     acquaint(s, c.client, 4);
     addLog(s, `✦ 结交：你按地址找到委托人${client.name}（${client.identity}）面谈了细节，算是正式认识。`, 'good');
   }
@@ -1180,6 +1181,13 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
   if (s.activeCommission && s.activeCommission.locationId !== locationId) {
     const target = LOCATIONS.find(l => l.id === s.activeCommission!.locationId);
     addLog(s, `（你接的委托「${s.activeCommission.title}」地点在【${target?.name ?? '?'}】，来这里帮不上忙。）`, 'system');
+  }
+
+  // 老存档或被篡改状态可能只留下“委托”外形，却没有真实委托人。
+  // 这种记录不能成为凭空结算报酬的入口；清除后按普通地点调查继续。
+  if (s.activeCommission && s.activeCommission.locationId === locationId && !findAnyNPC(s, s.activeCommission.client)) {
+    addLog(s, '这份差事找不到可核实的委托人，也没有正式结算依据；你把它从委托记录中划掉了。', 'system');
+    s.activeCommission = null;
   }
 
   // 有进行中的委托且地点正确 → 确定性检定结算（无随机）

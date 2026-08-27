@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { RANDOM_TEXT_EVENTS } from './data';
-import type { EventInstance, GameState } from './types';
+import { EVENTS, RANDOM_TEXT_EVENTS } from './data';
+import type { Commission, EventInstance, GameState } from './types';
 import {
+  acceptCommission,
   advanceHours,
   applyEffects,
   currentEvent,
+  doAdventure,
   doSleep,
   forceEvent,
   instantiateEventBlueprint,
@@ -168,6 +170,63 @@ describe('固定奖励与权威回执', () => {
     const duplicate = applyEffects(s, [{ k: 'knowledge', id: 'occult_theory' }])[0];
     expect(duplicate).toMatchObject({ applied: false, before: true, after: true });
     expect(duplicate.summary).toBeUndefined();
+  });
+
+  it('码头传闻及同类地点见闻不会凭空生成委托报酬', () => {
+    for (const eventId of ['adv_dock', 'adv_rat', 'adv_grave', 'adv_corpse']) {
+      const event = EVENTS.find(candidate => candidate.id === eventId)!;
+      expect(event).toBeDefined();
+      expect(event.choices.flatMap(choice => choice.effects)
+        .filter(effect => effect.k === 'money' && (effect.v ?? 0) > 0)).toEqual([]);
+      expect([event.title, event.text, ...event.choices.map(choice => choice.result)].join(' '))
+        .not.toMatch(/雇主|报酬|悬赏|出价|领了赏|赏金/);
+    }
+
+    for (const choiceIndex of [0, 1]) {
+      const s = fresh();
+      applyEffects(s, [{ k: 'intel', id: 'dock_missing' }]);
+      s.pendingEvent = 'adv_dock';
+      const money = s.pence;
+
+      resolveChoice(s, choiceIndex);
+
+      expect(s.pence).toBe(money);
+      expect(s.log.at(-1)?.text).not.toMatch(/雇主|委托|报酬|赏金/);
+    }
+  });
+
+  it('只有可核实委托人且已接取的正式委托能够结算报酬', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const commission: Commission = {
+      id: 'formal_dock_case', kind: 'investigate', stat: 'mnd', difficulty: 1,
+      title: '核对码头失踪登记', text: '由委托人面谈后交付', client: 'martha',
+      locationId: 'docks', reward: 36, daysLeft: 3, occult: false,
+    };
+    const formal = newGame('正式委托测试者', 'docker', []);
+    formal.board = [commission];
+    formal.stats.energy = 100;
+    const beforeReward = formal.pence;
+
+    expect(acceptCommission(formal, commission.id)).toMatchObject({ ok: true });
+    expect(doAdventure(formal, 'docks')).toMatchObject({ ok: true });
+    expect(formal.pence).toBe(beforeReward + commission.reward);
+    expect(formal.activeCommission).toBeNull();
+    expect(formal.log.some(entry => entry.text.includes('玛尔塔') && entry.text.includes('付了'))).toBe(true);
+
+    const forged = newGame('伪造委托测试者', 'docker', []);
+    forged.board = [{ ...commission, id: 'forged_board_case', client: 'missing_client' }];
+    const beforeAccept = structuredClone(forged);
+    expect(acceptCommission(forged, 'forged_board_case')).toMatchObject({ ok: false });
+    expect(forged).toEqual(beforeAccept);
+
+    forged.activeCommission = { ...commission, id: 'forged_active_case', client: 'missing_client' };
+    forged.stats.energy = 100;
+    forged.pendingEvent = 'fog_dream';
+    const forgedMoney = forged.pence;
+    expect(doAdventure(forged, 'docks')).toMatchObject({ ok: true });
+    expect(forged.pence).toBe(forgedMoney);
+    expect(forged.activeCommission).toBeNull();
+    expect(forged.log.some(entry => entry.text.includes('正式结算依据'))).toBe(true);
   });
 });
 
