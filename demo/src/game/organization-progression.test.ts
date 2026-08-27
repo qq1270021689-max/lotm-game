@@ -256,7 +256,7 @@ describe('v7 到 v8 迁移', () => {
     old.pathwayLeads.sleepless.history = [{ day: 3, step: 'night_observation', outcome: 'passed' }];
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(asV7(old)));
     const first = loadGame()!;
-    expect(first.schemaVersion).toBe(19);
+    expect(first.schemaVersion).toBe(20);
     expect(first.organizationRoutes.nightwatch).toMatchObject({ status: 'qualified', routeStep: 'offer_pending' });
     expect(first.pathwayLeads.sleepless).toMatchObject({ routeStep: 'none', commitment: false });
     expect(first.visitedLocations).toEqual([]);
@@ -319,7 +319,7 @@ describe('v8 到 v9 来源一致性迁移', () => {
     saveAsV8(old);
 
     const loaded = loadGame()!;
-    expect(loaded.schemaVersion).toBe(19);
+    expect(loaded.schemaVersion).toBe(20);
     expect(loaded.visitedLocations).toEqual([]);
     expect(loaded.leads.iron_blood_token.stage).toBe('unknown');
     expect(loaded.leads.abraham_door_map.stage).toBe('unknown');
@@ -403,7 +403,7 @@ describe('v8 到 v9 来源一致性迁移', () => {
     saveAsV8(old);
 
     const loaded = loadGame()!;
-    expect(loaded).toMatchObject({ schemaVersion: 19, pathwayId: 'hunter', sequence: 9 });
+    expect(loaded).toMatchObject({ schemaVersion: 20, pathwayId: 'hunter', sequence: 9 });
     expect(loaded.organizationRoutes.iron_and_blood.status).toBe('committed');
     expect(loaded.pathwayLeads.hunter).toMatchObject({ commitment: true, routeStep: 'completed' });
     expect(loaded.materialSources['hunter:blood_red_chestnut']).toMatchObject({ unlocked: true, remaining: 0 });

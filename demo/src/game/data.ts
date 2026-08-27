@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -289,6 +289,43 @@ export const PATHWAYS: Pathway[] = [
     actingHint: '每日学习新知识；好奇心必须有行动；对未知保持记录。',
     seq9: { materials: ['treasure_eating_bug', 'phantom_crystal'], auxiliary: 'apprentice9_auxiliary' },
     seq8: { materials: ['parrot_tongue', 'mirror_mercury'], ritual: '完成一场无人识破的公开戏法后服食。' },
+  },
+];
+
+/**
+ * 序列9探索能力的权威配置。数值只供引擎结算，App 不得直接展示；
+ * 占卜家复用现有目标化占卜，其余四途径在当前地点形成一次性准备。
+ */
+export const SEQUENCE9_EXPLORATION_ABILITIES: readonly Sequence9ExplorationAbilityDef[] = [
+  {
+    id: 'seer_divination', pathwayId: 'seer', mode: 'divination', label: '自行占卜',
+    description: '可在安全环境中针对已知地点或持有物，自行进行纸牌与梦境占卜；象征不会替代实地调查。',
+    hours: 0, energyCost: 0, commissionKinds: [], exploreEnergyRelief: 0, commissionBonus: 0,
+    preparationText: '你把问题、媒介与已有线索分别摆好，准备自行占卜。',
+  },
+  {
+    id: 'spectator_observation', pathwayId: 'spectator', mode: 'preparation', label: '静观现场',
+    description: '暂不介入，只记录人群反应、行动次序与情绪变化，为同地点下一次调查做好准备。',
+    hours: 1, energyCost: 5, commissionKinds: ['investigate', 'escort'], exploreEnergyRelief: 3, commissionBonus: 8,
+    preparationText: '你退到不引人注意的位置，把现场的人群反应与行动次序默记下来。你没有据此断言任何人的真伪或秘密。',
+  },
+  {
+    id: 'hunter_tracking', pathwayId: 'hunter', mode: 'preparation', label: '追踪痕迹',
+    description: '辨认足迹、拖痕与退路，为同地点下一次调查或追捕做好准备。',
+    hours: 1, energyCost: 6, commissionKinds: ['investigate', 'hunt'], exploreEnergyRelief: 5, commissionBonus: 8,
+    preparationText: '你沿外围重新辨认足迹、拖痕与可用退路，只留下能够在现场复核的追踪标记。',
+  },
+  {
+    id: 'sleepless_night_watch', pathwayId: 'sleepless', mode: 'preparation', label: '夜间守望',
+    description: '利用夜视与清醒优势守住同一地点，为下一次夜间探索或委托做好准备。',
+    hours: 1, energyCost: 4, nightOnly: true, commissionKinds: ['investigate', 'collect', 'hunt', 'escort'], exploreEnergyRelief: 4, commissionBonus: 8,
+    preparationText: '你让视线适应夜色，逐一记下照明死角、巡行间隔与撤离方向；这些观察没有揭示此地的真实危险程度。',
+  },
+  {
+    id: 'apprentice_passage_probe', pathwayId: 'apprentice', mode: 'preparation', label: '勘察通路',
+    description: '检查门窗、缝隙与空间回声，为同地点下一次调查或采集寻找安全通路。',
+    hours: 1, energyCost: 5, commissionKinds: ['investigate', 'collect'], exploreEnergyRelief: 4, commissionBonus: 8,
+    preparationText: '你沿门窗、墙缝与转角检查空间回声，只规划当前地点内的安全通路，没有越过任何封锁或未知入口。',
   },
 ];
 

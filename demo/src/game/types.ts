@@ -201,6 +201,42 @@ export interface Nemesis {
 
 export type SkillKey = 'investigate' | 'combat' | 'speech' | 'occult' | 'sneak';
 
+export type Sequence9ExplorationAbilityId =
+  | 'seer_divination'
+  | 'spectator_observation'
+  | 'hunter_tracking'
+  | 'sleepless_night_watch'
+  | 'apprentice_passage_probe';
+
+/** 序列9能力的机械定义；玩家界面只展示 label/description，不展示内部修正值。 */
+export interface Sequence9ExplorationAbilityDef {
+  id: Sequence9ExplorationAbilityId;
+  pathwayId: string;
+  mode: 'divination' | 'preparation';
+  label: string;
+  description: string;
+  hours: number;
+  energyCost: number;
+  nightOnly?: boolean;
+  commissionKinds: readonly Commission['kind'][];
+  exploreEnergyRelief: number;
+  commissionBonus: number;
+  preparationText: string;
+}
+
+/** 当前地点的一次性探索准备；保留已消费记录以执行同地每日冷却。 */
+export interface Sequence9PreparationRecord {
+  abilityId: Sequence9ExplorationAbilityId;
+  pathwayId: string;
+  locationId: string;
+  preparedDay: number;
+  preparedHour: number;
+  cooldownDay: number;
+  consumed: boolean;
+  consumedDay?: number;
+  consumedHour?: number;
+}
+
 export type ClueSourceKind = 'public_records' | 'archive' | 'location' | 'npc' | 'event' | 'migration';
 
 /** 玩家实际取得的调查线索；来源与取得时间随存档保留。 */
@@ -703,6 +739,7 @@ export interface GameState {
   pathwayLeads: Record<string, PathwayLead>;
   items: Record<string, number>;
   itemKnowledge: Record<string, ItemKnowledgeState>;
+  sequence9Preparations: Sequence9PreparationRecord[];
   tradeFair: TradeFairState;
   confirmedBeyonderDeaths: ConfirmedBeyonderDeathRecord[];
   intel: string[];

@@ -93,11 +93,12 @@ describe('灵视检视与持久化信息', () => {
     expect(inspectItemWithSpiritVision(ordinary, 'anomaly_evidence')).toMatchObject({ ok: false });
     expect(ordinary).toEqual(before);
 
-    const untrainedBeyonder = structuredClone(ordinary);
-    untrainedBeyonder.pathwayId = 'hunter';
-    untrainedBeyonder.sequence = 9;
-    untrainedBeyonder.knowledge = untrainedBeyonder.knowledge.filter(id => id !== 'spirit_vision');
-    expect(spiritVisionInspectionIssue(untrainedBeyonder, 'anomaly_evidence')).toMatch(/尚未真正掌握灵视/);
+    const hunter = structuredClone(ordinary);
+    hunter.pathwayId = 'hunter';
+    hunter.sequence = 9;
+    hunter.knowledge = hunter.knowledge.filter(id => id !== 'spirit_vision');
+    expect(hasSpiritVisionAbility(hunter)).toBe(true);
+    expect(spiritVisionInspectionIssue(hunter, 'anomaly_evidence')).toBeNull();
   });
 
   it('灵视对铜牌、残页与纸牌给出不同固定记录，普通物品没有结果', () => {
@@ -207,7 +208,7 @@ describe('v17迁移、往返与UI规则入口', () => {
     delete (ordinary as Partial<GameState>).itemKnowledge;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
     const loadedOrdinary = loadGame()!;
-    expect(loadedOrdinary.schemaVersion).toBe(19);
+    expect(loadedOrdinary.schemaVersion).toBe(20);
     expect(loadedOrdinary.knowledge).not.toContain('spirit_vision');
     expect(loadedOrdinary.itemKnowledge).toEqual({});
 
@@ -233,8 +234,8 @@ describe('v17迁移、往返与UI规则入口', () => {
     hunter.divinationTraining.teachers.push('formal_seer_training');
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(hunter));
     const migratedHunter = loadGame()!;
-    expect(migratedHunter.knowledge).not.toContain('spirit_vision');
-    expect(hasSpiritVisionAbility(migratedHunter)).toBe(false);
+    expect(migratedHunter.knowledge).toContain('spirit_vision');
+    expect(hasSpiritVisionAbility(migratedHunter)).toBe(true);
   });
 
   it('丢弃伪造识别文本、未知物品和没有合法尝试支撑的成功占卜', () => {

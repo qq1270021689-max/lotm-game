@@ -1,12 +1,12 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
 import { hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 19;
+export const CURRENT_SCHEMA_VERSION = 20;
 export type { ActionResult } from './types';
 export { getVisibleLocations, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
@@ -281,8 +281,19 @@ function hasTrustedSeerSpiritVisionSource(s: GameState): boolean {
     && hasDivinationTrainingCredential(s, 'formal_seer_training', 'dream');
 }
 
+/** 序列9获得的基础能力会被更高序列继承；非法途径、序列0与凡人均不成立。 */
+export function hasInheritedSequence9Ability(s: GameState, pathwayId = s.pathwayId): boolean {
+  return pathwayId !== null
+    && s.pathwayId === pathwayId
+    && PATHWAYS.some(pathway => pathway.id === pathwayId)
+    && Number.isInteger(s.sequence)
+    && s.sequence !== null
+    && s.sequence >= 1
+    && s.sequence <= 9;
+}
+
 export function hasSpiritVisionAbility(s: GameState): boolean {
-  return hasTrustedSeerSpiritVisionSource(s) && s.knowledge.includes('spirit_vision');
+  return hasInheritedSequence9Ability(s);
 }
 
 export function itemPresentation(s: GameState, itemId: string): { name: string; description: string } | null {
@@ -388,7 +399,7 @@ export function locationRiskPresentation(s: GameState, locationId: string): stri
 }
 
 function hasSeerDivinationSequence(s: GameState): boolean {
-  return s.pathwayId === 'seer' && s.sequence !== null && s.sequence >= 1 && s.sequence <= 9;
+  return hasInheritedSequence9Ability(s, 'seer');
 }
 
 function grantSeerDivinationTraining(s: GameState) {
@@ -401,6 +412,12 @@ function grantSeerDivinationTraining(s: GameState) {
   addDivinationTrainingCredential(s, 'formal_seer_training', 'cards');
   addDivinationTrainingCredential(s, 'formal_seer_training', 'dream');
   if (!s.knowledge.includes('spirit_vision')) s.knowledge.push('spirit_vision');
+}
+
+function grantSequence9CoreAbilities(s: GameState) {
+  if (!hasInheritedSequence9Ability(s)) return;
+  if (!s.knowledge.includes('spirit_vision')) s.knowledge.push('spirit_vision');
+  if (s.pathwayId === 'seer') grantSeerDivinationTraining(s);
 }
 
 function hasTrustedNelsonDivinationRelationship(s: GameState): boolean {
@@ -639,6 +656,7 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     pathwayLeads: createPathwayLeads(),
     items: { ...(origin.items ?? {}) },
     itemKnowledge: {},
+    sequence9Preparations: [],
     tradeFair: createTradeFairState(),
     confirmedBeyonderDeaths: [],
     intel: [...(origin.intel ?? [])],
@@ -1421,6 +1439,86 @@ export function getTravelQuote(s: GameState, locationId: string, mode: TravelMod
   return { mode, hours, fee: (regionBase + (loc.hours - hours) * 3) * travelers, travelers };
 }
 
+function sequence9CooldownDay(day: number, hour: number, def: Sequence9ExplorationAbilityDef): number {
+  return def.nightOnly && hour < 6 ? Math.max(1, day - 1) : day;
+}
+
+export function getSequence9AbilityDefinition(s: GameState): Sequence9ExplorationAbilityDef | null {
+  if (!hasInheritedSequence9Ability(s)) return null;
+  return SEQUENCE9_EXPLORATION_ABILITIES.find(def => def.pathwayId === s.pathwayId) ?? null;
+}
+
+export function getSequence9LocationActions(s: GameState): Sequence9ExplorationAbilityDef[] {
+  const def = getSequence9AbilityDefinition(s);
+  const location = s.currentLocation && LOCATIONS.find(candidate => candidate.id === s.currentLocation!.locationId);
+  return def?.mode === 'preparation' && location?.actions.includes('explore') ? [def] : [];
+}
+
+function activeSequence9Preparation(s: GameState, locationId: string, commission?: Commission | null): Sequence9PreparationRecord | null {
+  const def = getSequence9AbilityDefinition(s);
+  if (!def || def.mode !== 'preparation') return null;
+  if (commission && !def.commissionKinds.includes(commission.kind)) return null;
+  return [...(s.sequence9Preparations ?? [])].reverse().find(record => !record.consumed
+    && record.pathwayId === def.pathwayId && record.abilityId === def.id && record.locationId === locationId) ?? null;
+}
+
+function consumeSequence9Preparation(s: GameState, record: Sequence9PreparationRecord | null) {
+  if (!record || record.consumed) return;
+  record.consumed = true;
+  record.consumedDay = s.day;
+  record.consumedHour = s.hour;
+  addLog(s, '先前在此留下的准备记录派上了用场；这份记录已经完成核验，不会再次生效。', 'system');
+}
+
+export function sequence9LocationActionIssue(s: GameState, abilityId: Sequence9ExplorationAbilityId): string | null {
+  const def = SEQUENCE9_EXPLORATION_ABILITIES.find(candidate => candidate.id === abilityId);
+  if (!def || def.mode !== 'preparation') return '这项序列能力不存在。';
+  if (!hasInheritedSequence9Ability(s, def.pathwayId)) return '这不是你当前途径能够使用的能力。';
+  if (currentEvent(s)) return '先处理眼前正在发生的事情。';
+  if (s.atWork || !s.currentLocation) return '需要先抵达一个可调查的地点。';
+  const accessIssue = locationAccessIssue(s, s.currentLocation.locationId);
+  if (accessIssue) return accessIssue;
+  const location = LOCATIONS.find(candidate => candidate.id === s.currentLocation!.locationId);
+  if (!location?.actions.includes('explore')) return '这里没有适合展开这项准备的调查空间。';
+  if (def.nightOnly && !isNight(s.hour)) return '这项守望只能在入夜后进行。';
+  const cooldownDay = sequence9CooldownDay(s.day, s.hour, def);
+  const records = s.sequence9Preparations ?? [];
+  if (records.some(record => record.abilityId === def.id && !record.consumed)) {
+    return '你已经为这里留下了一份尚未使用的准备记录。';
+  }
+  if (records.some(record => record.abilityId === def.id && record.cooldownDay === cooldownDay)) {
+    return '这段时间里你已经完成过一次准备，先让观察沉淀下来。';
+  }
+  if (s.stats.energy < energyCost(s, def.energyCost) + 3) return '你现在太疲惫，无法可靠地完成这项准备。';
+  return null;
+}
+
+export function sequence9PreparationStatus(s: GameState): string | null {
+  const locationId = s.currentLocation?.locationId;
+  if (!locationId) return null;
+  const record = activeSequence9Preparation(s, locationId);
+  return record ? '你已为下一次符合条件的本地调查做好准备。离开这里会让这份现场准备失效。' : null;
+}
+
+export function performSequence9LocationAction(s: GameState, abilityId: Sequence9ExplorationAbilityId): ActionResult {
+  const issue = sequence9LocationActionIssue(s, abilityId);
+  if (issue) return { ok: false, msg: issue };
+  const def = SEQUENCE9_EXPLORATION_ABILITIES.find(candidate => candidate.id === abilityId)!;
+  const locationId = s.currentLocation!.locationId;
+  const preparedDay = s.day;
+  const preparedHour = s.hour;
+  const cooldownDay = sequence9CooldownDay(preparedDay, preparedHour, def);
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, def.energyCost) }]);
+  s.sequence9Preparations ??= [];
+  s.sequence9Preparations.push({
+    abilityId: def.id, pathwayId: def.pathwayId, locationId,
+    preparedDay, preparedHour, cooldownDay, consumed: false,
+  });
+  addLog(s, def.preparationText, 'good');
+  advanceHours(s, def.hours);
+  return { ok: true };
+}
+
 function performExploreAtLocation(s: GameState, locationId: string, actionHours: number, companionId?: string): ActionResult {
   const accessIssue = locationAccessIssue(s, locationId);
   if (accessIssue) return { ok: false, msg: accessIssue };
@@ -1437,7 +1535,10 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
     if (!npcAvailable(n, s.day, s.hour)) return { ok: false, msg: `${n.name}此刻走不开——摸清ta的作息，挑ta得空的时候来邀。` };
     comp = n;
   }
-  let cost = 6 + loc.hours * 8;
+  const commissionForHere = s.activeCommission?.locationId === locationId ? s.activeCommission : null;
+  const sequence9Preparation = activeSequence9Preparation(s, locationId, commissionForHere);
+  const sequence9Ability = sequence9Preparation ? getSequence9AbilityDefinition(s) : null;
+  let cost = 6 + loc.hours * 8 - (sequence9Ability?.exploreEnergyRelief ?? 0);
   if (s.pathwayId === 'hunter') cost -= 7;
   if (hasTalent(s, 'strong_body')) cost -= 5;
   cost = energyCost(s, cost);
@@ -1490,7 +1591,7 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
     if (s.pathwayId === 'spectator' && c.stat === 'cha') pathBonus = 8;
     if (s.pathwayId === 'apprentice' && c.kind === 'collect') pathBonus = 10;
     if (s.pathwayId === 'sleepless' && isNight(s.hour)) pathBonus += 8;
-    total += pathBonus;
+    total += pathBonus + (sequence9Ability?.commissionBonus ?? 0);
     if (typeof s.flags.jammed === 'number' && s.flags.jammed > 0) total -= 10;
     if (s.stats.energy < 20) total -= 8;
     addLog(s, `你按已有线索推进委托「${c.title}」。${comp ? `${comp.name}在擅长的环节从旁协助。` : ''}`, 'info');
@@ -1512,6 +1613,7 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
         s.nemesis = spawnNemesis(s, 'occult');
         addLog(s, `⚠️ 回程路上你总觉得被什么视线黏着。有人盯上你了。`, 'bad');
       }
+      consumeSequence9Preparation(s, sequence9Preparation);
     } else {
       applyEffects(s, [{ k: 'san', v: -3 }]);
       if (comp) applyEffects(s, [{ k: 'favor', id: comp.id, v: -3 }]);
@@ -1536,6 +1638,7 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
       addLog(s, '离开前，你总觉得暗处有什么在目送你。回程一路，那种阴冷的注视始终没有散去。', 'bad');
     }
   }
+  consumeSequence9Preparation(s, sequence9Preparation);
   return { ok: true };
 }
 
@@ -1574,6 +1677,13 @@ export function leaveCurrentLocation(s: GameState): ActionResult {
   const stay = s.currentLocation;
   if (!stay) return { ok: false, msg: '你目前不在外出的地点。' };
   const location = LOCATIONS.find(candidate => candidate.id === stay.locationId);
+  for (const preparation of s.sequence9Preparations ?? []) {
+    if (!preparation.consumed && preparation.locationId === stay.locationId) {
+      preparation.consumed = true;
+      preparation.consumedDay = s.day;
+      preparation.consumedHour = s.hour;
+    }
+  }
   s.currentLocation = null;
   if (stay.returnHours > 0) advanceHours(s, stay.returnHours);
   addLog(s, `你离开【${location?.name ?? '当前地点'}】并返回住处。返程已在出发时安排，不再收费。`, 'info');
@@ -3298,7 +3408,7 @@ export function drinkPotion(s: GameState, pathwayId: string): ActionResult {
   if (rate >= 60) {
     s.pathwayId = pathwayId;
     s.sequence = 9;
-    grantSeerDivinationTraining(s);
+    grantSequence9CoreAbilities(s);
     const lead = pathwayLead(s, pathwayId);
     s.sequence8Progress = createSequence8Progress(pathwayId, lead.organizationId, 2);
     s.awareness = 'informed';
@@ -3347,7 +3457,7 @@ export function drinkOfficialDose(s: GameState, pathwayId = 'sleepless'): Action
   advanceHours(s, 2);
   s.pathwayId = pathwayId;
   s.sequence = 9;
-  grantSeerDivinationTraining(s);
+  grantSequence9CoreAbilities(s);
   s.sequence8Progress = createSequence8Progress(pathwayId, lead.organizationId, 2);
   s.awareness = 'informed';
   s.digestion = 5;
@@ -4030,6 +4140,7 @@ export function loadGame(): GameState | null {
     const rawDivinationInsights: unknown[] = Array.isArray(s.divinationInsights) ? [...s.divinationInsights] : [];
     const rawDivinationAttempts: unknown[] = Array.isArray(s.divinationAttempts) ? [...s.divinationAttempts] : [];
     const rawItemKnowledge: Record<string, unknown> = s.itemKnowledge && typeof s.itemKnowledge === 'object' ? { ...s.itemKnowledge } : {};
+    const rawSequence9Preparations: unknown[] = Array.isArray(s.sequence9Preparations) ? [...s.sequence9Preparations] : [];
     // 玩家可见的识别结果在完成全部身份迁移后，从权威定义和可核验尝试记录重建。
     s.divinationCredentials = [];
     s.divinationInsights = [];
@@ -4259,6 +4370,37 @@ export function loadGame(): GameState | null {
         ? [...new Set(s.completedLocationActions.filter(key => validOnceKeys.has(key)))] : [];
     }
     if (s.atWork) s.currentLocation = null;
+    if (loadedVersion < 20) {
+      s.sequence9Preparations = [];
+    } else {
+      const seenPreparationKeys = new Set<string>();
+      s.sequence9Preparations = rawSequence9Preparations.flatMap(raw => {
+        if (!raw || typeof raw !== 'object') return [];
+        const record = raw as Partial<Sequence9PreparationRecord>;
+        const def = SEQUENCE9_EXPLORATION_ABILITIES.find(candidate => candidate.id === record.abilityId && candidate.mode === 'preparation');
+        if (!def || record.pathwayId !== def.pathwayId || !hasInheritedSequence9Ability(s, def.pathwayId)
+          || !LOCATIONS.some(location => location.id === record.locationId && location.actions.includes('explore'))
+          || !Number.isInteger(record.preparedDay) || (record.preparedDay ?? 0) < 1 || (record.preparedDay ?? 0) > s.day
+          || !Number.isInteger(record.preparedHour) || (record.preparedHour ?? -1) < 0 || (record.preparedHour ?? 24) > 23) return [];
+        const cooldownDay = sequence9CooldownDay(record.preparedDay!, record.preparedHour!, def);
+        if (record.cooldownDay !== cooldownDay) return [];
+        const key = `${record.abilityId}:${cooldownDay}`;
+        if (seenPreparationKeys.has(key)) return [];
+        const active = record.consumed === false && s.currentLocation?.locationId === record.locationId;
+        if (!active && record.consumed !== true) return [];
+        if (record.consumed === true && (record.consumedDay !== undefined || record.consumedHour !== undefined)
+          && (!Number.isInteger(record.consumedDay) || (record.consumedDay ?? 0) < record.preparedDay!
+            || !Number.isInteger(record.consumedHour) || (record.consumedHour ?? -1) < 0 || (record.consumedHour ?? 24) > 23)) return [];
+        seenPreparationKeys.add(key);
+        return [{
+          abilityId: def.id, pathwayId: def.pathwayId, locationId: record.locationId!,
+          preparedDay: record.preparedDay!, preparedHour: record.preparedHour!, cooldownDay,
+          consumed: !active,
+          ...(!active && record.consumedDay !== undefined ? { consumedDay: record.consumedDay } : {}),
+          ...(!active && record.consumedHour !== undefined ? { consumedHour: record.consumedHour } : {}),
+        } satisfies Sequence9PreparationRecord];
+      });
+    }
     s.canReadRoselleScript = s.canReadRoselleScript !== false;
 
     if (loadedVersion < 7) {
@@ -4518,10 +4660,13 @@ export function loadGame(): GameState | null {
     }
     s.items.occult_notes = 0;
     s.studyProgress = 0;
-    // 灵视只由占卜家正式训练授予；普通人和其他途径旧档中的误授予一律清理。
-    if (!hasTrustedSeerSpiritVisionSource(s)) s.knowledge = s.knowledge.filter(id => id !== 'spirit_vision');
-    else if (!s.knowledge.includes('spirit_vision')) s.knowledge.push('spirit_vision');
-    rebuildPersistedDivinationAndItemKnowledge(s, rawDivinationAttempts, rawDivinationInsights, rawItemKnowledge);
+    // 灵视由合法途径与序列决定；知识条目只是展示，不参与能力鉴权。
+    if (!hasInheritedSequence9Ability(s)) s.knowledge = s.knowledge.filter(id => id !== 'spirit_vision');
+    else grantSequence9CoreAbilities(s);
+    // v19及更早只有占卜家可能合法完成灵视检视；其他角色在新规则生效前留下的
+    // itemKnowledge 不能因为迁移后获得通用灵视而被追认。合法占卜结果仍由 attempt 独立重建。
+    const trustedLegacyItemKnowledge = loadedVersion < 20 && !hasSeerDivinationSequence(s) ? {} : rawItemKnowledge;
+    rebuildPersistedDivinationAndItemKnowledge(s, rawDivinationAttempts, rawDivinationInsights, trustedLegacyItemKnowledge);
     // v13 开始委托板不得泄露尚未掌握的去向；已接委托作为有效入口保留。
     s.board = Array.isArray(s.board)
       ? s.board.filter(commission => commission && typeof commission.locationId === 'string'

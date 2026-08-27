@@ -212,7 +212,7 @@ describe('v14到v15迁移', () => {
       s.forcedEventQueue = ['study_forbidden'];
     });
     const first = loadGame()!;
-    expect(first.schemaVersion).toBe(19);
+    expect(first.schemaVersion).toBe(20);
     expect(first.items.occult_notes).toBe(0);
     expect(first.books.abridged_occult_notes).toMatchObject({ acquired: true, readHours: 9, completed: false });
     expect(first.pendingEvent).toBeNull();

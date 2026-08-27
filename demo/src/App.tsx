@@ -63,6 +63,7 @@ function CharacterSheet({ state, onClose }: { state: GameState; onClose: () => v
   const origin = E.originOf(state);
   const pw = findPathway(state.pathwayId);
   const beyonder = E.isBeyonder(state);
+  const sequence9Ability = E.getSequence9AbilityDefinition(state);
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="max-w-2xl w-full max-h-[85vh] overflow-y-auto rounded border border-amber-200/30 bg-[#101311] p-6 space-y-5" onClick={e => e.stopPropagation()}>
@@ -126,6 +127,17 @@ function CharacterSheet({ state, onClose }: { state: GameState; onClose: () => v
             ))}
           </div>
         </section>
+
+        {sequence9Ability && <section data-sequence9-ability>
+          <h3 className="sheet-title">序列9能力</h3>
+          <div className="rounded border border-violet-300/20 p-3 text-xs leading-5">
+            <p className="text-sky-100/90">基础灵视 · 已掌握</p>
+            <p className="text-stone-500">灵视只用于检视明确支持该能力的持有物，不会替你扫描陌生地点或识破他人的秘密。</p>
+            <p className="text-violet-100/90 mt-2">{sequence9Ability.label}</p>
+            <p className="text-stone-400">{sequence9Ability.description}</p>
+            {sequence9Ability.mode === 'divination' && <p className="text-emerald-200/70 mt-1">你可独立使用纸牌与梦境占卜，无需先向民间导师学习；目标仍须来自已知地点或实际持有物。</p>}
+          </div>
+        </section>}
 
         <section>
           <h3 className="sheet-title">人脉</h3>
@@ -526,6 +538,27 @@ export default function App() {
                   return <button key={action} className="act-btn" onClick={() => runAction(s => E.performAtLocationAction(s, action))}>{label}<small>地点行动 · 1h</small></button>;
                 })}
               </div>
+              {(() => {
+                const ability = E.getSequence9AbilityDefinition(state);
+                if (!ability) return null;
+                const actions = E.getSequence9LocationActions(state);
+                const prepared = E.sequence9PreparationStatus(state);
+                return <div data-sequence9-location-actions className="rounded border border-violet-300/25 p-3 text-xs space-y-2">
+                  <p className="text-violet-100/90">序列9能力 · {ability.label}</p>
+                  <p className="text-stone-500">{ability.description}</p>
+                  {prepared && <p className="text-emerald-200/70">{prepared}</p>}
+                  {ability.mode === 'divination'
+                    ? <p className="text-stone-500">自行占卜仍从已知地点或物品目标中选择；这里不会自动扫描未知事物。</p>
+                    : actions.map(action => {
+                      const issue = E.sequence9LocationActionIssue(state, action.id);
+                      return <button key={action.id} disabled={!!issue} title={issue ?? ''}
+                        className="block w-full rounded border border-violet-300/25 p-2 text-left text-violet-100/85 disabled:opacity-45"
+                        onClick={() => runAction(s => E.performSequence9LocationAction(s, action.id))}>
+                        {action.label}<small className="block text-stone-500 mt-0.5">{issue ?? `${action.hours}h · 为下一次符合条件的本地调查做准备`}</small>
+                      </button>;
+                    })}
+                </div>;
+              })()}
               {loc.id === 'docks' && !beyonder && state.leads.iron_blood_token.stage === 'unknown' && <div className="rounded border border-sky-300/25 p-3 text-xs space-y-2">
                 <div>
                   <p className="text-sky-100/90">码头失踪案</p>
@@ -601,6 +634,18 @@ export default function App() {
                   {state.pathwayId === 'sleepless' ? '静夜冥想' : '睡觉'}<small>{state.pathwayId === 'sleepless' ? '2h · 不眠者' : '至次日7:00'}</small>
                 </button>
               </div>
+
+              {(() => {
+                const ability = E.getSequence9AbilityDefinition(state);
+                if (!ability) return null;
+                return <div data-sequence9-home-ability className="mt-3 rounded border border-violet-300/25 p-3 text-xs leading-5">
+                  <p className="text-violet-100/90">序列9能力 · {ability.label}</p>
+                  <p className="text-stone-500">{ability.description}</p>
+                  <p className="text-emerald-200/65 mt-1">{ability.mode === 'divination'
+                    ? '你可直接使用下方已有的纸牌与梦境占卜入口，不需要先结识代占者。'
+                    : '前往一个可调查地点后，能力区会提供对应的现场准备行动。'}</p>
+                </div>;
+              })()}
 
               {actingOpen && state.sequence === 9 && state.pathwayId && (() => {
                 const def = SEQUENCE8_ACTING_DEFS[state.pathwayId as keyof typeof SEQUENCE8_ACTING_DEFS];
