@@ -160,7 +160,7 @@ describe('委托范围与 v13 迁移', () => {
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(old));
 
     const loaded = loadGame()!;
-    expect(loaded.schemaVersion).toBe(18);
+    expect(loaded.schemaVersion).toBe(19);
     expect(loaded.visitedLocations).toEqual(['sewer']);
     expect(loaded.activeCommission?.locationId).toBe('factory');
     expect(loaded.board.map(item => item.id)).toEqual(['visited_sewer', 'active_target']);

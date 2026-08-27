@@ -1,17 +1,27 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode, TingenLandmarkActionDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
 import { hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 export type { ActionResult } from './types';
 export { getVisibleLocations, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 function blankPathwayLead(): PathwayLead {
   return { history: [], routeStep: 'none', commitment: false };
+}
+
+export function createTradeFairState(): TradeFairState {
+  return {
+    invitation: null,
+    stock: Object.fromEntries(TRADE_FAIR_PRODUCTS.map(product => [product.id, product.initialStock])),
+    purchasedCounts: Object.fromEntries(TRADE_FAIR_PRODUCTS.map(product => [product.id, 0])),
+    consumedPurchasedCounts: Object.fromEntries(TRADE_FAIR_PRODUCTS.map(product => [product.id, 0])),
+    identifiedCharacteristicIds: [],
+  };
 }
 
 export function createPathwayLeads(): Record<string, PathwayLead> {
@@ -80,9 +90,13 @@ export const findAnyNPC = (s: GameState, id: string) => allNPCs(s).find(n => n.i
 const isNight = (h: number) => h >= 18 || h < 6;
 const OCCULT_SHOP_ITEM_IDS = new Set([
   ...PATHWAYS.flatMap(pathway => [...pathway.seq9.materials, ...pathway.seq8.materials]),
+  ...TRADE_FAIR_PRODUCTS.flatMap(product => product.itemId ? [product.itemId] : []),
 ]);
 const SEQUENCE8_ITEM_IDS = new Set(PATHWAYS.flatMap(pathway => pathway.seq8.materials));
-const MYSTIC_MATERIAL_ITEM_IDS = new Set(PATHWAYS.flatMap(pathway => [...pathway.seq9.materials, ...pathway.seq8.materials]));
+const MYSTIC_MATERIAL_ITEM_IDS = new Set([
+  ...PATHWAYS.flatMap(pathway => [...pathway.seq9.materials, pathway.seq9.auxiliary, ...pathway.seq8.materials]),
+  ...PATHWAYS.map(pathway => `${pathway.id}9_characteristic`),
+]);
 
 // ============ 人脉阶段 ============
 /** 好感达到该值才解锁「登门拜访」 */
@@ -276,11 +290,15 @@ export function itemPresentation(s: GameState, itemId: string): { name: string; 
   if (!item) return null;
   const concealed = item.occultMarked || MYSTIC_MATERIAL_ITEM_IDS.has(itemId);
   const knowledge = s.itemKnowledge?.[itemId];
-  const name = concealed && !knowledge?.spiritVisionInspected ? (item.surfaceName ?? '未鉴定的密封样本') : item.name;
-  const base = concealed ? (item.surfaceDesc ?? '密封容器上只剩外观与批次，来源和性质仍待核验。') : item.desc;
+  const tradeGuaranteed = verifiedTradeFairItemQuantity(s, itemId) > 0;
+  const tradeAppraised = isTradeFairCharacteristicIdentified(s, itemId);
+  const identified = knowledge?.spiritVisionInspected || knowledge?.identifiedAsOccult || tradeGuaranteed || tradeAppraised;
+  const name = concealed && !identified ? (item.surfaceName ?? '未鉴定的密封样本') : item.name;
+  const base = concealed && !identified ? (item.surfaceDesc ?? '密封容器上只剩外观与批次，来源和性质仍待核验。') : item.desc;
   const knownInfo = knowledge?.knownInfo ?? [];
   const insight = successfulItemDivination(s, itemId);
   const additions = [
+    ...(tradeGuaranteed || tradeAppraised ? ['交易会担保记录：封签、用途与途径已由主持方核验；这不等于你已经锁定该途径。'] : []),
     ...knownInfo.map(info => `灵视记录：${info}`),
     ...(insight ? [`占卜记录：${insight.text}`] : []),
   ];
@@ -334,7 +352,8 @@ export function getInventoryEntries(s: GameState): {
     const presentation = itemPresentation(s, id);
     if (!definition || !presentation) return [];
     const knowledge = s.itemKnowledge?.[id];
-    const occultKnown = knowledge?.identifiedAsOccult === true || !!successfulItemDivination(s, id);
+    const occultKnown = knowledge?.identifiedAsOccult === true || !!successfulItemDivination(s, id)
+      || verifiedTradeFairItemQuantity(s, id) > 0 || isTradeFairCharacteristicIdentified(s, id);
     const category: ItemCategory = definition.category === 'occult' && !occultKnown ? 'misc' : definition.category;
     return [{
       kind: 'item' as const, id, category, name: presentation.name, description: presentation.description,
@@ -620,6 +639,8 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     pathwayLeads: createPathwayLeads(),
     items: { ...(origin.items ?? {}) },
     itemKnowledge: {},
+    tradeFair: createTradeFairState(),
+    confirmedBeyonderDeaths: [],
     intel: [...(origin.intel ?? [])],
     knowledge: [...(origin.knowledge ?? [])],
     studyProgress: 0,
@@ -896,12 +917,10 @@ export function applyEffects(s: GameState, effects: Effect[]): AppliedEffectRece
         if (e.id) {
           s.flags[e.id] = e.v ?? 1;
           receipt.applied = true;
-          // 私吞析出特性 → 可能引来死者的同门复仇
-          if (e.id === 'loot_char' && e.v === 1 && !s.nemesis && rnd(100) < 40) {
-            s.nemesis = spawnNemesis(s, 'revenge');
-            addLog(s, '⚠️ 你隐约听说有人在黑市打听「那具尸体的东西落到谁手里了」。麻烦找上门了。', 'bad');
-          }
         }
+        break;
+      case 'beyonder_death':
+        if (e.id) receipt.applied = extractCharacteristicFromConfirmedDeath(s, e.id);
         break;
       case 'gameover': break;
     }
@@ -918,7 +937,7 @@ export function applyEffects(s: GameState, effects: Effect[]): AppliedEffectRece
 export function isTimerVisible(s: GameState, timerId: string): boolean {
   if (timerId === 'market') {
     const route = s.organizationRoutes?.iron_and_blood;
-    return !!route && ['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(route.status);
+    return hasTradeFairInvitation(s) || (!!route && ['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(route.status));
   }
   if (timerId === 'audit') {
     const route = s.organizationRoutes?.nightwatch;
@@ -933,7 +952,20 @@ export function isTimerVisible(s: GameState, timerId: string): boolean {
 }
 
 export function getVisibleTimers(s: GameState): Timer[] {
-  return s.timers.filter(timer => isTimerVisible(s, timer.id));
+  return s.timers.filter(timer => isTimerVisible(s, timer.id)).map(timer => {
+    if (timer.id !== 'market' || !hasTradeFairInvitation(s)) return timer;
+    let hoursLeft = 0;
+    const victor = NPCS.find(npc => npc.id === 'victor');
+    if (victor && npcLocation(victor, s.day, s.hour) === '黑市后巷') return { ...timer, label: '秘密交易会正在营业', hoursLeft: 0 };
+    while (hoursLeft <= 7 * 24) {
+      const absolute = s.hour + hoursLeft;
+      const day = s.day + Math.floor(absolute / 24);
+      const hour = absolute % 24;
+      if ([3, 6].includes(weekdayOf(day)) && hour === 22) break;
+      hoursLeft++;
+    }
+    return { ...timer, label: '秘密交易会开场', hoursLeft };
+  });
 }
 
 export function advanceHours(s: GameState, hours: number) {
@@ -1130,6 +1162,22 @@ type EventCandidate =
   | { kind: 'static'; event: GameEvent }
   | { kind: 'generated'; event: EventBlueprint };
 
+function eventRuntimeEligible(s: GameState, eventId: string): boolean {
+  // 这桩死亡只可能发生在担保交易会真实营业、玩家本人已经到场的时段。
+  // 邀请或黑市地点本身都不能让它在普通夜晚进入抽取池。
+  return eventId !== 'adv_confirmed_beyonder_death' || isTradeFairOpen(s);
+}
+
+function queueTradeFairDeathAfterMidnightSettlement(s: GameState, locationId: string): boolean {
+  if (!s.pendingEvent || locationId !== 'black_market') return false;
+  const event = findEvent('adv_confirmed_beyonder_death');
+  if (!event || event.slot !== 'adventure' || !eventRuntimeEligible(s, event.id)
+    || !checkCond(s, event.cond) || (event.once && s.firedOnce.includes(event.id))) return false;
+  s.forcedEventQueue ??= [];
+  if (!s.forcedEventQueue.includes(event.id)) s.forcedEventQueue.push(event.id);
+  return true;
+}
+
 export function maybeTrigger(s: GameState, slot: string, npcId?: string, locationId?: string): boolean {
   if (s.pendingEvent) return false;
   const staticPool: EventCandidate[] = EVENTS.filter(e => {
@@ -1138,7 +1186,7 @@ export function maybeTrigger(s: GameState, slot: string, npcId?: string, locatio
     if (!npcId && e.npc) return false;
     if (e.locations && locationId && !e.locations.includes(locationId)) return false;
     if (e.once && s.firedOnce.includes(e.id)) return false;
-    return checkCond(s, e.cond);
+    return eventRuntimeEligible(s, e.id) && checkCond(s, e.cond);
   }).map(event => ({ kind: 'static', event }));
   const generatedPool: EventCandidate[] = RANDOM_TEXT_EVENTS.filter(e => {
     if (e.slot !== slot || !validGeneratedBlueprint(e)) return false;
@@ -1177,7 +1225,7 @@ function activateStaticEvent(s: GameState, ev: GameEvent) {
 
 export function forceEvent(s: GameState, eventId: string) {
   const ev = findEvent(eventId);
-  if (!ev) return;
+  if (!ev || !eventRuntimeEligible(s, ev.id)) return;
   if (ev.once && s.firedOnce.includes(ev.id)) return;
   if (s.pendingEvent) {
     s.forcedEventQueue ??= [];
@@ -1191,7 +1239,7 @@ function activateNextForcedEvent(s: GameState) {
   while (s.forcedEventQueue?.length && !s.pendingEvent) {
     const eventId = s.forcedEventQueue.shift()!;
     const ev = findEvent(eventId);
-    if (!ev || (ev.once && s.firedOnce.includes(ev.id))) continue;
+    if (!ev || !eventRuntimeEligible(s, ev.id) || (ev.once && s.firedOnce.includes(ev.id))) continue;
     activateStaticEvent(s, ev);
   }
 }
@@ -1474,7 +1522,10 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
   }
 
   // 地点专属事件；若无事件，则按危险度结算一次探索收获
-  const triggered = maybeTrigger(s, 'adventure', undefined, locationId);
+  // 深夜调查跨过 00:00 时，日结事件会先占用 pendingEvent。交易会死亡现场仍应排在其后，
+  // 但只有此刻确实处于营业夜且本人在场才可入队；普通黑市夜不会生成这条队列。
+  const triggered = queueTradeFairDeathAfterMidnightSettlement(s, locationId)
+    || maybeTrigger(s, 'adventure', undefined, locationId);
   if (!triggered) {
     addLog(s, comp
       ? `你和${comp.name}把${loc.name}仔细查了一遍，没有发现新的异常。可带走的普通物资需要另行搜集。`
@@ -2329,6 +2380,8 @@ export function commitOrganizationPathway(s: GameState, organizationId: Organiza
     pathLead.formulaStatus = 'verified';
     if (!s.formulas.includes(`${pathwayId}9`)) s.formulas.push(`${pathwayId}9`);
     for (const source of Object.values(s.materialSources).filter(source => source.pathwayId === pathwayId && source.targetSequence === 9)) source.unlocked = true;
+    const auxiliaryId = findPathway(pathwayId)?.seq9.auxiliary;
+    if (auxiliaryId) s.items[auxiliaryId] = (s.items[auxiliaryId] ?? 0) + 1;
   }
   recordOrganizationRoute(s, organizationId, `commit:${pathwayId}`, 'passed');
   recordRoute(s, pathwayId, 'organization_commitment', 'passed', organizationId);
@@ -2852,6 +2905,233 @@ export function confirmOfficialCommitment(s: GameState): ActionResult {
 }
 
 // ============ 黑市与配方交易 ============
+const TRADE_FAIR_ROUTE_STATUSES = new Set(['contacted', 'qualified', 'member', 'offer_pending', 'committed']);
+export const TRADE_FAIR_SCHEDULE_LABEL = '周三、周六 22:00–2:00';
+export type TradeFairConfirmationMode = 'materials' | 'characteristic' | 'purchased_dose';
+
+function validTradeFairInvitation(s: GameState): boolean {
+  const invitation = s.tradeFair?.invitation;
+  if (!invitation) return false;
+  if (invitation.sourceKind === 'organization') {
+    const organizationId = invitation.sourceId as OrganizationId;
+    return organizationId !== 'nightwatch'
+      && !!ORGANIZATIONS.find(org => org.id === organizationId)
+      && TRADE_FAIR_ROUTE_STATUSES.has(organizationRoute(s, organizationId).status);
+  }
+  return invitation.sourceId === 'victor'
+    && organizationRoute(s, 'iron_and_blood').history.some(record => record.step === 'trade_fair_invitation:victor'
+      && record.outcome === 'passed' && record.evidenceId === 'trade_fair_invitation');
+}
+
+export function hasTradeFairInvitation(s: GameState): boolean {
+  return validTradeFairInvitation(s) && s.intel.includes('trade_fair_invitation');
+}
+
+export function tradeFairInvitationIssue(s: GameState, sourceId: string): string | null {
+  if (isBeyonder(s)) return '这条通用入门交易路线只面向尚未成为非凡者的人。';
+  if (s.atWork) return '工作期间不能索取地下交易会邀请。';
+  if (hasTradeFairInvitation(s)) return '你已经持有一份可核验的交易会担保邀请。';
+  if (sourceId === 'victor') {
+    if (s.currentLocation?.locationId !== 'black_market') return '需要在黑市后巷当面请维克多作保。';
+    if (!s.intel.includes('black_market')) return '你还没有掌握黑市的开门暗号。';
+    const trustIssue = trustedNpcIssue(s, 'victor', VISIT_FAVOR);
+    if (trustIssue) return trustIssue;
+    if (npcLocation(NPCS.find(npc => npc.id === 'victor')!, s.day, s.hour) !== '黑市后巷') return '维克多此刻不在黑市后巷办理担保。';
+    return null;
+  }
+  const organizationId = sourceId as OrganizationId;
+  if (organizationId === 'nightwatch') return '值夜者的官方渠道不为地下通用交易会作保。';
+  if (!ORGANIZATIONS.find(org => org.id === organizationId)
+    || !TRADE_FAIR_ROUTE_STATUSES.has(organizationRoute(s, organizationId).status)) {
+    return '需要先与一个可信组织建立正式接触，才能取得交易会担保。';
+  }
+  return null;
+}
+
+export function requestTradeFairInvitation(s: GameState, sourceId: string): ActionResult {
+  const issue = tradeFairInvitationIssue(s, sourceId);
+  if (issue) return { ok: false, msg: issue };
+  const sourceKind = sourceId === 'victor' ? 'npc' : 'organization';
+  s.tradeFair.invitation = { sourceKind, sourceId, acquiredDay: s.day, acquiredHour: s.hour };
+  if (!s.intel.includes('trade_fair_invitation')) s.intel.push('trade_fair_invitation');
+  if (!s.intel.includes('black_market')) s.intel.push('black_market');
+  if (sourceId === 'victor') {
+    recordOrganizationRoute(s, 'iron_and_blood', 'trade_fair_invitation:victor', 'passed', '维克多仅为通用交易会作保，不等同于组织接纳', 'trade_fair_invitation');
+  }
+  addLog(s, `你取得了一份有担保来源的秘密交易会邀请。地点与日程已核对为：黑市后巷，${TRADE_FAIR_SCHEDULE_LABEL}。购买不会锁定途径；真正调配或服食前还需做一次不可逆确认。`, 'good');
+  return { ok: true };
+}
+
+export function isTradeFairOpen(s: GameState): boolean {
+  if (!hasTradeFairInvitation(s) || s.currentLocation?.locationId !== 'black_market') return false;
+  const victor = NPCS.find(npc => npc.id === 'victor');
+  return !!victor && npcLocation(victor, s.day, s.hour) === '黑市后巷';
+}
+
+export function tradeFairAccessIssue(s: GameState): string | null {
+  if (!hasTradeFairInvitation(s)) return '你没有可核验的交易会邀请与担保日程。';
+  if (s.currentLocation?.locationId !== 'black_market') return '需要亲自抵达邀请指定的黑市后巷。';
+  if (!isTradeFairOpen(s)) return `交易会只在${TRADE_FAIR_SCHEDULE_LABEL}营业。`;
+  return null;
+}
+
+function committedPathwayId(s: GameState): string | null {
+  return Object.entries(s.pathwayLeads).find(([, lead]) => lead.commitment)?.[0] ?? null;
+}
+
+function hasOfficialNightwatchCommitment(s: GameState): boolean {
+  const route = organizationRoute(s, 'nightwatch');
+  if (route.status !== 'committed' || !route.selectedPathway) return false;
+  const lead = pathwayLead(s, route.selectedPathway);
+  return lead.commitment && lead.organizationId === 'nightwatch';
+}
+
+export function getTradeFairCatalog(s: GameState): readonly TradeFairProductDef[] {
+  if (tradeFairAccessIssue(s) || isBeyonder(s) || hasOfficialNightwatchCommitment(s)) return [];
+  const locked = committedPathwayId(s);
+  return TRADE_FAIR_PRODUCTS.filter(product => !locked || product.pathwayId === locked);
+}
+
+export function tradeFairProductIssue(s: GameState, productId: string): string | null {
+  const access = tradeFairAccessIssue(s);
+  if (access) return access;
+  if (isBeyonder(s)) return '成为非凡者后不能再使用凡人序列9入门货单。';
+  if (hasOfficialNightwatchCommitment(s)) return '值夜者的官方途径已进入监督流程，不能改用地下交易会商品。';
+  const product = TRADE_FAIR_PRODUCTS.find(candidate => candidate.id === productId);
+  if (!product || !getTradeFairCatalog(s).some(candidate => candidate.id === productId)) return '这件商品不在当前担保货单中。';
+  if ((s.tradeFair.stock[product.id] ?? 0) <= 0) return '这件固定商品本期已经售罄。';
+  if (product.kind === 'formula' && product.formulaId && s.formulas.includes(product.formulaId)) return '这份配方你已经持有。';
+  if (s.pence < product.price) return '钱不够。';
+  return null;
+}
+
+export function buyTradeFairProduct(s: GameState, productId: string): ActionResult {
+  const issue = tradeFairProductIssue(s, productId);
+  if (issue) return { ok: false, msg: issue };
+  const product = TRADE_FAIR_PRODUCTS.find(candidate => candidate.id === productId)!;
+  s.pence -= product.price;
+  s.tradeFair.stock[product.id]--;
+  s.tradeFair.purchasedCounts[product.id] = (s.tradeFair.purchasedCounts[product.id] ?? 0) + 1;
+  if (product.kind === 'formula' && product.formulaId) {
+    if (!s.formulas.includes(product.formulaId)) s.formulas.push(product.formulaId);
+    const lead = pathwayLead(s, product.pathwayId);
+    if (!lead.commitment) lead.currentSource = 'trade_fair';
+    lead.formulaStatus = 'verified';
+    lead.history.push({ day: s.day, step: `trade_fair_formula:${product.formulaId}`, outcome: 'passed', note: '担保货单核验' });
+    addLog(s, `你买下了经担保核验的【${formulaName(product.formulaId)}】。这笔购买仍未锁定途径。`, 'good');
+  } else if (product.itemId) {
+    s.items[product.itemId] = (s.items[product.itemId] ?? 0) + 1;
+    addLog(s, `你按固定货单买下了【${findItem(product.itemId)?.name ?? product.itemId}】。主持方核验了封签与途径，但购买仍未锁定选择。`, 'info');
+  }
+  return { ok: true };
+}
+
+export function verifiedTradeFairItemQuantity(s: GameState, itemId: string): number {
+  const guaranteed = TRADE_FAIR_PRODUCTS.filter(product => product.itemId === itemId).reduce((sum, product) => {
+    const bought = s.tradeFair?.purchasedCounts?.[product.id] ?? 0;
+    const consumed = s.tradeFair?.consumedPurchasedCounts?.[product.id] ?? 0;
+    return sum + Math.max(0, bought - consumed);
+  }, 0);
+  return Math.min(Math.max(0, s.items?.[itemId] ?? 0), guaranteed);
+}
+
+export function isTradeFairCharacteristicIdentified(s: GameState, itemId: string): boolean {
+  const item = findItem(itemId);
+  return item?.seq9Product?.kind === 'characteristic'
+    && (verifiedTradeFairItemQuantity(s, itemId) > 0 || s.tradeFair?.identifiedCharacteristicIds?.includes(itemId));
+}
+
+function consumeItemWithTradeCredential(s: GameState, itemId: string) {
+  s.items[itemId] = Math.max(0, (s.items[itemId] ?? 0) - 1);
+  const product = TRADE_FAIR_PRODUCTS.find(candidate => candidate.itemId === itemId
+    && (s.tradeFair.purchasedCounts[candidate.id] ?? 0) > (s.tradeFair.consumedPurchasedCounts[candidate.id] ?? 0));
+  if (product) s.tradeFair.consumedPurchasedCounts[product.id] = (s.tradeFair.consumedPurchasedCounts[product.id] ?? 0) + 1;
+}
+
+function characteristicVerifiedForPathway(s: GameState, pathwayId: string): boolean {
+  const itemId = `${pathwayId}9_characteristic`;
+  const knowledge = s.itemKnowledge?.[itemId];
+  return (s.items[itemId] ?? 0) > 0 && (isTradeFairCharacteristicIdentified(s, itemId)
+    || !!knowledge?.spiritVisionInspected && knowledge.identifiedAsOccult === true);
+}
+
+export function appraiseCharacteristicAtTradeFair(s: GameState, itemId: string): ActionResult {
+  const access = tradeFairAccessIssue(s);
+  if (access) return { ok: false, msg: access };
+  const item = findItem(itemId);
+  if (!item?.seq9Product || item.seq9Product.kind !== 'characteristic' || (s.items[itemId] ?? 0) <= 0) {
+    return { ok: false, msg: '你没有可交给担保人核验的完整序列9特性。' };
+  }
+  if (!s.confirmedBeyonderDeaths.some(record => record.characteristicItemId === itemId)) {
+    return { ok: false, msg: '这份残留缺少可核验的死亡与封存记录，交易会拒绝为它背书。' };
+  }
+  if (isTradeFairCharacteristicIdentified(s, itemId)) return { ok: false, msg: '这份特性已经完成担保鉴定。' };
+  if (s.pence < 24) return { ok: false, msg: '付不起这次封签与鉴定费用。' };
+  s.pence -= 24;
+  s.tradeFair.identifiedCharacteristicIds.push(itemId);
+  addLog(s, `担保人核对死亡记录、封存时间与灵性结构后，确认这是【${findPathway(item.seq9Product.pathwayId)?.name}序列9】的完整特性。它不能生吞，只能连同对应辅助材料调配。`, 'good');
+  return { ok: true };
+}
+
+export function tradeFairConfirmationIssue(s: GameState, pathwayId: string, mode: TradeFairConfirmationMode): string | null {
+  if (!isAtHome(s)) return '请先回到住处，在安全环境中完成不可逆的途径确认。';
+  if (isBeyonder(s)) return '你已经是非凡者。';
+  if (!hasTradeFairInvitation(s)) return '缺少可核验的交易会担保来源。';
+  const pathway = findPathway(pathwayId);
+  if (!pathway) return '途径数据缺失。';
+  if (hasOfficialNightwatchCommitment(s) || pathwayLead(s, pathwayId).organizationId === 'nightwatch') {
+    return '值夜者的官方途径必须继续接受教会监督，不能改用地下交易会的成品或调配路线。';
+  }
+  const locked = committedPathwayId(s);
+  if (locked && locked !== pathwayId) return `资格已经锁定到${findPathway(locked)?.name ?? locked}，不能改用另一途径。`;
+  const lead = pathwayLead(s, pathwayId);
+  if (locked === pathwayId && lead.preparationMode === (mode === 'purchased_dose' ? 'purchased_dose' : mode === 'characteristic' ? 'characteristic_brew' : 'trade_fair_brew')) {
+    return '这条途径与准备方式已经完成确认。';
+  }
+  if (mode === 'purchased_dose') {
+    if (verifiedTradeFairItemQuantity(s, `${pathwayId}9_potion`) <= 0) return '没有经该交易会担保的对应成品魔药。';
+    return null;
+  }
+  if (!s.formulas.includes(`${pathwayId}9`) || lead.formulaStatus !== 'verified'
+    || (!lead.organizationId && lead.currentSource !== 'trade_fair')) {
+    return '需要先购买并留存该途径的担保序列9配方。';
+  }
+  if ((s.items[pathway.seq9.auxiliary] ?? 0) <= 0) return '缺少对应序列9辅助材料包。';
+  if (mode === 'materials' && pathway.seq9.materials.some(itemId => (s.items[itemId] ?? 0) <= 0)) return '两件主材料必须完整备齐，不能与一份特性混搭。';
+  if (mode === 'characteristic' && !characteristicVerifiedForPathway(s, pathwayId)) return '缺少已由可信方式鉴定的同途径序列9完整特性。';
+  return null;
+}
+
+export function confirmTradeFairPathway(s: GameState, pathwayId: string, mode: TradeFairConfirmationMode): ActionResult {
+  const issue = tradeFairConfirmationIssue(s, pathwayId, mode);
+  if (issue) return { ok: false, msg: issue };
+  const lead = pathwayLead(s, pathwayId);
+  if (!lead.commitment) {
+    lead.currentSource = 'trade_fair';
+    lead.organizationId = undefined;
+    lead.commitment = true;
+  }
+  lead.formulaStatus = mode === 'purchased_dose' ? lead.formulaStatus : 'verified';
+  lead.preparationMode = mode === 'purchased_dose' ? 'purchased_dose' : mode === 'characteristic' ? 'characteristic_brew' : 'trade_fair_brew';
+  lead.routeStep = 'trade_fair_confirmed';
+  lead.history.push({ day: s.day, step: `trade_fair_commit:${mode}`, outcome: 'passed', note: '通用地下交易会途径确认' });
+  addLog(s, `你确认以秘密交易会担保来源进入【${findPathway(pathwayId)?.name}】。从这一刻起，其他途径的入门魔药对你永久关闭。`, 'system');
+  return { ok: true };
+}
+
+function extractCharacteristicFromConfirmedDeath(s: GameState, sourceId: string): boolean {
+  const source = BEYONDER_DEATH_SOURCES.find(candidate => candidate.id === sourceId);
+  const activeEvent = currentEvent(s);
+  if (!source || activeEvent?.id !== source.eventId || !isTradeFairOpen(s)
+    || s.confirmedBeyonderDeaths.some(record => record.sourceId === sourceId)) return false;
+  s.confirmedBeyonderDeaths.push({
+    sourceId, npcId: source.npcId, pathwayId: source.pathwayId, sequence: 9,
+    characteristicItemId: source.characteristicItemId, confirmedDay: s.day, confirmedHour: s.hour,
+  });
+  s.items[source.characteristicItemId] = (s.items[source.characteristicItemId] ?? 0) + 1;
+  return true;
+}
+
 export function buyItem(s: GameState, itemId: string, price: number, sellerId?: string): ActionResult {
   if (s.atWork) return { ok: false, msg: '工作期间不能外出交易。' };
   if (itemId === 'occult_notes') return { ok: false, msg: '神秘学札记已改为固定书目，只能从可信书源取得。' };
@@ -2937,34 +3217,55 @@ export function canDrink(s: GameState, pathwayId: string): { ok: boolean; missin
   if (isBeyonder(s)) return { ok: false, missing: ['你已是非凡者'] };
   const pw = findPathway(pathwayId);
   if (!pw) return { ok: false, missing: ['途径数据缺失'] };
-  const committed = Object.entries(s.pathwayLeads).find(([, lead]) => lead.commitment);
-  if (committed && committed[0] !== pathwayId) return { ok: false, missing: [`资格已锁定到${findPathway(committed[0])?.name ?? committed[0]}途径`] };
+  const committed = committedPathwayId(s);
+  if (committed && committed !== pathwayId) return { ok: false, missing: [`资格已锁定到${findPathway(committed)?.name ?? committed}途径`] };
   const lead = pathwayLead(s, pathwayId);
-  if (!lead.commitment || !lead.organizationId) return { ok: false, missing: ['尚未在已加入组织内承诺这条途径'] };
-  const orgRoute = organizationRoute(s, lead.organizationId);
-  if (orgRoute.status !== 'committed' || orgRoute.selectedPathway !== pathwayId || joinedOrganization(s) !== lead.organizationId) {
-    return { ok: false, missing: ['组织成员身份、报价与途径准备不匹配'] };
+  if (!lead.commitment) return { ok: false, missing: ['尚未完成不可逆的途径确认'] };
+  if (lead.organizationId === 'nightwatch' && lead.preparationMode !== 'official_dose') {
+    return { ok: false, missing: ['值夜者官方途径不能改用地下交易会商品'] };
   }
-  const expectedPreparation = organizationPreparation(lead.organizationId);
+  const tradeFairRoute = lead.currentSource === 'trade_fair' && !lead.organizationId && lead.routeStep === 'trade_fair_confirmed';
+  let organizationRouteValid = false;
+  let expectedPreparation: ReturnType<typeof organizationPreparation> | null = null;
+  if (lead.organizationId) {
+    const orgRoute = organizationRoute(s, lead.organizationId);
+    organizationRouteValid = orgRoute.status === 'committed' && orgRoute.selectedPathway === pathwayId && joinedOrganization(s) === lead.organizationId;
+    expectedPreparation = organizationPreparation(lead.organizationId);
+  }
+  if (!tradeFairRoute && !organizationRouteValid) return { ok: false, missing: ['组织记录或交易会担保与途径确认不匹配'] };
+
   if (lead.preparationMode === 'official_dose') {
-    if (lead.currentSource !== expectedPreparation.source || lead.preparationMode !== expectedPreparation.mode) {
+    if (!expectedPreparation || lead.currentSource !== expectedPreparation.source || lead.preparationMode !== expectedPreparation.mode) {
       return { ok: false, missing: ['途径来源或准备方式与组织记录不匹配'] };
     }
-    if (!['nightwatch', 'psychology_alchemists'].includes(lead.organizationId) || lead.routeStep !== 'dose_ready') {
+    if (!lead.organizationId || !['nightwatch', 'psychology_alchemists'].includes(lead.organizationId) || lead.routeStep !== 'dose_ready') {
       return { ok: false, missing: ['官方成品魔药资格与当前途径不匹配'] };
     }
     return { ok: true, missing: [], mode: 'official_dose' };
   }
+  if (lead.preparationMode === 'purchased_dose') {
+    const itemId = `${pathwayId}9_potion`;
+    return verifiedTradeFairItemQuantity(s, itemId) > 0
+      ? { ok: true, missing: [], mode: 'purchased_dose' }
+      : { ok: false, missing: ['缺少交易会担保的对应成品魔药'], mode: 'purchased_dose' };
+  }
   if (!s.formulas.includes(pathwayId + '9')) return { ok: false, missing: ['没有配方'] };
   if (lead.formulaStatus !== 'verified') return { ok: false, missing: ['配方尚未由可信渠道验证'] };
-  if (!['self_brew', 'supervised_brew', 'characteristic_brew'].includes(lead.preparationMode ?? '')) {
+  if (!['self_brew', 'supervised_brew', 'trade_fair_brew', 'characteristic_brew'].includes(lead.preparationMode ?? '')) {
     return { ok: false, missing: ['尚未解锁明确的调配准备方式'] };
   }
   if (lead.preparationMode === 'self_brew' && !s.knowledge.includes('potion_brew')) {
     return { ok: false, missing: ['自行调配需要可信训练与魔药调配知识'] };
   }
-  if (lead.currentSource !== expectedPreparation.source || lead.preparationMode !== expectedPreparation.mode) {
+  if (lead.preparationMode === 'supervised_brew' && (!expectedPreparation
+    || lead.currentSource !== expectedPreparation.source || expectedPreparation.mode !== 'supervised_brew')) {
     return { ok: false, missing: ['途径来源或准备方式与组织记录不匹配'] };
+  }
+  if ((s.items[pw.seq9.auxiliary] ?? 0) <= 0) return { ok: false, missing: [pw.seq9.auxiliary], mode: lead.preparationMode };
+  if (lead.preparationMode === 'characteristic_brew') {
+    return characteristicVerifiedForPathway(s, pathwayId)
+      ? { ok: true, missing: [], mode: 'characteristic_brew' }
+      : { ok: false, missing: ['缺少已鉴定的同途径序列9完整特性'], mode: 'characteristic_brew' };
   }
   const missing = pw.seq9.materials.filter(m => (s.items[m] ?? 0) <= 0);
   return { ok: missing.length === 0, missing, mode: lead.preparationMode };
@@ -2978,10 +3279,21 @@ export function drinkPotion(s: GameState, pathwayId: string): ActionResult {
   if (check.mode === 'official_dose') return drinkOfficialDose(s, pathwayId);
   const pw = findPathway(pathwayId)!;
   // 确定性检定：准备分 = 85 + 理智修正 + 知识加成 + 神秘学技能×2 − 污染×0.3，≥60 成功
-  const rate = Math.round(85 + (s.stats.san - 50) * 0.1 + (s.knowledge.includes('potion_brew') ? 5 : 0) + s.skills.occult * 2 - s.stats.cor * 0.3);
+  const rate = Math.round(85 + (s.stats.san - 50) * 0.1 + (s.knowledge.includes('potion_brew') ? 5 : 0)
+    + (check.mode === 'purchased_dose' ? 5 : 0) + s.skills.occult * 2 - s.stats.cor * 0.3);
   addLog(s, `——服食魔药：${pw.name}·序列9——`, 'system');
-  addLog(s, '你复核封签、材料和调配记录。瓶中的液体在煤气灯下泛着不祥的微光，任何遗漏都只能由身体承担。', 'system');
-  for (const m of pw.seq9.materials) s.items[m] = Math.max(0, (s.items[m] ?? 0) - 1);
+  if (check.mode === 'purchased_dose') {
+    addLog(s, '你复核交易会担保封签、批次与途径确认。成品已经调配完成，但服食本身仍是不可逆的风险。', 'system');
+    consumeItemWithTradeCredential(s, `${pathwayId}9_potion`);
+  } else if (check.mode === 'characteristic_brew') {
+    addLog(s, '你把已鉴定的完整特性作为两件主材料的整组替代，并加入对应辅助材料。没有混入任何单件主材，也没有尝试生吞特性。', 'system');
+    consumeItemWithTradeCredential(s, `${pathwayId}9_characteristic`);
+    consumeItemWithTradeCredential(s, pw.seq9.auxiliary);
+  } else {
+    addLog(s, '你逐项复核两件主材料、辅助材料包与调配记录。瓶中的液体在煤气灯下泛着不祥的微光，任何遗漏都只能由身体承担。', 'system');
+    for (const itemId of pw.seq9.materials) consumeItemWithTradeCredential(s, itemId);
+    consumeItemWithTradeCredential(s, pw.seq9.auxiliary);
+  }
   advanceHours(s, 1);
   if (rate >= 60) {
     s.pathwayId = pathwayId;
@@ -3009,6 +3321,12 @@ export function drinkPotion(s: GameState, pathwayId: string): ActionResult {
     }
   }
   return { ok: true };
+}
+
+export function drinkPurchasedPotion(s: GameState, pathwayId: string): ActionResult {
+  const lead = pathwayLead(s, pathwayId);
+  if (lead.preparationMode !== 'purchased_dose') return { ok: false, msg: '需要先明确确认这条途径，并选择交易会担保成品作为准备方式。' };
+  return drinkPotion(s, pathwayId);
 }
 
 export function drinkOfficialDose(s: GameState, pathwayId = 'sleepless'): ActionResult {
@@ -3611,6 +3929,8 @@ export function loadGame(): GameState | null {
       books?: GameState['books'];
       languages?: GameState['languages'];
       itemKnowledge?: GameState['itemKnowledge'];
+      tradeFair?: GameState['tradeFair'];
+      confirmedBeyonderDeaths?: GameState['confirmedBeyonderDeaths'];
       canReadRoselleScript?: boolean;
       jobId?: string | null;
       atWork?: boolean;
@@ -3620,6 +3940,19 @@ export function loadGame(): GameState | null {
     };
     const loadedVersion = Number.isInteger(s.schemaVersion) ? s.schemaVersion! : 6;
     const hadVisitedLocations = Array.isArray(s.visitedLocations);
+    s.items = s.items && typeof s.items === 'object' ? s.items : {};
+    if (loadedVersion < 19) {
+      const seq9ItemRenames: Record<string, string> = {
+        deer_heart: 'blood_red_chestnut', iron_fern: 'activated_marsh_crystal',
+        bat_eye: 'midnight_beauty_flower', deep_sleep_flower: 'six_legged_owl_eye',
+        gecko_skin: 'treasure_eating_bug', mold_spore: 'phantom_crystal',
+      };
+      for (const [legacyId, currentId] of Object.entries(seq9ItemRenames)) {
+        const amount = Number.isFinite(s.items[legacyId]) ? Math.max(0, Math.floor(s.items[legacyId])) : 0;
+        if (amount > 0) s.items[currentId] = (s.items[currentId] ?? 0) + amount;
+        s.items[legacyId] = 0;
+      }
+    }
     // v6 旧存档迁移：按出身补合理初始职业；缺少/失效的在岗状态一律安全回到非工作场景。
     if (s.jobId === undefined) s.jobId = ORIGINS.find(o => o.id === s.originId)?.initialJobId ?? null;
     if (s.jobId && !JOBS.some(j => j.id === s.jobId)) s.jobId = null;
@@ -3766,6 +4099,97 @@ export function loadGame(): GameState | null {
       const route = oldOrganizationRoutes[org.id];
       if (route && typeof route === 'object') s.organizationRoutes[org.id] = { ...s.organizationRoutes[org.id], ...route, history: Array.isArray(route.history) ? route.history : [] };
     }
+    const rawTradeFair = s.tradeFair && typeof s.tradeFair === 'object' ? s.tradeFair : undefined;
+    const cleanTradeFair = createTradeFairState();
+    if (loadedVersion >= 19 && rawTradeFair) {
+      const rawInvitation = rawTradeFair.invitation;
+      if (rawInvitation && ['organization', 'npc'].includes(rawInvitation.sourceKind)
+        && typeof rawInvitation.sourceId === 'string'
+        && Number.isInteger(rawInvitation.acquiredDay) && rawInvitation.acquiredDay >= 1
+        && Number.isInteger(rawInvitation.acquiredHour) && rawInvitation.acquiredHour >= 0 && rawInvitation.acquiredHour <= 23) {
+        cleanTradeFair.invitation = { ...rawInvitation };
+      }
+      for (const product of TRADE_FAIR_PRODUCTS) {
+        const stock = rawTradeFair.stock?.[product.id];
+        const purchased = rawTradeFair.purchasedCounts?.[product.id];
+        const consumed = rawTradeFair.consumedPurchasedCounts?.[product.id];
+        const coherent = Number.isInteger(stock) && stock >= 0 && stock <= product.initialStock
+          && Number.isInteger(purchased) && purchased === product.initialStock - stock
+          && Number.isInteger(consumed) && consumed >= 0 && consumed <= purchased;
+        if (!coherent) continue;
+        cleanTradeFair.stock[product.id] = stock;
+        cleanTradeFair.purchasedCounts[product.id] = purchased;
+        cleanTradeFair.consumedPurchasedCounts[product.id] = consumed;
+      }
+    }
+    s.tradeFair = cleanTradeFair;
+    if (!validTradeFairInvitation(s)) {
+      s.tradeFair.invitation = null;
+      s.intel = Array.isArray(s.intel) ? s.intel.filter(id => id !== 'trade_fair_invitation') : [];
+    } else {
+      s.intel = Array.isArray(s.intel) ? s.intel : [];
+      if (!s.intel.includes('trade_fair_invitation')) s.intel.push('trade_fair_invitation');
+      if (!s.intel.includes('black_market')) s.intel.push('black_market');
+    }
+
+    const seenDeaths = new Set<string>();
+    s.confirmedBeyonderDeaths = loadedVersion >= 19 && Array.isArray(s.confirmedBeyonderDeaths)
+      ? s.confirmedBeyonderDeaths.filter(record => {
+        if (!record || seenDeaths.has(record.sourceId)) return false;
+        const def = BEYONDER_DEATH_SOURCES.find(candidate => candidate.id === record.sourceId);
+        if (!def || !s.firedOnce.includes(def.eventId) || record.npcId !== def.npcId
+          || record.pathwayId !== def.pathwayId || record.sequence !== def.sequence
+          || record.characteristicItemId !== def.characteristicItemId
+          || !Number.isInteger(record.confirmedDay) || record.confirmedDay < 1
+          || !Number.isInteger(record.confirmedHour) || record.confirmedHour < 0 || record.confirmedHour > 23) return false;
+        seenDeaths.add(record.sourceId);
+        return true;
+      }) : [];
+    s.tradeFair.identifiedCharacteristicIds = loadedVersion >= 19 && Array.isArray(rawTradeFair?.identifiedCharacteristicIds)
+      ? [...new Set(rawTradeFair.identifiedCharacteristicIds.filter(itemId => {
+        const item = findItem(itemId);
+        return item?.seq9Product?.kind === 'characteristic'
+          && (s.confirmedBeyonderDeaths.some(record => record.characteristicItemId === itemId)
+            || verifiedTradeFairItemQuantity(s, itemId) > 0);
+      }))] : [];
+    for (const product of TRADE_FAIR_PRODUCTS.filter(candidate => candidate.kind === 'formula' && candidate.formulaId)) {
+      if ((s.tradeFair.purchasedCounts[product.id] ?? 0) <= 0) continue;
+      if (!s.formulas.includes(product.formulaId!)) s.formulas.push(product.formulaId!);
+      const lead = pathwayLead(s, product.pathwayId);
+      if (!lead.organizationId) lead.currentSource = 'trade_fair';
+      lead.formulaStatus = 'verified';
+    }
+    for (const pathway of PATHWAYS) {
+      const lead = pathwayLead(s, pathway.id);
+      if (lead.currentSource !== 'trade_fair') continue;
+      const hasFormulaPurchase = (s.tradeFair.purchasedCounts[`trade:${pathway.id}:formula`] ?? 0) > 0;
+      const confirmationMode = lead.preparationMode === 'purchased_dose' ? 'purchased_dose'
+        : lead.preparationMode === 'characteristic_brew' ? 'characteristic'
+          : lead.preparationMode === 'trade_fair_brew' ? 'materials' : null;
+      const hasPreparationPurchase = confirmationMode === 'purchased_dose'
+        ? (s.tradeFair.purchasedCounts[`trade:${pathway.id}:potion`] ?? 0) > 0
+        : confirmationMode === 'characteristic'
+          ? hasFormulaPurchase && ((s.tradeFair.purchasedCounts[`trade:${pathway.id}:characteristic`] ?? 0) > 0
+            || s.confirmedBeyonderDeaths.some(record => record.pathwayId === pathway.id))
+          : confirmationMode === 'materials' ? hasFormulaPurchase : false;
+      const hasConfirmedTradeRoute = lead.commitment && lead.routeStep === 'trade_fair_confirmed' && hasTradeFairInvitation(s)
+        && !!confirmationMode && hasPreparationPurchase
+        && lead.history.some(record => record.step === `trade_fair_commit:${confirmationMode}` && record.outcome === 'passed');
+      if (hasConfirmedTradeRoute) continue;
+      if (hasFormulaPurchase) {
+        const formulaHistory = lead.history.filter(record => record.step === `trade_fair_formula:${pathway.id}9` && record.outcome === 'passed');
+        Object.assign(lead, blankPathwayLead(), { currentSource: 'trade_fair', formulaStatus: 'verified', history: formulaHistory });
+      } else {
+        Object.assign(lead, blankPathwayLead());
+      }
+    }
+    if (loadedVersion < 19 && !isBeyonder(s)) {
+      for (const pathway of PATHWAYS) {
+        const lead = pathwayLead(s, pathway.id);
+        if (lead.commitment && lead.preparationMode && lead.preparationMode !== 'official_dose'
+          && (s.items[pathway.seq9.auxiliary] ?? 0) <= 0) s.items[pathway.seq9.auxiliary] = 1;
+      }
+    }
     // 猎犬酒馆转介必须同时保有权威来源线索与行动时写入的结构化凭据。
     // 单独注入 clue id 或伪造来源不能在读档后开放黑荆棘。
     if (!hasVerifiedBlackthornReferral(s)) {
@@ -3784,6 +4208,23 @@ export function loadGame(): GameState | null {
           targetSequence: s.materialSources[id].targetSequence,
           acquisitionMode: s.materialSources[id].acquisitionMode,
         };
+      }
+    }
+    if (loadedVersion < 19) {
+      const sourceRenames: Record<string, string> = {
+        'hunter:deer_heart': 'hunter:blood_red_chestnut',
+        'hunter:iron_fern': 'hunter:activated_marsh_crystal',
+        'sleepless:bat_eye': 'sleepless:midnight_beauty_flower',
+        'sleepless:deep_sleep_flower': 'sleepless:six_legged_owl_eye',
+        'apprentice:gecko_skin': 'apprentice:treasure_eating_bug',
+        'apprentice:mold_spore': 'apprentice:phantom_crystal',
+      };
+      for (const [legacyId, currentId] of Object.entries(sourceRenames)) {
+        const legacy = oldMaterialSources[legacyId];
+        const current = s.materialSources[currentId];
+        if (!legacy || !current) continue;
+        current.unlocked = legacy.unlocked === true;
+        current.remaining = Number.isInteger(legacy.remaining) ? Math.max(0, Math.min(1, legacy.remaining)) : current.remaining;
       }
     }
     s.visitedLocations = Array.isArray(s.visitedLocations)

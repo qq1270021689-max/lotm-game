@@ -256,7 +256,7 @@ describe('v7 到 v8 迁移', () => {
     old.pathwayLeads.sleepless.history = [{ day: 3, step: 'night_observation', outcome: 'passed' }];
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(asV7(old)));
     const first = loadGame()!;
-    expect(first.schemaVersion).toBe(18);
+    expect(first.schemaVersion).toBe(19);
     expect(first.organizationRoutes.nightwatch).toMatchObject({ status: 'qualified', routeStep: 'offer_pending' });
     expect(first.pathwayLeads.sleepless).toMatchObject({ routeStep: 'none', commitment: false });
     expect(first.visitedLocations).toEqual([]);
@@ -286,6 +286,13 @@ describe('v8 到 v9 来源一致性迁移', () => {
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(legacy));
   }
 
+  function addLegacyHunterSource(state: GameState, legacyItemId: 'deer_heart' | 'iron_fern', currentItemId: 'blood_red_chestnut' | 'activated_marsh_crystal') {
+    const currentId = `hunter:${currentItemId}`;
+    const legacyId = `hunter:${legacyItemId}`;
+    state.materialSources[legacyId] = { ...state.materialSources[currentId], sourceId: legacyId, itemId: legacyItemId };
+    delete state.materialSources[currentId];
+  }
+
   it('缺少地点与NPC来源证明的旧v8普通人会回退组织、地点日记与材料状态', () => {
     const old = fresh();
     old.leads.iron_blood_token.stage = 'verified';
@@ -302,6 +309,7 @@ describe('v8 到 v9 来源一致性迁移', () => {
       routeStep: 'dose_ready', preparationMode: 'supervised_brew', formulaStatus: 'verified',
     });
     old.formulas.push('hunter9', 'apprentice9', 'seer9');
+    addLegacyHunterSource(old, 'deer_heart', 'blood_red_chestnut');
     old.materialSources['hunter:deer_heart'].unlocked = true;
     old.materialSources['hunter:deer_heart'].remaining = 0;
     old.items.deer_heart = 1;
@@ -311,7 +319,7 @@ describe('v8 到 v9 来源一致性迁移', () => {
     saveAsV8(old);
 
     const loaded = loadGame()!;
-    expect(loaded.schemaVersion).toBe(18);
+    expect(loaded.schemaVersion).toBe(19);
     expect(loaded.visitedLocations).toEqual([]);
     expect(loaded.leads.iron_blood_token.stage).toBe('unknown');
     expect(loaded.leads.abraham_door_map.stage).toBe('unknown');
@@ -321,7 +329,7 @@ describe('v8 到 v9 来源一致性迁移', () => {
     expect(loaded.organizationRoutes.secret_order.status).toBe('unknown');
     expect(loaded.pathwayLeads.hunter.commitment).toBe(false);
     expect(loaded.formulas).not.toEqual(expect.arrayContaining(['hunter9', 'apprentice9', 'seer9']));
-    expect(loaded.materialSources['hunter:deer_heart']).toMatchObject({ unlocked: false, remaining: 1 });
+    expect(loaded.materialSources['hunter:blood_red_chestnut']).toMatchObject({ unlocked: false, remaining: 1 });
     expect(loaded.items.deer_heart ?? 0).toBe(0);
     expect(Object.values(loaded.diaryPages).every(page => !page.acquired && !page.operationalVerified)).toBe(true);
     saveGame(loaded);
@@ -359,6 +367,8 @@ describe('v8 到 v9 来源一致性迁移', () => {
       routeStep: 'dose_ready', preparationMode: 'supervised_brew', formulaStatus: 'verified',
     });
     old.formulas.push('hunter9');
+    addLegacyHunterSource(old, 'deer_heart', 'blood_red_chestnut');
+    addLegacyHunterSource(old, 'iron_fern', 'activated_marsh_crystal');
     old.materialSources['hunter:deer_heart'].unlocked = true;
     old.materialSources['hunter:deer_heart'].remaining = 0;
     old.items.deer_heart = 1;
@@ -370,10 +380,10 @@ describe('v8 到 v9 来源一致性迁移', () => {
     const loaded = loadGame()!;
     expect(loaded.organizationRoutes.iron_and_blood).toMatchObject({ status: 'committed', selectedPathway: 'hunter' });
     expect(loaded.pathwayLeads.hunter).toMatchObject({ organizationId: 'iron_and_blood', commitment: true });
-    expect(loaded.materialSources['hunter:deer_heart']).toMatchObject({ unlocked: true, remaining: 0, locationId: 'manor' });
-    expect(loaded.items.deer_heart).toBe(1);
-    expect(loaded.materialSources['hunter:iron_fern']).toMatchObject({ unlocked: true, remaining: 1, locationId: 'honakisu' });
-    expect(loaded.items.iron_fern ?? 0).toBe(0);
+    expect(loaded.materialSources['hunter:blood_red_chestnut']).toMatchObject({ unlocked: true, remaining: 0, locationId: 'manor' });
+    expect(loaded.items.blood_red_chestnut).toBe(1);
+    expect(loaded.materialSources['hunter:activated_marsh_crystal']).toMatchObject({ unlocked: true, remaining: 1, locationId: 'honakisu' });
+    expect(loaded.items.activated_marsh_crystal ?? 0).toBe(0);
   });
 
   it('旧v8已成为非凡者的完成态不被来源重锁且读取幂等', () => {
@@ -386,16 +396,17 @@ describe('v8 到 v9 来源一致性迁移', () => {
       routeStep: 'completed', preparationMode: 'supervised_brew', formulaStatus: 'verified',
     });
     old.formulas.push('hunter9');
+    addLegacyHunterSource(old, 'deer_heart', 'blood_red_chestnut');
     old.materialSources['hunter:deer_heart'].unlocked = true;
     old.materialSources['hunter:deer_heart'].remaining = 0;
     Object.assign(old.diaryPages.diary_door_fragment, { acquired: true, decoded: true, authenticity: 'authentic', operationalVerified: true });
     saveAsV8(old);
 
     const loaded = loadGame()!;
-    expect(loaded).toMatchObject({ schemaVersion: 18, pathwayId: 'hunter', sequence: 9 });
+    expect(loaded).toMatchObject({ schemaVersion: 19, pathwayId: 'hunter', sequence: 9 });
     expect(loaded.organizationRoutes.iron_and_blood.status).toBe('committed');
     expect(loaded.pathwayLeads.hunter).toMatchObject({ commitment: true, routeStep: 'completed' });
-    expect(loaded.materialSources['hunter:deer_heart']).toMatchObject({ unlocked: true, remaining: 0 });
+    expect(loaded.materialSources['hunter:blood_red_chestnut']).toMatchObject({ unlocked: true, remaining: 0 });
     expect(loaded.diaryPages.diary_door_fragment).toMatchObject({ acquired: true, operationalVerified: true });
     saveGame(loaded);
     expect(loadGame()).toEqual(loaded);

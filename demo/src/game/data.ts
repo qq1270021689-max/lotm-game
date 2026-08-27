@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -247,7 +247,7 @@ export const PATHWAYS: Pathway[] = [
     seqNames: ['占卜家', '小丑', '魔术师', '无面人', '秘偶大师', '诡法师', '古代学者', '奇迹师', '诡秘侍者', '愚者'],
     seq9Ability: '灵摆与塔罗占卜：可从已知目标中整理象征性启示与行动方向；微弱的危险直觉。',
     actingHint: '常做占卜，但敬畏命运；不把结果说透。',
-    seq9: { materials: ['octopus_blood', 'star_crystal'] },
+    seq9: { materials: ['octopus_blood', 'star_crystal'], auxiliary: 'seer9_auxiliary' },
     seq8: { materials: ['goat_horn', 'face_rose'], ritual: '在众人的嘲笑或漠视中服食魔药。' },
   },
   {
@@ -257,7 +257,7 @@ export const PATHWAYS: Pathway[] = [
     seqNames: ['观众', '读心者', '心理医生', '催眠师', '梦境行者', '操纵师', '织梦人', '洞察者', '作家', '空想家'],
     seq9Ability: '洞察情绪：社交时能看到对方的情绪倾向与谎言苗头。',
     actingHint: '做听众而非主角；先观察后开口；绝不暴露非凡身份。',
-    seq9: { materials: ['manhal_eye', 'hornfish_blood'] },
+    seq9: { materials: ['manhal_eye', 'hornfish_blood'], auxiliary: 'spectator9_auxiliary' },
     seq8: { materials: ['toad_brain', 'lizard_scale'], ritual: '独处镜前，直视自己的倒影服食。' },
   },
   {
@@ -267,7 +267,7 @@ export const PATHWAYS: Pathway[] = [
     seqNames: ['猎人', '挑衅者', '纵火家', '阴谋家', '收割者', '铁血骑士', '战争主教', '天气术士', '征服者', '红祭司'],
     seq9Ability: '追踪与陷阱：冒险行动精力消耗降低，收获提升。',
     actingHint: '每日保持狩猎练习；猎物必有所获；不杀无价值的目标。',
-    seq9: { materials: ['deer_heart', 'iron_fern'] },
+    seq9: { materials: ['blood_red_chestnut', 'activated_marsh_crystal'], auxiliary: 'hunter9_auxiliary' },
     seq8: { materials: ['ape_brain', 'scorpion_sting'], ritual: '在一场冲突的怒火中服食魔药。' },
   },
   {
@@ -277,7 +277,7 @@ export const PATHWAYS: Pathway[] = [
     seqNames: ['不眠者', '午夜诗人', '梦魇', '安魂师', '灵巫', '守夜人', '恐惧主教', '隐秘之仆', '厄难骑士', '黑暗'],
     seq9Ability: '免除睡眠需求；夜视；深夜时段全判定加成。',
     actingHint: '昼伏夜出；守护他人的安眠；不在黑夜中恐惧。',
-    seq9: { materials: ['bat_eye', 'deep_sleep_flower'] },
+    seq9: { materials: ['midnight_beauty_flower', 'six_legged_owl_eye'], auxiliary: 'sleepless9_auxiliary' },
     seq8: { materials: ['nightingale_throat', 'jellyfish_crystal'], ritual: '于亲手写下的安眠诗吟诵声中服食。' },
   },
   {
@@ -287,7 +287,7 @@ export const PATHWAYS: Pathway[] = [
     seqNames: ['学徒', '戏法大师', '占星人', '记录官', '旅行家', '秘法师', '漫游者', '旅法师', '星之匙', '门'],
     seq9Ability: '仪式魔法快速学习；每日一次短暂穿墙（绕过部分障碍）。',
     actingHint: '每日学习新知识；好奇心必须有行动；对未知保持记录。',
-    seq9: { materials: ['gecko_skin', 'mold_spore'] },
+    seq9: { materials: ['treasure_eating_bug', 'phantom_crystal'], auxiliary: 'apprentice9_auxiliary' },
     seq8: { materials: ['parrot_tongue', 'mirror_mercury'], ritual: '完成一场无人识破的公开戏法后服食。' },
   },
 ];
@@ -319,12 +319,12 @@ const MATERIAL_SOURCE_BINDINGS: Record<string, { source: string; locationId: str
   star_crystal: { source: '东区码头的密封寄存箱', locationId: 'docks' },
   manhal_eye: { source: '东区码头的心理研究会样本箱', locationId: 'docks' },
   hornfish_blood: { source: '运河仓库的低温样本柜', locationId: 'canal' },
-  deer_heart: { source: '废弃庄园外围的猎物处理点', locationId: 'manor' },
-  iron_fern: { source: '霍纳奇斯山麓的定向采药点', locationId: 'honakisu' },
-  bat_eye: { source: '旧钟楼封锁物证库', locationId: 'old_tower' },
-  deep_sleep_flower: { source: '拉斐尔墓园的夜间花圃', locationId: 'graveyard' },
-  gecko_skin: { source: '废弃庄园门后温室', locationId: 'manor' },
-  mold_spore: { source: '旧钟楼背阴墙缝', locationId: 'old_tower' },
+  blood_red_chestnut: { source: '雾林庄园外围的血红栗林', locationId: 'manor' },
+  activated_marsh_crystal: { source: '霍纳奇斯山麓活化沼泽的结晶点', locationId: 'honakisu' },
+  midnight_beauty_flower: { source: '拉斐尔墓园的午夜花圃', locationId: 'graveyard' },
+  six_legged_owl_eye: { source: '旧钟楼封锁物证库', locationId: 'old_tower' },
+  treasure_eating_bug: { source: '废弃庄园门后温室', locationId: 'manor' },
+  phantom_crystal: { source: '旧钟楼背阴地窖', locationId: 'old_tower' },
 };
 export const MATERIAL_SOURCE_DEFS = [
   ...PATHWAYS.flatMap(pathway => pathway.seq9.materials.map(itemId => ({
@@ -411,12 +411,39 @@ export const ITEMS: ItemDef[] = [
   { id: 'star_crystal', name: '星水晶', desc: '对着光看，内部有星点缓缓移动。', category: 'occult', surfaceName: '带星点的晶体样本', surfaceDesc: '一枚密封晶体，内部似有反光，来源与性质仍待核验。', occultMarked: true, price: 55 },
   { id: 'manhal_eye', name: '曼哈尔鱼眼珠', desc: '一对浑圆的鱼眼，据说死后的曼哈尔鱼仍在观察世界。', category: 'occult', surfaceName: '防腐液中的眼状样本', surfaceDesc: '浸在防腐液里的圆形组织，标签只剩批次号。', occultMarked: true, price: 40 },
   { id: 'hornfish_blood', name: '羊角黑鱼血液', desc: '粘稠如墨，倒入水中会聚成羊角形状。', category: 'occult', surfaceName: '密封的黑色液体', surfaceDesc: '一瓶粘稠黑色液体，成分标签已经脱落。', occultMarked: true, price: 42 },
-  { id: 'deer_heart', name: '红角麋鹿心脏', desc: '离体已久，摸起来仍是温热的。', category: 'occult', surfaceName: '封存的动物组织', surfaceDesc: '严密包裹的动物组织，具体物种无法从外观确认。', occultMarked: true, price: 45 },
-  { id: 'iron_fern', name: '铁线蕨粉末', desc: '磨得极细的灰绿粉末，有铁锈味。', category: 'occult', surfaceName: '灰绿色粉末样本', surfaceDesc: '封口纸包里是带铁锈味的灰绿粉末。', occultMarked: true, price: 30 },
-  { id: 'bat_eye', name: '夜光蝙蝠眼珠', desc: '在黑暗中会发出微弱的绿光。', category: 'occult', surfaceName: '避光保存的眼状样本', surfaceDesc: '一只装在深色小瓶里的眼状组织，标签模糊。', occultMarked: true, price: 44 },
-  { id: 'deep_sleep_flower', name: '深眠花粉末', desc: '闻一下就会犯困的紫色粉末。', category: 'occult', surfaceName: '密封的紫色花粉', surfaceDesc: '紫色粉末被双层蜡纸封住，没有可读标签。', occultMarked: true, price: 36 },
-  { id: 'gecko_skin', name: '幻影壁虎尾皮', desc: '半透明的尾皮，边缘偶尔消失在空气里。', category: 'occult', surfaceName: '半透明蜥类蜕皮', surfaceDesc: '一片干燥的半透明蜕皮，物种与来源不明。', occultMarked: true, price: 46 },
-  { id: 'mold_spore', name: '门后霉菌孢子', desc: '只生长在老宅门后的诡异霉菌。', category: 'occult', surfaceName: '密封的霉菌样本', surfaceDesc: '玻璃片间夹着少量暗色霉菌，采集地点没有记录。', occultMarked: true, price: 38 },
+  { id: 'blood_red_chestnut', name: '血红栗', desc: '果壳呈暗红色，内部组织带有异常活性。', category: 'occult', surfaceName: '暗红色坚果样本', surfaceDesc: '一枚被蜡封的暗红色坚果，品种与来源未注明。', occultMarked: true, price: 45 },
+  { id: 'activated_marsh_crystal', name: '活化沼泽结晶', desc: '从活化沼泽中析出的浑浊结晶，内部气泡会缓慢移动。', category: 'occult', surfaceName: '浑浊结晶样本', surfaceDesc: '一枚包在油纸中的浑浊结晶，内部似有细小气泡。', occultMarked: true, price: 42 },
+  { id: 'midnight_beauty_flower', name: '午夜美人花', desc: '只在午夜完全绽放的深色花朵，香气极淡。', category: 'occult', surfaceName: '避光保存的深色花朵', surfaceDesc: '一朵被避光纸包严密封存的深色花朵。', occultMarked: true, price: 44 },
+  { id: 'six_legged_owl_eye', name: '六足猫头鹰眼睛', desc: '封存在深色药液中的眼睛，瞳孔在暗处仍会收缩。', category: 'occult', surfaceName: '避光保存的眼状样本', surfaceDesc: '深色小瓶里封着一枚眼状组织，物种标签已脱落。', occultMarked: true, price: 46 },
+  { id: 'treasure_eating_bug', name: '噬宝虫', desc: '甲壳边缘泛着金属光泽，触须会朝贵金属方向偏转。', category: 'occult', surfaceName: '金属光泽的甲虫标本', surfaceDesc: '一只封在树脂里的甲虫标本，甲壳略有金属光泽。', occultMarked: true, price: 46 },
+  { id: 'phantom_crystal', name: '幻影水晶', desc: '转动时会留下短暂重影，边缘难以稳定聚焦。', category: 'occult', surfaceName: '带重影的透明晶体', surfaceDesc: '一枚透明晶体，转动时似乎会留下短暂重影。', occultMarked: true, price: 48 },
+  // 序列9辅助材料包：两主材路线与完整特性替代路线都必须消耗一份。
+  { id: 'seer9_auxiliary', name: '占卜家序列9辅助材料包', desc: '经担保分装的固定辅助材料，不含主材料。', category: 'occult', surfaceName: '编号辅助材料包', surfaceDesc: '多只封蜡小瓶组成的编号材料包，未注明用途。', occultMarked: true, seq9Product: { kind: 'auxiliary', pathwayId: 'seer' }, price: 48 },
+  { id: 'spectator9_auxiliary', name: '观众序列9辅助材料包', desc: '经担保分装的固定辅助材料，不含主材料。', category: 'occult', surfaceName: '编号辅助材料包', surfaceDesc: '多只封蜡小瓶组成的编号材料包，未注明用途。', occultMarked: true, seq9Product: { kind: 'auxiliary', pathwayId: 'spectator' }, price: 48 },
+  { id: 'hunter9_auxiliary', name: '猎人序列9辅助材料包', desc: '经担保分装的固定辅助材料，不含主材料。', category: 'occult', surfaceName: '编号辅助材料包', surfaceDesc: '多只封蜡小瓶组成的编号材料包，未注明用途。', occultMarked: true, seq9Product: { kind: 'auxiliary', pathwayId: 'hunter' }, price: 48 },
+  { id: 'sleepless9_auxiliary', name: '不眠者序列9辅助材料包', desc: '经担保分装的固定辅助材料，不含主材料。', category: 'occult', surfaceName: '编号辅助材料包', surfaceDesc: '多只封蜡小瓶组成的编号材料包，未注明用途。', occultMarked: true, seq9Product: { kind: 'auxiliary', pathwayId: 'sleepless' }, price: 48 },
+  { id: 'apprentice9_auxiliary', name: '学徒序列9辅助材料包', desc: '经担保分装的固定辅助材料，不含主材料。', category: 'occult', surfaceName: '编号辅助材料包', surfaceDesc: '多只封蜡小瓶组成的编号材料包，未注明用途。', occultMarked: true, seq9Product: { kind: 'auxiliary', pathwayId: 'apprentice' }, price: 48 },
+  // 担保成品与死亡析出特性。成品只在交易会担保购买后可直接确认来源；掉落特性必须另行鉴定。
+  ...PATHWAYS.flatMap(pathway => ([
+    {
+      id: `${pathway.id}9_potion`, name: `${pathway.seqNames[0]}魔药（序列9）`, desc: `经担保封签的${pathway.name}序列9成品魔药。`,
+      category: 'occult' as const, surfaceName: '封签药剂瓶', surfaceDesc: '一只贴着批次封签的深色药剂瓶，未核验前看不出内容物。',
+      occultMarked: true, seq9Product: { kind: 'potion' as const, pathwayId: pathway.id }, price: 420,
+    },
+    {
+      id: `${pathway.id}9_characteristic`, name: `${pathway.seqNames[0]}非凡特性`, desc: `同途径序列9非凡者死亡后析出的完整特性，可替代该途径两件主材料，但仍需辅助材料调配。`,
+      category: 'occult' as const, surfaceName: '凝结的异常残留', surfaceDesc: '一团被双层容器封住的半凝固残留，来源与性质尚未核验。', occultMarked: true,
+      spiritVision: { result: `残留的灵性结构与${pathway.name}序列9层次一致；它可以整组替代两件主材料，但不能生吞，仍需对应辅助材料完成调配。`, sanityCost: 2, revealsOccult: true },
+      divination: {
+        title: '凝结的异常残留', difficulty: 38, pressure: 'high' as const,
+        successText: {
+          cards: `象征聚成“完整核心”后停在${pathway.name}的方向：它不是普通材料，也不适合直接入口；应先核验来源，再配合完整辅助材料处理。`,
+          dream: `梦里那团残留试图贴近你的影子，随后被一道代表${pathway.name}的门槛拦下。答案只指向同途径调配与严格封存。`,
+        },
+      },
+      seq9Product: { kind: 'characteristic' as const, pathwayId: pathway.id }, price: 360,
+    },
+  ] satisfies ItemDef[])),
   // 序列8 魔药材料
   { id: 'goat_horn', name: '灰山羊独角结晶', desc: '霍纳奇斯山脉灰山羊的独角结晶，散发着让人想发笑的气味。', category: 'occult', surfaceName: '角质结晶样本', surfaceDesc: '一小块角质结晶，被蜡封在无名纸盒中。', occultMarked: true, price: 96 },
   { id: 'face_rose', name: '人脸玫瑰', desc: '花瓣的纹路酷似一张扭曲的人脸。', category: 'occult', surfaceName: '压干的异形花朵', surfaceDesc: '压干花瓣的纹路有些古怪，但物种无法确认。', occultMarked: true, price: 84 },
@@ -489,6 +516,29 @@ export const INVENTORY_CATEGORY_LABELS = {
   tool: '工具', book: '书籍', misc: '杂物', occult: '超凡物品',
 } as const;
 
+/** 通用秘密交易会的序列9固定目录；不包含任何序列8商品。 */
+export const TRADE_FAIR_PRODUCTS: readonly TradeFairProductDef[] = PATHWAYS.flatMap(pathway => {
+  const materialProducts: TradeFairProductDef[] = pathway.seq9.materials.map(itemId => ({
+    id: `trade:${pathway.id}:material:${itemId}`, pathwayId: pathway.id, sequence: 9, kind: 'material',
+    itemId, price: ITEMS.find(item => item.id === itemId)?.price ?? 60, initialStock: 2,
+  }));
+  return [
+    { id: `trade:${pathway.id}:formula`, pathwayId: pathway.id, sequence: 9, kind: 'formula', formulaId: `${pathway.id}9`, price: 180, initialStock: 1 },
+    { id: `trade:${pathway.id}:potion`, pathwayId: pathway.id, sequence: 9, kind: 'potion', itemId: `${pathway.id}9_potion`, price: 420, initialStock: 1 },
+    ...materialProducts,
+    { id: `trade:${pathway.id}:auxiliary`, pathwayId: pathway.id, sequence: 9, kind: 'auxiliary', itemId: pathway.seq9.auxiliary, price: 48, initialStock: 2 },
+    { id: `trade:${pathway.id}:characteristic`, pathwayId: pathway.id, sequence: 9, kind: 'characteristic', itemId: `${pathway.id}9_characteristic`, price: 360, initialStock: 1 },
+  ] satisfies TradeFairProductDef[];
+});
+
+/** 只有这些固定事件中明确确认死亡的非凡者，才允许析出一次特性。 */
+export const BEYONDER_DEATH_SOURCES: readonly BeyonderDeathSourceDef[] = [
+  {
+    id: 'fallen_seer_smuggler', npcId: 'masked_fortune_smuggler', publicIdentity: '蒙面占卜货商',
+    pathwayId: 'seer', sequence: 9, characteristicItemId: 'seer9_characteristic', eventId: 'adv_confirmed_beyonder_death',
+  },
+];
+
 // ============ 魔药配方 ============
 export const FORMULA_PRICE_NELSON = 180; // 老尼尔逊的价：15苏勒
 export const FORMULA_PRICE_BLACK = 264;  // 黑市价：1镑2苏勒，更贵但不需要人情
@@ -552,6 +602,7 @@ export const INTEL_NAMES: Record<string, string> = {
   black_market: '黑市的开门暗号',
   victor_debt: '维克多欠血手套40镑',
   church_audit: '教会季度审查临近',
+  trade_fair_invitation: '秘密交易会担保邀请与日程',
 };
 export const KNOWLEDGE_NAMES: Record<string, string> = {
   archive_method: '市政档案检索法',
@@ -850,6 +901,19 @@ export const EVENTS: GameEvent[] = [
   },
   // ---- 冒险 ----
   {
+    id: 'adv_confirmed_beyonder_death', slot: 'adventure', weight: 2,
+    cond: 'mortal&intel:trade_fair_invitation', locations: ['black_market'], once: true,
+    title: '担保人封锁的后巷',
+    text: '交易会散场后，担保人封住一段后巷。一个以占卜货商身份活动的蒙面人已经确认死亡，现场记录与遗留封签都证明他并非普通人。尸体旁正有一团异常残留缓慢凝结。',
+    choices: [
+      {
+        text: '请担保人见证封存残留', effects: [{ k: 'beyonder_death', id: 'fallen_seer_smuggler' }, { k: 'san', v: -4 }],
+        result: '你没有触碰尸体，只在担保人见证下把凝结物装进双层容器。它仍未鉴定，不能直接服食，也不能凭外观判断途径。',
+      },
+      { text: '不碰现场，立即离开', effects: [], result: '你留下原始封锁线与尸体。没有可核验的死亡确认，就不会有任何东西凭空进入物品栏。' },
+    ],
+  },
+  {
     id: 'adv_dock', slot: 'adventure', weight: 4, cond: 'mortal&intel:dock_missing', locations: ['docks'], once: true, title: '雾中的码头',
     text: '凭着手里的失踪案情报，你沿码头核对货箱编号时，一团从河面漫来的局部浓雾忽然吞没了相邻栈桥。雾深处传来拖拽重物的声音，还有……湿漉漉的、不像人的喘息。',
     choices: [
@@ -889,7 +953,7 @@ export const EVENTS: GameEvent[] = [
     id: 'adv_cult', slot: 'adventure', weight: 2, cond: 'beyonder&cor>30', locations: ['old_tower', 'factory', 'sewer'], title: '雾中的耳语',
     text: '冒险途中，你体内的非凡特性忽然躁动起来——雾里有某种同源的东西在「呼唤」你。跟着它走，也许有大收获。也许没有也许。',
     choices: [
-      { text: '循着呼唤深入', effects: [{ k: 'cor', v: 10 }, { k: 'san', v: -10 }, { k: 'money', v: 120 }, { k: 'stat', stat: 'spi', v: 3 }], result: '你在雾的尽头找到一具非凡者的尸体——和析出到一半、微微发光的特性。黑市价至少10苏勒。你赢了。大概是赢了。' },
+      { text: '循着呼唤深入', effects: [{ k: 'cor', v: 10 }, { k: 'san', v: -10 }, { k: 'money', v: 120 }, { k: 'stat', stat: 'spi', v: 3 }], result: '你在雾的尽头找到一处被遗弃的仪式场，只带走了几件可变卖的普通银器。没有可核验的死者身份与死亡记录，任何异常残留都被你留在原处。' },
       { text: '咬牙抵抗呼唤', effects: [{ k: 'san', v: -4 }, { k: 'stat', stat: 'mnd', v: 3 }], result: '你掐着自己的手腕，一步步退出浓雾。身后传来类似失望的叹息。' },
     ],
   },
@@ -1020,7 +1084,7 @@ export const EVENTS: GameEvent[] = [
     choices: [
       { text: '花12便士请他喝一杯', cond: 'money>=12', effects: [{ k: 'money', v: -12 }, { k: 'favor', id: 'victor', v: 8 }], result: '「上道！」他灌了口酒，压低声音，「下周……算了，到时候再说。」' },
       { text: '闲聊码头传闻', effects: [{ k: 'favor', id: 'victor', v: 3 }, { k: 'intel', id: 'black_market' }], result: '你们聊了半小时。他什么都没承诺，但你记住了黑市的开门暗号。' },
-      { text: '出掉手里的析出特性', cond: 'beyonder&flag:loot_char', effects: [{ k: 'flag', id: 'loot_char', v: 0 }, { k: 'money', v: 120 }, { k: 'favor', id: 'victor', v: 5 }], result: '维克多戴上手套检查了那团微光：「好货。10苏勒，现结。」他数钱的手很快，收东西的手更快。' },
+      { text: '询问异常遗留物的收购规矩', cond: 'beyonder', effects: [{ k: 'favor', id: 'victor', v: 2 }], result: '维克多只肯说明规矩：必须有可核验的死亡来源、完整封存记录与当面鉴定；仅凭一团发光的东西，他不会付款。' },
     ],
   },
   {

@@ -18,7 +18,7 @@ export interface Pathway {
   seqNames: string[];    // 索引0=序列9 ... 索引9=序列0
   seq9Ability: string;   // 序列9能力描述
   actingHint: string;    // 扮演守则摘要
-  seq9: { materials: string[] };                 // 服食序列9魔药所需
+  seq9: { materials: string[]; auxiliary: string }; // 序列9的两件主材料与固定辅助材料包
   seq8: { materials: string[]; ritual: string }; // 晋升序列8所需
 }
 
@@ -116,7 +116,56 @@ export interface ItemDef {
   occultMarked?: boolean;
   spiritVision?: ItemSpiritVisionDef;
   divination?: ItemDivinationDef;
+  seq9Product?: { kind: 'potion' | 'characteristic' | 'auxiliary'; pathwayId: string };
   price: number; // 便士
+}
+
+export type TradeFairProductKind = 'formula' | 'potion' | 'material' | 'characteristic' | 'auxiliary';
+
+export interface TradeFairProductDef {
+  id: string;
+  pathwayId: string;
+  sequence: 9;
+  kind: TradeFairProductKind;
+  price: number;
+  initialStock: number;
+  formulaId?: string;
+  itemId?: string;
+}
+
+export interface TradeFairInvitation {
+  sourceKind: 'organization' | 'npc';
+  sourceId: string;
+  acquiredDay: number;
+  acquiredHour: number;
+}
+
+export interface TradeFairState {
+  invitation: TradeFairInvitation | null;
+  stock: Record<string, number>;
+  purchasedCounts: Record<string, number>;
+  consumedPurchasedCounts: Record<string, number>;
+  identifiedCharacteristicIds: string[];
+}
+
+export interface ConfirmedBeyonderDeathRecord {
+  sourceId: string;
+  npcId: string;
+  pathwayId: string;
+  sequence: 9;
+  characteristicItemId: string;
+  confirmedDay: number;
+  confirmedHour: number;
+}
+
+export interface BeyonderDeathSourceDef {
+  id: string;
+  npcId: string;
+  publicIdentity: string;
+  pathwayId: string;
+  sequence: 9;
+  characteristicItemId: string;
+  eventId: string;
 }
 
 export interface ScheduleEntry {
@@ -310,7 +359,7 @@ export interface ActionResult {
 export interface Effect {
   k: 'money' | 'energy' | 'san' | 'cor' | 'digestion' | 'stat' | 'item'
    | 'favor' | 'intel' | 'clue' | 'knowledge' | 'tag' | 'timer' | 'flag' | 'gameover'
-   | 'exposure' | 'formula' | 'commission' | 'skill';
+   | 'exposure' | 'formula' | 'commission' | 'skill' | 'beyonder_death';
   v?: number;
   id?: string;
   stat?: StatKey;
@@ -513,9 +562,9 @@ export interface LogEntry {
 }
 
 export type Awareness = 'ordinary' | 'witness' | 'informed';
-export type PathwaySource = 'official' | 'mentor' | 'black_market' | 'accident' | 'legacy';
+export type PathwaySource = 'official' | 'mentor' | 'black_market' | 'trade_fair' | 'accident' | 'legacy';
 export type FormulaStatus = 'rumor' | 'fragment' | 'unverified' | 'verified';
-export type PreparationMode = 'official_dose' | 'supervised_brew' | 'self_brew' | 'characteristic_brew';
+export type PreparationMode = 'official_dose' | 'supervised_brew' | 'self_brew' | 'trade_fair_brew' | 'characteristic_brew' | 'purchased_dose';
 export type OrganizationId = 'nightwatch' | 'secret_order' | 'psychology_alchemists' | 'iron_and_blood' | 'abraham_branch';
 export type LeadStage = 'unknown' | 'found' | 'decoded' | 'identified' | 'verified';
 export type OrganizationStatus = 'unknown' | 'contacted' | 'qualified' | 'member' | 'offer_pending' | 'committed';
@@ -654,6 +703,8 @@ export interface GameState {
   pathwayLeads: Record<string, PathwayLead>;
   items: Record<string, number>;
   itemKnowledge: Record<string, ItemKnowledgeState>;
+  tradeFair: TradeFairState;
+  confirmedBeyonderDeaths: ConfirmedBeyonderDeathRecord[];
   intel: string[];
   knowledge: string[];
   /** v14及更早存档迁移兼容字段；v15运行时固定为0，不再增长或决定奖励。 */

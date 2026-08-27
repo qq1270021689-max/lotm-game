@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import './App.css';
 import type { GameState, SkillKey, OrganizationId } from './game/types';
-import { BOOK_DEFS, CLUE_DEFS, NPCS, ORIGINS, JOBS, TALENTS, SKILL_NAMES, LOCATIONS, LOCATION_REGIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, INVENTORY_CATEGORY_LABELS, findPathway, findItem, findJob, npcAvailable, npcLocation, scheduleHint, weekdayOf, WEEKDAY_NAMES, INTEL_NAMES, KNOWLEDGE_NAMES, formulaName, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES, sequenceEvidenceLabel } from './game/data';
+import { BOOK_DEFS, CLUE_DEFS, NPCS, PATHWAYS, ORIGINS, JOBS, TALENTS, SKILL_NAMES, LOCATIONS, LOCATION_REGIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, INVENTORY_CATEGORY_LABELS, findPathway, findItem, findJob, npcAvailable, npcLocation, scheduleHint, weekdayOf, WEEKDAY_NAMES, INTEL_NAMES, KNOWLEDGE_NAMES, formulaName, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES, sequenceEvidenceLabel } from './game/data';
 import * as E from './game/engine';
 
 const HOURS = ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23'];
@@ -339,7 +339,7 @@ export default function App() {
           <div className="text-sm text-stone-500 mb-8 space-y-1">
             <p>生平报告：{state.playerName}（{E.originOf(state).name}）</p>
             <p>{pw ? `${pw.name} · 序列${state.sequence}` : '终身为凡人'} · 存活 {state.day} 天 · 遗产 {E.fmtMoney(state.pence)}</p>
-            {pw && <p className="text-stone-600">你析出的非凡特性已计入世界总账。下个周目，也许会在黑市与它重逢。</p>}
+            {pw && <p className="text-stone-600">你的死亡会留下什么、又由谁接管，已经不再是这段人生能够确认的事。</p>}
           </div>
           <button onClick={() => { E.clearSave(); setState(null); }}
             className="px-8 py-3 rounded border border-amber-200/60 text-amber-100 hover:bg-amber-100/10">
@@ -941,6 +941,16 @@ export default function App() {
                 <div className="mt-3 border-t border-stone-800 pt-3 space-y-3">
                   <h3 className="panel-title">线索档案 / 组织关系</h3>
                   <p className="text-xs text-stone-500">可以在加入前核验多个组织；全局只能加入一个组织，并最终承诺一条该组织实际掌握的途径。</p>
+                  {!E.hasTradeFairInvitation(state) && (() => {
+                    const sponsor = ORGANIZATIONS.find(org => org.id !== 'nightwatch'
+                      && ['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(state.organizationRoutes[org.id].status));
+                    if (!sponsor) return null;
+                    const issue = E.tradeFairInvitationIssue(state, sponsor.id);
+                    return <button disabled={!!issue} title={issue ?? ''} className="w-full rounded border border-amber-300/30 p-2 text-amber-100/80 disabled:opacity-40"
+                      onClick={() => runAction(s => E.requestTradeFairInvitation(s, sponsor.id))}>
+                      请已接触组织为通用秘密交易会作保{issue ? ` · ${issue}` : ''}
+                    </button>;
+                  })()}
                   {ORGANIZATIONS.filter(org => {
                     if (org.id === 'nightwatch') return false;
                     const def = ORGANIZATION_LEAD_DEFS.find(item => item.organizationId === org.id)!;
@@ -993,6 +1003,37 @@ export default function App() {
                     const def = ORGANIZATION_LEAD_DEFS.find(item => item.organizationId === org.id)!;
                     return state.leads[def.id].stage !== 'unknown' || state.organizationRoutes[org.id].status !== 'unknown';
                   })()) && <p className="text-xs text-stone-600">尚未发现可归档的隐秘组织线索。可信的人脉与实际地点调查可能带来新记录。</p>}
+                </div>
+              )}
+
+              {!beyonder && E.hasTradeFairInvitation(state) && E.isAtHome(state) && (
+                <div className="mt-3 border-t border-purple-400/30 pt-3 space-y-2">
+                  <h3 className="panel-title text-purple-100/90">交易会途径确认</h3>
+                  <p className="text-xs text-stone-500">配方、材料和成品可以先购买；以下确认会把资格永久锁定到一条途径。完整特性只能整组替代两件主材料，仍需对应辅助材料包。</p>
+                  {PATHWAYS.filter(pathway => {
+                    const locked = Object.entries(state.pathwayLeads).find(([, lead]) => lead.commitment)?.[0];
+                    return !locked || locked === pathway.id;
+                  }).map(pathway => {
+                    const lead = state.pathwayLeads[pathway.id];
+                    const modes = [
+                      ['purchased_dose', '确认并采用担保成品'],
+                      ['materials', '确认并用两件主材调配'],
+                      ['characteristic', '确认并用完整特性替代主材'],
+                    ] as const;
+                    return <div key={pathway.id} className="rounded border border-stone-700 p-2 text-xs space-y-1">
+                      <p className="text-stone-200">{pathway.name}{lead.commitment ? ' · 已锁定' : ''}</p>
+                      {!lead.commitment && modes.map(([mode, label]) => {
+                        const issue = E.tradeFairConfirmationIssue(state, pathway.id, mode);
+                        return <button key={mode} disabled={!!issue} title={issue ?? ''} className="block text-purple-200/80 disabled:opacity-40"
+                          onClick={() => runAction(s => E.confirmTradeFairPathway(s, pathway.id, mode))}>{label}{issue ? ` · ${issue}` : ''}</button>;
+                      })}
+                      {lead.commitment && <button disabled={!E.canDrink(state, pathway.id).ok} title={E.canDrink(state, pathway.id).missing.join('、')}
+                        className="text-purple-200/80 disabled:opacity-40"
+                        onClick={() => runAction(s => lead.preparationMode === 'purchased_dose' ? E.drinkPurchasedPotion(s, pathway.id) : E.drinkPotion(s, pathway.id))}>
+                        {lead.preparationMode === 'purchased_dose' ? '服食担保成品魔药' : '完成调配并服食'}
+                      </button>}
+                    </div>;
+                  })}
                 </div>
               )}
 
@@ -1216,11 +1257,46 @@ export default function App() {
                         询问黑市纸摊流出的一张可疑纸页{issue ? ` · ${issue}` : ''}
                       </button>;
                     })()}
+                    {!beyonder && n.id === 'victor' && !E.hasTradeFairInvitation(state) && (() => {
+                      const issue = E.tradeFairInvitationIssue(state, 'victor');
+                      return <button disabled={!!issue} title={issue ?? ''} className="block mt-1 text-xs text-amber-200/80 disabled:opacity-40"
+                        onClick={() => runAction(s => E.requestTradeFairInvitation(s, 'victor'))}>
+                        请维克多为秘密交易会作保{issue ? ` · ${issue}` : ''}
+                      </button>;
+                    })()}
                   </li>
                 );
               })}
             </ul>
           </section>
+
+          {!beyonder && state.currentLocation?.locationId === 'black_market' && E.hasTradeFairInvitation(state) && (
+            <section className="panel border-purple-300/30">
+              <h3 className="panel-title text-purple-100/90">🌘 序列9秘密交易会</h3>
+              <p className="text-xs text-stone-500 mb-2">固定日程：{E.TRADE_FAIR_SCHEDULE_LABEL}。购买不会锁定途径；只有最终确认调配方式或服食成品才不可逆。</p>
+              {E.tradeFairAccessIssue(state) && <p className="text-xs text-amber-200/70 mb-2">{E.tradeFairAccessIssue(state)}</p>}
+              {!E.tradeFairAccessIssue(state) && (
+                <ul className="space-y-1 text-xs max-h-64 overflow-y-auto">
+                  {E.getTradeFairCatalog(state).map(product => {
+                    const issue = E.tradeFairProductIssue(state, product.id);
+                    const name = product.kind === 'formula' ? formulaName(product.formulaId!) : findItem(product.itemId!)?.name ?? product.itemId;
+                    return <li key={product.id} className="flex justify-between items-center gap-2">
+                      <span className="text-stone-300">{findPathway(product.pathwayId)?.name} · {name} · 剩余{state.tradeFair.stock[product.id] ?? 0}</span>
+                      <button disabled={!!issue} title={issue ?? ''} className="text-amber-200/80 disabled:opacity-40 whitespace-nowrap"
+                        onClick={() => runAction(s => E.buyTradeFairProduct(s, product.id))}>{E.fmtMoney(product.price)}</button>
+                    </li>;
+                  })}
+                </ul>
+              )}
+              {state.confirmedBeyonderDeaths.map(record => {
+                if (E.isTradeFairCharacteristicIdentified(state, record.characteristicItemId) || (state.items[record.characteristicItemId] ?? 0) <= 0) return null;
+                return <button key={record.sourceId} disabled={!!E.tradeFairAccessIssue(state)} className="mt-2 text-xs text-sky-200/80 disabled:opacity-40"
+                  onClick={() => runAction(s => E.appraiseCharacteristicAtTradeFair(s, record.characteristicItemId))}>
+                  请担保人核验这份有死亡封存记录的异常残留（2苏勒）
+                </button>;
+              })}
+            </section>
+          )}
 
           {beyonder && shopAvailable && (
             <section className="panel border-amber-200/30">

@@ -263,7 +263,7 @@ describe('v11 码头调查迁移', () => {
 
   it('visited-only 与仅有传闻都不补关键线索', () => {
     const visited = loadV11(s => { s.visitedLocations = ['docks']; });
-    expect(visited.schemaVersion).toBe(18);
+    expect(visited.schemaVersion).toBe(19);
     expect(visited.clues.filter(clue => clue.caseId === 'dock_manifest')).toEqual([]);
 
     const intel = loadV11(s => { s.intel.push('dock_missing'); });

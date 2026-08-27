@@ -63,6 +63,7 @@ export function isLocationUnlocked(state: GameState, locationId: string): boolea
   if (locationId === 'blackthorn_security') {
     return hasFormalBlackthornRoute(state) || hasVerifiedBlackthornReferral(state);
   }
+  if (locationId === 'black_market' && state.tradeFair?.invitation) return true;
   if (location.public) return true;
   if ((state.visitedLocations ?? []).includes(locationId)) return true;
   if (state.activeCommission?.locationId === locationId) return true;
