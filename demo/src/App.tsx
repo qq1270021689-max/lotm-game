@@ -515,6 +515,7 @@ export default function App() {
                 <div>
                   <h3 className="text-amber-100/90">当前位于：{loc.name}</h3>
                   <p className="text-xs text-stone-500 mt-1">{loc.desc}</p>
+                  {E.hasLandmarkEncounters(loc.id) && <p className="text-[11px] text-emerald-200/60 mt-1">地方人脉：{E.locationRelationshipLabel(state, loc.id)}</p>}
                   <p className="text-[11px] text-stone-600 mt-1">返程已预付 · 预计{stay.returnHours}h</p>
                 </div>
                 <button className="text-sky-200/80" onClick={() => runAction(s => E.leaveCurrentLocation(s))}>离开此地</button>

@@ -415,6 +415,13 @@ export interface LocationDef {
 
 export type TingenLandmarkRequirement = 'abnormal_witness';
 
+export interface LandmarkIntroductionGrant {
+  encounterId: string;
+  /** 稳定的普通引见人身份 id；玩家文案只使用对应公开称呼。 */
+  introducerId: string;
+  introducerName: string;
+}
+
 export interface TingenLandmarkActionDef {
   id: string;
   locationId: string;
@@ -427,7 +434,41 @@ export interface TingenLandmarkActionDef {
   requirement?: TingenLandmarkRequirement;
   completion: { kind: 'clue' | 'intel' | 'knowledge' | 'flag'; id: string };
   effects: readonly Effect[];
+  introductions?: readonly LandmarkIntroductionGrant[];
   result: string;
+}
+
+/** 地标高级人物定义；npc.secret 仅供规则层保存真实背景，禁止直接渲染。 */
+export interface LandmarkEncounterDef {
+  id: string;
+  locationId: string;
+  npc: NPCDef;
+  triggerActionIds: readonly string[];
+  minLocationRelation: number;
+  chance: number;
+  cooldownDays: number;
+  guaranteeAfterAttempts?: number;
+  initialFavor: number;
+  meetText: string;
+  missText: string;
+}
+
+export interface LandmarkIntroductionRecord {
+  encounterId: string;
+  sourceActionId: string;
+  introducerId: string;
+  acquiredDay: number;
+  acquiredHour: number;
+}
+
+export interface LandmarkEncounterRecord {
+  encounterId: string;
+  attempts: number;
+  /** 最近一次正式概率判定所匹配作息条目的归属日，而非原始日历日。 */
+  lastAttemptDay?: number;
+  met: boolean;
+  metDay?: number;
+  metHour?: number;
 }
 
 export interface GameEvent {
@@ -598,6 +639,9 @@ export interface GameState {
   visitedLocations: string[];
   currentLocation: LocationStay | null;
   completedLocationActions: string[];
+  locationRelations: Record<string, number>;
+  landmarkIntroductions: LandmarkIntroductionRecord[];
+  landmarkEncounters: LandmarkEncounterRecord[];
   clues: ClueRecord[];
   explorationAttempts: ExplorationAttempt[];
   divinationTraining: DivinationTraining;

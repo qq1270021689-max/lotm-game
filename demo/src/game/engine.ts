@@ -1,12 +1,12 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode, TingenLandmarkActionDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode, TingenLandmarkActionDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
 import { hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 export type { ActionResult } from './types';
 export { getVisibleLocations, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
@@ -70,8 +70,12 @@ export function pathwayLead(s: GameState, pathwayId: string): PathwayLead {
 
 export const originOf = (s: GameState) => ORIGINS.find(o => o.id === s.originId) ?? ORIGINS[0];
 export const hasTalent = (s: GameState, id: string) => s.talents.includes(id);
-/** 全部 NPC = 手写核心 + 程序生成 */
-export const allNPCs = (s: GameState): NPCDef[] => [...NPCS, ...s.genNpcs];
+/** 高级地标人物在首遇前不进入玩家可见 NPC 池，避免姓名、作息和地点提前泄露。 */
+const metLandmarkNPCs = (s: GameState): NPCDef[] => TINGEN_LANDMARK_ENCOUNTERS
+  .filter(def => (s.landmarkEncounters ?? []).some(record => record.encounterId === def.id && record.met))
+  .map(def => def.npc);
+/** 全部玩家已知 NPC = 手写核心 + 已正式首遇的地标人物 + 程序生成 */
+export const allNPCs = (s: GameState): NPCDef[] => [...NPCS, ...metLandmarkNPCs(s), ...s.genNpcs];
 export const findAnyNPC = (s: GameState, id: string) => allNPCs(s).find(n => n.id === id);
 const isNight = (h: number) => h >= 18 || h < 6;
 const OCCULT_SHOP_ITEM_IDS = new Set([
@@ -601,6 +605,9 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     visitedLocations: [],
     currentLocation: null,
     completedLocationActions: [],
+    locationRelations: {},
+    landmarkIntroductions: [],
+    landmarkEncounters: [],
     clues: [],
     explorationAttempts: [],
     divinationTraining: { cards: false, dream: false, media: [], teachers: [] },
@@ -1537,20 +1544,123 @@ function salvageAtLocation(s: GameState, locationId: string): ActionResult {
   return { ok: true };
 }
 
-function performAtLocationActionInternal(s: GameState, actionId: LocationActionId, actionHours: number): ActionResult {
+function improveLocationRelationship(s: GameState, locationId: string, amount: number) {
+  if (!TINGEN_LANDMARK_ENCOUNTERS.some(def => def.locationId === locationId)) return;
+  s.locationRelations ??= {};
+  s.locationRelations[locationId] = clamp((s.locationRelations[locationId] ?? 0) + amount);
+}
+
+export function locationRelationshipLabel(s: GameState, locationId: string): string {
+  const value = s.locationRelations?.[locationId] ?? 0;
+  if (value >= 8) return '这里已有一些人认得你';
+  if (value >= 4) return '你开始熟悉这里的规矩';
+  if (value > 0) return '你留下过几次普通来访记录';
+  return '这里的人还不认识你';
+}
+
+export const hasLandmarkEncounters = (locationId: string): boolean => TINGEN_LANDMARK_ENCOUNTERS.some(def => def.locationId === locationId);
+
+function recordLandmarkIntroductions(s: GameState, action: TingenLandmarkActionDef) {
+  s.landmarkIntroductions ??= [];
+  for (const grant of action.introductions ?? []) {
+    const encounter = TINGEN_LANDMARK_ENCOUNTERS.find(def => def.id === grant.encounterId && def.locationId === action.locationId);
+    if (!encounter || s.landmarkIntroductions.some(record => record.encounterId === grant.encounterId)) continue;
+    s.landmarkIntroductions.push({
+      encounterId: grant.encounterId, sourceActionId: action.id, introducerId: grant.introducerId,
+      acquiredDay: s.day, acquiredHour: s.hour,
+    });
+    addLog(s, `${grant.introducerName}确认你是在处理公开事务，愿意在合适的时候替你向此地负责人作一次普通引见。`, 'info');
+  }
+}
+
+export type LandmarkEncounterAttemptStatus = 'ineligible' | 'unavailable' | 'cooldown' | 'missed' | 'met' | 'already_met';
+export interface LandmarkEncounterEvaluationMoment { day: number; hour: number }
+
+function addLandmarkEncounterLog(s: GameState, moment: LandmarkEncounterEvaluationMoment, text: string, kind: LogEntry['kind']) {
+  s.log.push({ day: moment.day, hour: moment.hour, text, kind });
+  if (s.log.length > 300) s.log.splice(0, s.log.length - 300);
+}
+
+/**
+ * 地标高级人物只在可解释引见或地点关系达标后进入抽取。randomSource 可由测试注入；
+ * 内部 secret 不参与任何玩家文本。
+ */
+export function tryTingenLandmarkEncounter(
+  s: GameState,
+  locationId: string,
+  actionId: string,
+  randomSource: () => number = Math.random,
+  evaluationMoment: LandmarkEncounterEvaluationMoment = { day: s.day, hour: s.hour },
+): { status: LandmarkEncounterAttemptStatus; encounterId?: string } {
+  s.locationRelations ??= {};
+  s.landmarkIntroductions ??= [];
+  s.landmarkEncounters ??= [];
+  if (s.currentLocation?.locationId !== locationId || !isLocationUnlocked(s, locationId)) return { status: 'ineligible' };
+  const def = TINGEN_LANDMARK_ENCOUNTERS.find(candidate => candidate.locationId === locationId && candidate.triggerActionIds.includes(actionId));
+  if (!def) return { status: 'ineligible' };
+  const existing = s.landmarkEncounters.find(record => record.encounterId === def.id);
+  if (existing?.met) return { status: 'already_met', encounterId: def.id };
+  const introduced = s.landmarkIntroductions.some(record => record.encounterId === def.id);
+  const relationReady = (s.locationRelations[locationId] ?? 0) >= def.minLocationRelation;
+  if (!introduced && !relationReady) return { status: 'ineligible' };
+  if (!Number.isInteger(evaluationMoment.day) || evaluationMoment.day < 1
+    || !Number.isInteger(evaluationMoment.hour) || evaluationMoment.hour < 0 || evaluationMoment.hour > 23) return { status: 'ineligible' };
+  // 休息日或错误时段不是一次正式会面尝试：不给冷却、不累计保底，也不触碰 RNG。
+  const scheduleOwnerDay = npcScheduleOwnerDay(def.npc, evaluationMoment.day, evaluationMoment.hour);
+  if (scheduleOwnerDay === null) {
+    addLandmarkEncounterLog(s, evaluationMoment, def.missText, 'info');
+    return { status: 'unavailable', encounterId: def.id };
+  }
+  if (existing?.lastAttemptDay !== undefined && scheduleOwnerDay - existing.lastAttemptDay < def.cooldownDays) {
+    return { status: 'cooldown', encounterId: def.id };
+  }
+  const record: LandmarkEncounterRecord = existing ?? { encounterId: def.id, attempts: 0, met: false };
+  if (!existing) s.landmarkEncounters.push(record);
+  record.attempts += 1;
+  record.lastAttemptDay = scheduleOwnerDay;
+  const guaranteed = def.guaranteeAfterAttempts !== undefined && record.attempts >= def.guaranteeAfterAttempts;
+  const roll = guaranteed ? 0 : randomSource();
+  if (!guaranteed && (!Number.isFinite(roll) || roll < 0 || roll >= 1 || roll >= def.chance)) {
+    addLandmarkEncounterLog(s, evaluationMoment, def.missText, 'info');
+    return { status: 'missed', encounterId: def.id };
+  }
+  record.met = true;
+  record.metDay = evaluationMoment.day;
+  record.metHour = evaluationMoment.hour;
+  s.relations[def.npc.id] = Math.max(s.relations[def.npc.id] ?? 0, def.initialFavor);
+  addLandmarkEncounterLog(s, evaluationMoment, `✦ 正式结识：${def.meetText}`, 'good');
+  return { status: 'met', encounterId: def.id };
+}
+
+function performAtLocationActionInternal(
+  s: GameState,
+  actionId: LocationActionId,
+  actionHours: number,
+  randomSource: () => number = Math.random,
+): ActionResult {
   const stay = s.currentLocation;
   if (!stay) return { ok: false, msg: '需要先抵达一个地点。' };
   const location = LOCATIONS.find(candidate => candidate.id === stay.locationId);
   if (!location || !location.actions.includes(actionId)) return { ok: false, msg: '当前地点没有这项行动。' };
-  if (actionId === 'explore') return performExploreAtLocation(s, location.id, actionHours, stay.companionId);
-  if (actionId === 'wander') return performWanderLocation(s, location.id, { mode: stay.travelMode, hours: actionHours, fee: 0, travelers: 1 });
-  if (actionId === 'tavern') return performTavernLocation(s, location.id, { mode: stay.travelMode, hours: actionHours, fee: 0, travelers: 1 });
-  if (actionId === 'salvage') return salvageAtLocation(s, location.id);
-  return { ok: false, msg: '请从店铺的固定货单中选择商品。' };
+  const evaluationMoment = { day: s.day, hour: s.hour };
+  const result = actionId === 'explore'
+    ? performExploreAtLocation(s, location.id, actionHours, stay.companionId)
+    : actionId === 'wander'
+      ? performWanderLocation(s, location.id, { mode: stay.travelMode, hours: actionHours, fee: 0, travelers: 1 })
+      : actionId === 'tavern'
+        ? performTavernLocation(s, location.id, { mode: stay.travelMode, hours: actionHours, fee: 0, travelers: 1 })
+        : actionId === 'salvage'
+          ? salvageAtLocation(s, location.id)
+          : { ok: false, msg: '请从店铺的固定货单中选择商品。' };
+  if (result.ok && actionId === 'explore') {
+    improveLocationRelationship(s, location.id, 1);
+    tryTingenLandmarkEncounter(s, location.id, actionId, randomSource, evaluationMoment);
+  }
+  return result;
 }
 
-export function performAtLocationAction(s: GameState, actionId: LocationActionId): ActionResult {
-  return performAtLocationActionInternal(s, actionId, 1);
+export function performAtLocationAction(s: GameState, actionId: LocationActionId, randomSource: () => number = Math.random): ActionResult {
+  return performAtLocationActionInternal(s, actionId, 1, randomSource);
 }
 
 const LANDMARK_EFFECT_KINDS = new Set<Effect['k']>(['clue', 'intel', 'knowledge', 'flag']);
@@ -1605,10 +1715,11 @@ export function landmarkActionIssue(s: GameState, actionId: string): string | nu
   return null;
 }
 
-export function performTingenLandmarkAction(s: GameState, actionId: string): ActionResult {
+export function performTingenLandmarkAction(s: GameState, actionId: string, randomSource: () => number = Math.random): ActionResult {
   const issue = landmarkActionIssue(s, actionId);
   if (issue) return { ok: false, msg: issue };
   const def = TINGEN_LANDMARK_ACTIONS.find(candidate => candidate.id === actionId)!;
+  const evaluationMoment = { day: s.day, hour: s.hour };
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, def.energyCost) }]);
   if (def.id === 'hound_leave_security_message') {
     s.clues = s.clues.filter(record => record.id !== 'blackthorn_referral');
@@ -1617,8 +1728,11 @@ export function performTingenLandmarkAction(s: GameState, actionId: string): Act
   if (def.id === 'hound_leave_security_message') {
     recordOrganizationRoute(s, 'nightwatch', 'hound_security_referral', 'passed', undefined, 'blackthorn_referral');
   }
-  advanceHours(s, def.hours);
   addLog(s, def.result, 'info');
+  recordLandmarkIntroductions(s, def);
+  improveLocationRelationship(s, def.locationId, 2);
+  tryTingenLandmarkEncounter(s, def.locationId, def.id, randomSource, evaluationMoment);
+  advanceHours(s, def.hours);
   return { ok: true };
 }
 
@@ -3485,6 +3599,9 @@ export function loadGame(): GameState | null {
       visitedLocations?: string[];
       currentLocation?: GameState['currentLocation'];
       completedLocationActions?: string[];
+      locationRelations?: Record<string, number>;
+      landmarkIntroductions?: LandmarkIntroductionRecord[];
+      landmarkEncounters?: LandmarkEncounterRecord[];
       clues?: GameState['clues'];
       explorationAttempts?: GameState['explorationAttempts'];
       divinationTraining?: GameState['divinationTraining'];
@@ -3525,6 +3642,50 @@ export function loadGame(): GameState | null {
       ? s.explorationAttempts.filter(attempt => attempt && typeof attempt.checkId === 'string'
         && ['passed', 'blocked'].includes(attempt.outcome))
       : [];
+    s.relations = s.relations && typeof s.relations === 'object' ? s.relations : {};
+    if (loadedVersion < 18) {
+      s.locationRelations = {};
+      s.landmarkIntroductions = [];
+      s.landmarkEncounters = [];
+    } else {
+      const validEncounterLocations = new Set(TINGEN_LANDMARK_ENCOUNTERS.map(def => def.locationId));
+      s.locationRelations = Object.fromEntries(Object.entries(s.locationRelations ?? {})
+        .filter(([locationId, value]) => validEncounterLocations.has(locationId) && Number.isFinite(value))
+        .map(([locationId, value]) => [locationId, clamp(Math.floor(value))]));
+
+      const seenIntroductions = new Set<string>();
+      s.landmarkIntroductions = Array.isArray(s.landmarkIntroductions) ? s.landmarkIntroductions.filter(record => {
+        if (!record || seenIntroductions.has(record.encounterId)) return false;
+        const action = TINGEN_LANDMARK_ACTIONS.find(def => def.id === record.sourceActionId);
+        const grant = action?.introductions?.find(candidate => candidate.encounterId === record.encounterId
+          && candidate.introducerId === record.introducerId);
+        const encounter = TINGEN_LANDMARK_ENCOUNTERS.find(def => def.id === record.encounterId);
+        if (!action || !grant || !encounter || action.locationId !== encounter.locationId || !landmarkActionCompleted(s, action)) return false;
+        if (!Number.isInteger(record.acquiredDay) || record.acquiredDay < 1
+          || !Number.isInteger(record.acquiredHour) || record.acquiredHour < 0 || record.acquiredHour > 23) return false;
+        seenIntroductions.add(record.encounterId);
+        return true;
+      }) : [];
+
+      const seenEncounters = new Set<string>();
+      s.landmarkEncounters = Array.isArray(s.landmarkEncounters) ? s.landmarkEncounters.filter(record => {
+        if (!record || seenEncounters.has(record.encounterId)) return false;
+        const def = TINGEN_LANDMARK_ENCOUNTERS.find(candidate => candidate.id === record.encounterId);
+        const introduced = s.landmarkIntroductions.some(item => item.encounterId === record.encounterId);
+        const relationReady = !!def && (s.locationRelations[def.locationId] ?? 0) >= def.minLocationRelation;
+        if (!def || (!introduced && !relationReady) || !Number.isInteger(record.attempts) || record.attempts < 1) return false;
+        if (record.lastAttemptDay !== undefined && (!Number.isInteger(record.lastAttemptDay)
+          || record.lastAttemptDay < 0 || record.lastAttemptDay > s.day)) return false;
+        if (record.met && (!Number.isInteger(record.metDay) || (record.metDay ?? 0) < 1
+          || !Number.isInteger(record.metHour) || (record.metHour ?? -1) < 0 || (record.metHour ?? 24) > 23
+          || !Number.isFinite(s.relations[def.npc.id]))) return false;
+        seenEncounters.add(record.encounterId);
+        return true;
+      }) : [];
+    }
+    for (const def of TINGEN_LANDMARK_ENCOUNTERS) {
+      if (!s.landmarkEncounters.some(record => record.encounterId === def.id && record.met)) delete s.relations[def.npc.id];
+    }
     const training = s.divinationTraining && typeof s.divinationTraining === 'object' ? s.divinationTraining : undefined;
     s.divinationTraining = {
       cards: training?.cards === true,

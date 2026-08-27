@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -635,12 +635,14 @@ export const TINGEN_LANDMARK_ACTIONS: readonly TingenLandmarkActionDef[] = [
     id: 'hoy_public_history_lecture', locationId: 'hoy_university', label: '查看历史系公开讲座',
     description: '阅读校方公开张贴的地方史讲座目录。', hours: 1, energyCost: 3, openFrom: 9, openTo: 17,
     completion: { kind: 'knowledge', id: 'tingen_history_lecture' }, effects: [{ k: 'knowledge', id: 'tingen_history_lecture' }],
+    introductions: [{ encounterId: 'hoy_azik', introducerId: 'quentin_cohen', introducerName: '昆汀·科恩教授' }],
     result: '你旁听了一段廷根地方史导论，只留下可核验的公开讲座笔记。',
   },
   {
     id: 'divination_club_etiquette', locationId: 'divination_club', label: '咨询会员制度与普通占卜礼仪',
     description: '了解民间俱乐部的预约、记录与礼仪边界，不涉及能力训练。', hours: 1, energyCost: 3, openFrom: 10, openTo: 20,
     completion: { kind: 'knowledge', id: 'public_divination_etiquette' }, effects: [{ k: 'knowledge', id: 'public_divination_etiquette' }],
+    introductions: [{ encounterId: 'club_hanass', introducerId: 'club_receptionist', introducerName: '俱乐部接待员' }],
     result: '接待员说明了会员规则和普通礼仪。你得到的只是公开礼仪常识，不构成任何特殊能力或正式训练。',
   },
   {
@@ -659,12 +661,14 @@ export const TINGEN_LANDMARK_ACTIONS: readonly TingenLandmarkActionDef[] = [
     id: 'blackthorn_public_report', locationId: 'blackthorn_security', label: '递交异常情况说明',
     description: '向前台递交时间、地点与证物清单，只索取公开受理回执。', hours: 1, energyCost: 4, openFrom: 9, openTo: 17,
     completion: { kind: 'flag', id: 'blackthorn_public_receipt' }, effects: [{ k: 'flag', id: 'blackthorn_public_receipt', v: 1 }],
+    introductions: [{ encounterId: 'blackthorn_dunn', introducerId: 'blackthorn_roxanne', introducerName: '前台职员罗珊' }],
     result: '前台收下说明，给了你一张普通受理回执，并请你回去等待书面答复。',
   },
   {
     id: 'dragon_watch_boxing', locationId: 'dragon_bar', label: '观看公开拳台',
     description: '只在公开区域观看比赛和酒客往来。', hours: 1, energyCost: 4, openFrom: 16, openTo: 26,
     completion: { kind: 'flag', id: 'dragon_boxing_observed' }, effects: [{ k: 'flag', id: 'dragon_boxing_observed', v: 1 }],
+    introductions: [{ encounterId: 'dragon_swain', introducerId: 'dragon_bar_regular', introducerName: '看台熟客' }],
     result: '你看完一场拳赛便离开，只记住了公开赛程、酒水牌和几位拳手的名字。',
   },
   {
@@ -678,6 +682,61 @@ export const TINGEN_LANDMARK_ACTIONS: readonly TingenLandmarkActionDef[] = [
     description: '查看工匠互助、机械事故和停产修理的公开信息。', hours: 1, energyCost: 4, openFrom: 9, openTo: 17,
     completion: { kind: 'clue', id: 'tingen_factory_repairs' }, effects: [{ k: 'clue', id: 'tingen_factory_repairs' }],
     result: '你整理出一处停产工厂的公开修理记录；它只说明世俗事故与设备异常，仍需实地核对。',
+  },
+] as const;
+
+/**
+ * 廷根地标的有条件邂逅。真实背景只供规则与审查测试使用；首遇、NPC 卡片和日志
+ * 始终使用 npc.identity / npc.desc / meetText，不得拼接 npc.secret。
+ */
+export const TINGEN_LANDMARK_ENCOUNTERS: readonly LandmarkEncounterDef[] = [
+  {
+    id: 'hoy_azik', locationId: 'hoy_university', triggerActionIds: ['hoy_public_history_lecture', 'explore'],
+    minLocationRelation: 10, chance: 0.3, cooldownDays: 1, guaranteeAfterAttempts: 3, initialFavor: 8,
+    npc: {
+      id: 'azik', name: '阿兹克·艾格斯', identity: '霍伊大学历史教员',
+      secret: '失去部分记忆的高序列死神途径非凡者',
+      desc: '肤色偏古铜，待人温和，讲解历史时常能指出教科书没有收录的细节。',
+      schedule: [{ from: 9, to: 17, location: '霍伊大学', interactable: true, days: [1, 2, 3, 4, 5] }],
+    },
+    meetText: '昆汀·科恩教授把你介绍给阿兹克·艾格斯先生。他只以霍伊大学历史教员的身份与你交谈，并替你纠正了几处旧地名。',
+    missText: '昆汀·科恩教授替你问过，但那位负责地方史课程的教员今天正忙；你只得先留下自己的公开问题。',
+  },
+  {
+    id: 'club_hanass', locationId: 'divination_club', triggerActionIds: ['divination_club_etiquette', 'explore'],
+    minLocationRelation: 9, chance: 0.28, cooldownDays: 1, guaranteeAfterAttempts: 4, initialFavor: 6,
+    npc: {
+      id: 'hanass', name: '海纳斯·凡森特', identity: '占卜俱乐部知名占卜者',
+      secret: '极光会成员',
+      desc: '衣着考究、措辞谨慎，谈论的始终是俱乐部规则与民间占卜礼仪。',
+      schedule: [{ from: 13, to: 20, location: '占卜俱乐部', interactable: true, days: [2, 4, 6] }],
+    },
+    meetText: '接待员请一位知名占卜者回答你的礼仪问题。海纳斯·凡森特只谈公开规矩，没有承诺教授任何特殊技巧。',
+    missText: '接待员说资深会员今日没有空档，建议你先把问题按普通占卜礼仪重新整理。',
+  },
+  {
+    id: 'blackthorn_dunn', locationId: 'blackthorn_security', triggerActionIds: ['blackthorn_public_report', 'explore'],
+    minLocationRelation: 8, chance: 0.42, cooldownDays: 1, guaranteeAfterAttempts: 3, initialFavor: 8,
+    npc: {
+      id: 'dunn', name: '邓恩·史密斯', identity: '黑荆棘安保公司负责人',
+      secret: '黑夜教会值夜者廷根小队队长，序列7梦魇',
+      desc: '灰眸沉静，说话不快，更关心证词中的时间、地点与可以复核的事实。',
+      schedule: [{ from: 9, to: 18, location: '黑荆棘安保公司', interactable: true }],
+    },
+    meetText: '前台职员罗珊把受理回执递进内间。片刻后，负责人邓恩·史密斯出来核对了几处事实，只以安保业务的口径提醒你保留原始证物。',
+    missText: '罗珊说负责人正在处理另一宗事务，你的说明已归档，暂时只能等待普通书面答复。',
+  },
+  {
+    id: 'dragon_swain', locationId: 'dragon_bar', triggerActionIds: ['dragon_watch_boxing', 'explore'],
+    minLocationRelation: 8, chance: 0.34, cooldownDays: 1, guaranteeAfterAttempts: 4, initialFavor: 7,
+    npc: {
+      id: 'swain', name: '斯维因', identity: '恶龙酒吧老板',
+      secret: '前廷根代罚者队长，暴怒之民序列8',
+      desc: '身形壮实，嗓音洪亮，公开场合只谈拳赛、酒水与店里的规矩。',
+      schedule: [{ from: 16, to: 26, location: '恶龙酒吧', interactable: true }],
+    },
+    meetText: '一位看台熟客把你介绍给老板斯维因。他点评了两句拳手的步法，又提醒你在公开区域遵守店规。',
+    missText: '看台熟客说老板正在后面核对账目，今晚不会出来见普通客人。',
   },
 ] as const;
 
@@ -1040,17 +1099,37 @@ export function findEvent(id: string) { return EVENTS.find(e => e.id === id); }
 
 /** 星期计算与作息判断 */
 export const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-export function weekdayOf(day: number): number { return (day - 1) % 7; }
+export function weekdayOf(day: number): number { return ((day - 1) % 7 + 7) % 7; }
+
+function scheduleEntryOwnerDay(entry: NPCDef['schedule'][number], day: number, hour: number): number | null {
+  let scheduleDay = day;
+  let scheduleHour = hour;
+  // 22→26 等跨午夜作息在次日 0→2 点仍归属于前一晚；日期限制也按前一日判断。
+  if (entry.to > 24 && hour < entry.to - 24) {
+    scheduleDay -= 1;
+    scheduleHour += 24;
+  }
+  const wd = weekdayOf(scheduleDay);
+  return entry.interactable && (!entry.days || entry.days.includes(wd))
+    && scheduleHour >= entry.from && scheduleHour < entry.to ? scheduleDay : null;
+}
+
+/** 返回当前公开作息条目所属的营业日；跨午夜时可能是前一日。 */
+export function npcScheduleOwnerDay(npc: NPCDef, day: number, hour: number): number | null {
+  for (const entry of npc.schedule) {
+    const ownerDay = scheduleEntryOwnerDay(entry, day, hour);
+    if (ownerDay !== null) return ownerDay;
+  }
+  return null;
+}
 
 /** 判断 NPC 在指定日期的指定小时是否可交互 */
 export function npcAvailable(npc: NPCDef, day: number, hour: number): boolean {
-  const wd = weekdayOf(day);
-  return npc.schedule.some(s => s.interactable && (!s.days || s.days.includes(wd)) && hour >= s.from && hour < s.to);
+  return npcScheduleOwnerDay(npc, day, hour) !== null;
 }
 export function npcLocation(npc: NPCDef, day: number, hour: number): string | null {
-  const wd = weekdayOf(day);
-  for (const s of npc.schedule) {
-    if (s.interactable && (!s.days || s.days.includes(wd)) && hour >= s.from && hour < s.to) return s.location;
+  for (const entry of npc.schedule) {
+    if (scheduleEntryOwnerDay(entry, day, hour) !== null) return entry.location;
   }
   return null;
 }

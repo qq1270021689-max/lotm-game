@@ -164,7 +164,7 @@ describe('在外限制、兼容入口与迁移', () => {
     old.completedLocationActions = ['salvage_docks_crate'];
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(old));
     const migrated = loadGame()!;
-    expect(migrated).toMatchObject({ schemaVersion: 17, currentLocation: null, completedLocationActions: [] });
+    expect(migrated).toMatchObject({ schemaVersion: 18, currentLocation: null, completedLocationActions: [] });
 
     const current = docker(); current.schemaVersion = 16;
     current.currentLocation = { locationId: 'docks', arrivedDay: 1, arrivedHour: 99, travelMode: 'walk', returnHours: 1, returnPrepaid: true, companionId: 'forged_npc' };

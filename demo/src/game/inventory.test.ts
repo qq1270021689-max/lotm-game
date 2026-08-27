@@ -207,7 +207,7 @@ describe('v17迁移、往返与UI规则入口', () => {
     delete (ordinary as Partial<GameState>).itemKnowledge;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
     const loadedOrdinary = loadGame()!;
-    expect(loadedOrdinary.schemaVersion).toBe(17);
+    expect(loadedOrdinary.schemaVersion).toBe(18);
     expect(loadedOrdinary.knowledge).not.toContain('spirit_vision');
     expect(loadedOrdinary.itemKnowledge).toEqual({});
 
