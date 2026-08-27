@@ -146,6 +146,21 @@ describe('码头确定性检定', () => {
     });
     expect(evaluateExplorationCheck(s, 'dock_manifest_trace').outcome).toBe('blocked');
   });
+
+  it('码头现场线索只提供有限加成，不能绕过公开失踪登记硬前置', () => {
+    const missingReports = fresh();
+    applyEffects(missingReports, [{ k: 'clue', id: 'dock_crate_trace' }]);
+    const blocked = evaluateExplorationCheck(missingReports, 'dock_manifest_trace');
+    expect(blocked).toMatchObject({ outcome: 'blocked', reason: 'missing_required_clue' });
+
+    const baseline = withReports();
+    const before = evaluateExplorationCheck(baseline, 'dock_manifest_trace');
+    applyEffects(baseline, [{ k: 'clue', id: 'dock_crate_trace' }]);
+    const after = evaluateExplorationCheck(baseline, 'dock_manifest_trace');
+    expect(after.score - before.score).toBe(4);
+    expect(after.contributingClueIds).toContain('dock_crate_trace');
+    expect(after.outcome).toBe('blocked');
+  });
 });
 
 describe('异常仓单动作与原有组织链', () => {

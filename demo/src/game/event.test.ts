@@ -5,6 +5,8 @@ import {
   acceptCommission,
   advanceHours,
   applyEffects,
+  compareDockCargoRecords,
+  compareDockCargoRecordsIssue,
   currentEvent,
   doAdventure,
   doSleep,
@@ -13,8 +15,10 @@ import {
   loadGame,
   maybeTrigger,
   newGame,
+  performAtLocationAction,
   resolveChoice,
   saveGame,
+  travelToLocation,
 } from './engine';
 
 class MemoryStorage {
@@ -193,6 +197,102 @@ describe('固定奖励与权威回执', () => {
       expect(s.pence).toBe(money);
       expect(s.log.at(-1)?.text).not.toMatch(/雇主|委托|报酬|赏金/);
     }
+  });
+
+  it('码头现场事件只在凡人东区码头触发一次，两种调查选择留下不同证据', () => {
+    const event = EVENTS.find(candidate => candidate.id === 'adv_dock')!;
+    expect(event).toMatchObject({ cond: 'mortal&intel:dock_missing', locations: ['docks'], once: true });
+    expect(event.text).not.toMatch(/午夜|深夜|夜间|等到夜里/);
+    expect(event.choices.slice(0, 2).every(choice => choice.effects.some(effect => effect.k === 'clue' && effect.id === 'dock_crate_trace'))).toBe(true);
+
+    const close = fresh();
+    close.activeCommission = null;
+    const closeMoney = close.pence;
+    forceEvent(close, 'adv_dock');
+    resolveChoice(close, 0);
+    expect(close.clues).toContainEqual(expect.objectContaining({ id: 'dock_crate_trace', sourceKind: 'event', sourceId: 'adv_dock' }));
+    expect(close.items.dock_scale_evidence).toBe(1);
+    expect(close.pence).toBe(closeMoney);
+    expect(close.activeCommission).toBeNull();
+    expect(close.firedOnce.filter(id => id === 'adv_dock')).toHaveLength(1);
+    forceEvent(close, 'adv_dock');
+    expect(close.pendingEvent).toBeNull();
+
+    const distant = fresh();
+    const distantMoney = distant.pence;
+    forceEvent(distant, 'adv_dock');
+    resolveChoice(distant, 1);
+    expect(distant.clues).toContainEqual(expect.objectContaining({ id: 'dock_crate_trace' }));
+    expect(distant.items.dock_scale_evidence ?? 0).toBe(0);
+    expect(distant.pence).toBe(distantMoney);
+    expect(distant.activeCommission).toBeNull();
+    expect([close, distant].flatMap(state => state.formulas)).toEqual([]);
+  });
+
+  it('码头现场反馈按普通人已有的调查基础分层，但始终只给调查方向与下一步', () => {
+    const ordinary = fresh();
+    forceEvent(ordinary, 'adv_dock');
+    resolveChoice(ordinary, 1);
+    const ordinaryText = ordinary.log.map(entry => entry.text).join('\n');
+    expect(ordinaryText).toMatch(/没有可靠手段判断.*空气像被看不见的东西挤动/);
+    expect(ordinaryText).toMatch(/白天.*公开失踪登记.*货运备份.*旧仓单/);
+
+    const trained = fresh();
+    trained.skills.investigate = 1;
+    forceEvent(trained, 'adv_dock');
+    resolveChoice(trained, 1);
+    expect(trained.log.map(entry => entry.text).join('\n')).toMatch(/常见动物.*解释不完整/);
+
+    const occultReader = fresh();
+    occultReader.knowledge.push('occult_theory');
+    forceEvent(occultReader, 'adv_dock');
+    resolveChoice(occultReader, 0);
+    const occultText = occultReader.log.map(entry => entry.text).join('\n');
+    expect(occultText).toMatch(/调查与神秘学常识.*现有记录仍不足/);
+    expect(occultText).not.toMatch(/途径|组织|难度|成功率|危险等级|\d+\s*vs\s*\d+/);
+  });
+
+  it('普通人沿真实码头行动链可在白天遇到事件，结束后仍可继续核对货运记录', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const s = newGame('真实码头行动测试者', 'docker', []);
+    s.stats.energy = 100;
+
+    expect(s.hour).toBe(7);
+    expect(travelToLocation(s, 'docks', 'walk')).toMatchObject({ ok: true });
+    expect(s.currentLocation?.locationId).toBe('docks');
+    expect(performAtLocationAction(s, 'explore')).toMatchObject({ ok: true });
+    expect(currentEvent(s)?.id).toBe('adv_dock');
+    expect(s.day).toBe(1);
+    expect(s.hour).toBe(9);
+    expect(s.log.map(entry => entry.text).join('\n')).not.toMatch(/午夜|深夜|等到夜里|等待至/);
+
+    resolveChoice(s, 1);
+    expect(s.currentLocation?.locationId).toBe('docks');
+    expect(s.clues).toContainEqual(expect.objectContaining({ id: 'dock_crate_trace', sourceKind: 'event' }));
+    expect(compareDockCargoRecordsIssue(s)).toBeNull();
+    expect(compareDockCargoRecords(s)).toMatchObject({ ok: true });
+    expect(s.clues).toContainEqual(expect.objectContaining({ id: 'dock_manifest_discrepancy' }));
+
+    const noIntel = fresh();
+    noIntel.stats.energy = 100;
+    noIntel.visitedLocations.push('docks');
+    expect(travelToLocation(noIntel, 'docks', 'walk').ok).toBe(true);
+    expect(performAtLocationAction(noIntel, 'explore').ok).toBe(true);
+    expect(currentEvent(noIntel)).toBeNull();
+
+    const beyonder = newGame('非凡者约束测试者', 'docker', []);
+    beyonder.pathwayId = 'hunter';
+    beyonder.sequence = 9;
+    beyonder.stats.energy = 100;
+    expect(travelToLocation(beyonder, 'docks', 'walk').ok).toBe(true);
+    expect(performAtLocationAction(beyonder, 'explore').ok).toBe(true);
+    expect(currentEvent(beyonder)).toBeNull();
+
+    const elsewhere = newGame('地点约束测试者', 'docker', []);
+    elsewhere.stats.energy = 100;
+    expect(travelToLocation(elsewhere, 'market', 'walk').ok).toBe(true);
+    expect(performAtLocationAction(elsewhere, 'explore').ok).toBe(true);
+    expect(currentEvent(elsewhere)?.id).not.toBe('adv_dock');
   });
 
   it('只有可核实委托人且已接取的正式委托能够结算报酬', () => {

@@ -525,6 +525,30 @@ export default function App() {
                   return <button key={action} className="act-btn" onClick={() => runAction(s => E.performAtLocationAction(s, action))}>{label}<small>地点行动 · 1h</small></button>;
                 })}
               </div>
+              {loc.id === 'docks' && !beyonder && state.leads.iron_blood_token.stage === 'unknown' && <div className="rounded border border-sky-300/25 p-3 text-xs space-y-2">
+                <div>
+                  <p className="text-sky-100/90">码头失踪案</p>
+                  <p className="text-stone-500 mt-1">现场见闻只能提供方向。公开登记、货运备份与旧仓单必须逐层核对，办公窗口仅在白天开放。</p>
+                </div>
+                {([
+                  {
+                    id: 'reports', label: E.hasClue(state, 'dock_missing_reports') ? '失踪登记已核对' : '核对失踪登记',
+                    issue: E.inspectDockMissingReportsIssue(state), action: (s: GameState) => E.inspectDockMissingReports(s),
+                  },
+                  {
+                    id: 'cargo', label: E.hasClue(state, 'dock_manifest_discrepancy') ? '货运备份已比对' : '比对货运备份',
+                    issue: E.compareDockCargoRecordsIssue(state), action: (s: GameState) => E.compareDockCargoRecords(s),
+                  },
+                  {
+                    id: 'manifest', label: '追查异常仓单',
+                    issue: E.traceDockMarkedManifestIssue(state), action: (s: GameState) => E.traceDockMarkedManifest(s),
+                  },
+                ]).map(step => <button key={step.id} disabled={!!step.issue} title={step.issue ?? ''}
+                  className="block w-full rounded border border-sky-300/25 p-2 text-left text-sky-100/85 disabled:opacity-45"
+                  onClick={() => runAction(step.action)}>
+                  {step.label}<small className="block text-stone-500 mt-0.5">{step.issue ?? '在当前地点继续核对'}</small>
+                </button>)}
+              </div>}
               {localShopId && <div className="rounded border border-stone-700 p-2 text-xs">
                 <p className="text-stone-300 mb-1">店铺货单</p>
                 {E.getShopInventory(state, localShopId).map(item => <button key={item.itemId} className="block text-amber-200/80"

@@ -129,6 +129,29 @@ describe('灵视检视与持久化信息', () => {
 });
 
 describe('物品专属占卜与失败边界', () => {
+  it('码头硬质薄片未鉴定时只呈现普通外观，灵视与两种占卜分别给出有限方向', () => {
+    const ordinary = fresh();
+    ordinary.items.dock_scale_evidence = 1;
+    expect(getInventoryEntries(ordinary).find(entry => entry.id === 'dock_scale_evidence')).toMatchObject({
+      category: 'misc', name: '沾水的硬质薄片',
+    });
+    expect(itemPresentation(ordinary, 'dock_scale_evidence')?.description).not.toMatch(/超凡|途径|组织|具体生物|危险等级/);
+
+    const inspected = trainedSeer();
+    inspected.items.dock_scale_evidence = 1;
+    expect(inspectItemWithSpiritVision(inspected, 'dock_scale_evidence')).toMatchObject({ ok: true, outcome: 'passed' });
+    expect(inspected.itemKnowledge.dock_scale_evidence.knownInfo.join(' ')).toMatch(/旧仓区.*无法据此辨认来源/);
+    expect(getInventoryEntries(inspected).find(entry => entry.id === 'dock_scale_evidence')?.category).toBe('occult');
+
+    const cards = trainedSeer(); cards.items.dock_scale_evidence = 1;
+    const dream = trainedSeer(); dream.items.dock_scale_evidence = 1;
+    expect(performDivination(cards, 'item', 'dock_scale_evidence', 'cards', 'self')).toMatchObject({ ok: true, outcome: 'passed' });
+    expect(performDivination(dream, 'item', 'dock_scale_evidence', 'dream', 'self')).toMatchObject({ ok: true, outcome: 'passed' });
+    expect(cards.divinationInsights.at(-1)?.text).toMatch(/货箱.*旧仓区|货运备份/);
+    expect(dream.divinationInsights.at(-1)?.text).toMatch(/旧仓门.*方向|撤离路线/);
+    expect(cards.divinationInsights.at(-1)?.text).not.toBe(dream.divinationInsights.at(-1)?.text);
+  });
+
   it('同一物品按纸牌与梦境方法取得可审计的不同专属结果', () => {
     const cards = trainedSeer();
     cards.items.anomaly_evidence = 1;
@@ -366,5 +389,13 @@ describe('v17迁移、往返与UI规则入口', () => {
     expect(commonInventory).toBeLessThan(sceneBranches);
     expect(appSource).toContain('interactive={E.isAtHome(state) && !ev}');
     expect(appSource).toContain('你可以随时查看随身记录');
+  });
+
+  it('码头地点页提供失踪案三阶段行动入口，并复用引擎 issue 作为阻断说明', () => {
+    expect(appSource).toContain('码头失踪案');
+    expect(appSource).toContain('E.inspectDockMissingReportsIssue(state)');
+    expect(appSource).toContain('E.compareDockCargoRecordsIssue(state)');
+    expect(appSource).toContain('E.traceDockMarkedManifestIssue(state)');
+    expect(appSource).toContain('onClick={() => runAction(step.action)}');
   });
 });

@@ -831,6 +831,14 @@ export function applyEffects(s: GameState, effects: Effect[]): AppliedEffectRece
           if (e.id === 'dock_missing') acquireClue(s, 'dock_missing_reports', 'event', 'intel:dock_missing');
         }
         break;
+      case 'clue':
+        if (e.id) {
+          receipt.before = hasClue(s, e.id);
+          if (!receipt.before) acquireClue(s, e.id);
+          receipt.after = hasClue(s, e.id);
+          receipt.applied = receipt.before !== receipt.after;
+        }
+        break;
       case 'knowledge':
         if (e.id) {
           receipt.before = s.knowledge.includes(e.id);
@@ -1193,6 +1201,15 @@ export function resolveChoice(s: GameState, choiceIndex: number) {
   if (!choice) return;
   applyEffects(s, choice.effects);
   addLog(s, `  → ${choice.result}`, choice.effects.some(e => (e.k === 'san' || e.k === 'cor' || e.k === 'money') && (e.v ?? 0) < 0) ? 'bad' : 'good');
+  if (ev.id === 'adv_dock' && choiceIndex < 2) {
+    if (s.skills.investigate > 0 || s.skills.occult > 0
+      || ['occult_theory', 'archive_method', 'cargo_notation'].some(id => s.knowledge.includes(id))) {
+      addLog(s, '你用学过的调查与神秘学常识逐项排除：常见动物、货箱摩擦和走私装卸都解释不完整，但现有记录仍不足以给它命名。', 'info');
+    } else {
+      addLog(s, '你没有可靠手段判断这些痕迹的来源；只能确认雾边的空气像被看不见的东西挤动过。', 'info');
+    }
+    addLog(s, '下一步：白天留在码头核对公开失踪登记与货运备份，再追查旧仓单。若带回证物，应先回到安全住处，再自行占卜或请可信者代占；也可以现在撤离，暂缓追查。', 'system');
+  }
   s.pendingEvent = null;
   s.pendingNpc = null;
   activateNextForcedEvent(s);

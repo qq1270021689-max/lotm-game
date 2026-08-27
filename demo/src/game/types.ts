@@ -309,7 +309,7 @@ export interface ActionResult {
 
 export interface Effect {
   k: 'money' | 'energy' | 'san' | 'cor' | 'digestion' | 'stat' | 'item'
-   | 'favor' | 'intel' | 'knowledge' | 'tag' | 'timer' | 'flag' | 'gameover'
+   | 'favor' | 'intel' | 'clue' | 'knowledge' | 'tag' | 'timer' | 'flag' | 'gameover'
    | 'exposure' | 'formula' | 'commission' | 'skill';
   v?: number;
   id?: string;

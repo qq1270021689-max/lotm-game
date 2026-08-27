@@ -110,6 +110,10 @@ export const CLUE_DEFS: readonly {
     sourceKind: 'archive', sourceId: 'dock_cargo_archive', sourceLabel: '码头货运档案',
   },
   {
+    id: 'dock_crate_trace', caseId: 'dock_manifest', title: '雾中货箱外围记录',
+    sourceKind: 'event', sourceId: 'adv_dock', sourceLabel: '东区码头雾中现场',
+  },
+  {
     id: 'dock_marked_manifest', caseId: 'dock_manifest', title: '留有陌生印记的仓单',
     sourceKind: 'location', sourceId: 'dock_manifest_office', sourceLabel: '东区码头旧仓单房',
   },
@@ -146,7 +150,7 @@ export const EXPLORATION_CHECKS: readonly ExplorationCheckDef[] = [
     id: 'dock_manifest_trace', caseId: 'dock_manifest', stat: 'mnd', skill: 'investigate',
     difficulty: 34, skillMultiplier: 4,
     requiredClueIds: ['dock_missing_reports'],
-    clueBonuses: { dock_missing_reports: 4, dock_manifest_discrepancy: 10, dock_ledger_notation: 4 },
+    clueBonuses: { dock_missing_reports: 4, dock_manifest_discrepancy: 10, dock_ledger_notation: 4, dock_crate_trace: 4 },
   },
 ];
 
@@ -437,6 +441,21 @@ export const ITEMS: ItemDef[] = [
       },
     }, price: 0,
   },
+  {
+    id: 'dock_scale_evidence', name: '带有异常残留的硬质薄片', desc: '从码头货箱附近取得的证物。表面残留与周围环境不协调，但仅凭它无法判断来源。',
+    category: 'occult', surfaceName: '沾水的硬质薄片', surfaceDesc: '一枚指甲盖大小的灰黑薄片，边缘磨损，表面沾着码头污水。仅凭外观看不出来自何物。', occultMarked: true,
+    spiritVision: {
+      result: '灵视中，薄片上的微弱残留像被潮水拖向旧仓区深处；它只能说明接触过异常环境，无法据此辨认来源。继续处理前应核对货运路径并避免徒手久持。',
+      sanityCost: 2, revealsOccult: true,
+    },
+    divination: {
+      title: '沾水的硬质薄片', difficulty: 35, pressure: 'low',
+      successText: {
+        cards: '牌面停在“货箱”“断裂的绳结”与“退路”之间：线索指向旧仓区的转运过程，而不是薄片本身的名称。先查货运备份，再决定是否靠近。',
+        dream: '梦里，薄片沿积水逆流滑回一排看不清编号的旧仓门。你醒来时记住的是方向与撤离路线，仍无法看清留下它的东西。',
+      },
+    }, price: 0,
+  },
   { id: 'whiskey', name: '黑麦威士忌', desc: '南区蒸馏所出品，劣等但够劲。送礼佳品。', category: 'misc', price: 12 },
   { id: 'occult_notes', name: '神秘学札记', desc: '老尼尔逊的手抄本，记录着仪式魔法的入门知识。', category: 'misc', price: 60 },
   { id: 'revolver', name: '左轮手枪', desc: '六发。对非凡者意义有限，对劫匪意义重大。', category: 'tool', price: 150 },
@@ -660,11 +679,11 @@ export const EVENTS: GameEvent[] = [
   },
   // ---- 冒险 ----
   {
-    id: 'adv_dock', slot: 'adventure', weight: 4, cond: 'intel:dock_missing', locations: ['docks', 'canal'], title: '雾中的码头',
-    text: '凭着手里的失踪案情报，你在浓雾笼罩的码头区蹲守。午夜前后，雾深处传来拖拽重物的声音，还有……湿漉漉的、不像人的喘息。',
+    id: 'adv_dock', slot: 'adventure', weight: 4, cond: 'mortal&intel:dock_missing', locations: ['docks'], once: true, title: '雾中的码头',
+    text: '凭着手里的失踪案情报，你沿码头核对货箱编号时，一团从河面漫来的局部浓雾忽然吞没了相邻栈桥。雾深处传来拖拽重物的声音，还有……湿漉漉的、不像人的喘息。',
     choices: [
-      { text: '循声摸过去查看', effects: [{ k: 'san', v: -8 }, { k: 'cor', v: 5 }, { k: 'stat', stat: 'spi', v: 2 }], result: '你在货箱后发现了失踪者的遗物——和一枚不属于人类的鳞片。你记下位置与细节，准备继续核对货运记录。那阵喘息声，你这辈子都忘不掉。' },
-      { text: '保持距离，只记录动静', effects: [{ k: 'san', v: -2 }], result: '你安全地带回了外围记录。几处动静与失踪登记能够对上，为继续调查留下了方向。' },
+      { text: '循声摸过去查看', effects: [{ k: 'clue', id: 'dock_crate_trace' }, { k: 'item', id: 'dock_scale_evidence', v: 1 }, { k: 'san', v: -8 }, { k: 'cor', v: 5 }], result: '你在货箱后找到几件散落遗物和一枚沾水的硬质薄片。你没有贸然判断它是什么，只把薄片封好，并记下货箱、拖痕与退路。' },
+      { text: '保持距离，只记录动静', effects: [{ k: 'clue', id: 'dock_crate_trace' }, { k: 'san', v: -2 }], result: '你没有靠近雾里的动静，只从外围记下货箱位置、拖拽节奏与水迹方向。这份现场记录可以拿去和公开登记、货运备份交叉核对。' },
       { text: '撤退', effects: [], result: '雾里的东西没有追来。至少你回头看的时候，没有。' },
     ],
   },
