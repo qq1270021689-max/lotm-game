@@ -549,6 +549,17 @@ export default function App() {
                   {step.label}<small className="block text-stone-500 mt-0.5">{step.issue ?? '在当前地点继续核对'}</small>
                 </button>)}
               </div>}
+              {E.getTingenLandmarkActions(state).length > 0 && <div className="rounded border border-emerald-300/20 p-3 text-xs space-y-2">
+                <p className="text-emerald-100/90">此地的公开活动</p>
+                {E.getTingenLandmarkActions(state).map(action => {
+                  const issue = E.landmarkActionIssue(state, action.id);
+                  return <button key={action.id} disabled={!!issue} title={issue ?? ''}
+                    className="block w-full rounded border border-emerald-300/20 p-2 text-left text-emerald-100/85 disabled:opacity-45"
+                    onClick={() => runAction(s => E.performTingenLandmarkAction(s, action.id))}>
+                    {action.label}<small className="block text-stone-500 mt-0.5">{issue ?? `${action.hours}h · ${action.description}`}</small>
+                  </button>;
+                })}
+              </div>}
               {localShopId && <div className="rounded border border-stone-700 p-2 text-xs">
                 <p className="text-stone-300 mb-1">店铺货单</p>
                 {E.getShopInventory(state, localShopId).map(item => <button key={item.itemId} className="block text-amber-200/80"
@@ -674,14 +685,6 @@ export default function App() {
                         </div>
                       </div>
                     );
-                  })()}
-                  {!beyonder && !E.hasClue(state, 'dock_missing_reports') && (() => {
-                    const issue = E.inspectDockMissingReportsIssue(state);
-                    return <button disabled={!!issue} title={issue ?? ''}
-                      className="w-full mb-3 py-2 rounded border border-sky-300/30 text-sky-100/80 hover:bg-sky-100/5 text-sm disabled:opacity-40"
-                      onClick={() => runAction(s => E.inspectDockMissingReports(s))}>
-                      核对近期失踪公告 <small className="block text-stone-500">9:00–17:00 · 2h · 只核对公开记录</small>
-                    </button>;
                   })()}
                   {visibleLocations.length < LOCATIONS.length && <p className="text-[11px] text-stone-600 mb-3">地图边缘仍有未查明的方向，需要从传闻、委托或可信路线中寻找入口。</p>}
                   {LOCATION_REGIONS.filter(region => visibleLocations.some(location => location.region === region)).map(region => (
@@ -826,7 +829,7 @@ export default function App() {
                 <div className="mt-3 border-t border-stone-800 pt-3">
                   <h3 className="panel-title">官方接触记录 · 不眠者</h3>
                   <p className="text-xs text-stone-500 leading-5 mb-2">
-                    来源：圣塞缪尔教堂值夜者 · 当前节点：{
+                    来源：圣赛琳娜教堂值夜者 · 当前节点：{
                       ({ reported: '可申请候选审查', screening_scheduled: '等待保密面谈', interview_passed: '等待夜间观察勤务', offer_pending: '审查通过，待确认加入', member: '已加入，待查看组织库存', committed: '途径已锁定', declined: '已拒绝，可重新申请' } as Record<string, string>)[nightwatchRoute.routeStep] ?? nightwatchRoute.routeStep
                     }
                   </p>

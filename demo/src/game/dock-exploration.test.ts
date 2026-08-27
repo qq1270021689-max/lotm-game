@@ -10,10 +10,12 @@ import {
   hasClue,
   identifyOrganizationEvidence,
   inspectDockMissingReports,
+  isLocationUnlocked,
   loadGame,
   newGame,
   saveGame,
   traceDockMarkedManifest,
+  travelToLocation,
 } from './engine';
 
 class MemoryStorage {
@@ -27,11 +29,14 @@ const fresh = () => newGame('码头调查者', 'clerk', []);
 
 function visitDocks() {
   const s = fresh();
+  applyEffects(s, [{ k: 'intel', id: 'dock_missing' }]);
   s.stats.energy = 100;
-  s.hour = 9;
+  s.hour = 8;
+  expect(travelToLocation(s, 'docks', 'walk').ok).toBe(true);
+  expect(s.currentLocation?.locationId).toBe('docks');
   expect(inspectDockMissingReports(s).ok).toBe(true);
-  expect(doAdventure(s, 'docks').ok).toBe(true);
-  expect(s.hour).toBe(13);
+  expect(s.visitedLocations).toContain('docks');
+  expect(s.hour).toBe(11);
   return s;
 }
 
@@ -76,25 +81,41 @@ describe('码头线索来源与入口隔离', () => {
     expect(s.formulas).not.toContain('hunter9');
   });
 
-  it('docker 出身与事件情报会生成可追溯的公开失踪线索，但不绕过码头到访', () => {
+  it('docker 出身与事件情报只开放码头去向，不会代替现场核对登记', () => {
     const docker = newGame('码头之子', 'docker', []);
-    expect(docker.clues).toContainEqual(expect.objectContaining({
-      id: 'dock_missing_reports', sourceKind: 'public_records', sourceId: 'origin:docker',
-    }));
+    expect(docker.intel).toContain('dock_missing');
+    expect(isLocationUnlocked(docker, 'docks')).toBe(true);
+    expect(hasClue(docker, 'dock_missing_reports')).toBe(false);
     expect(traceDockMarkedManifest(docker).ok).toBe(false);
 
     const eventState = fresh();
     applyEffects(eventState, [{ k: 'intel', id: 'dock_missing' }]);
-    expect(eventState.clues).toContainEqual(expect.objectContaining({
-      id: 'dock_missing_reports', sourceKind: 'event', sourceId: 'intel:dock_missing',
-    }));
+    expect(eventState.intel).toContain('dock_missing');
+    expect(isLocationUnlocked(eventState, 'docks')).toBe(true);
+    expect(hasClue(eventState, 'dock_missing_reports')).toBe(false);
   });
 
-  it('硬前置失败不消耗；缺必需线索时高属性高技能也不能追查', () => {
+  it('在家核对登记会零状态失败；抵达码头后可直接核对并记为到访', () => {
+    const atHome = newGame('码头之子', 'docker', []);
+    atHome.hour = 9;
+    const before = structuredClone(atHome);
+    expect(inspectDockMissingReports(atHome)).toMatchObject({ ok: false });
+    expect(atHome).toEqual(before);
+
+    atHome.stats.energy = 100;
+    atHome.hour = 8;
+    expect(travelToLocation(atHome, 'docks', 'walk')).toMatchObject({ ok: true });
+    expect(inspectDockMissingReports(atHome)).toMatchObject({ ok: true });
+    expect(hasClue(atHome, 'dock_missing_reports')).toBe(true);
+    expect(atHome.visitedLocations).toContain('docks');
+    expect(atHome.currentLocation?.locationId).toBe('docks');
+  });
+
+  it('缺必需线索时高属性高技能也不能追查，且硬前置失败不消耗', () => {
     const unvisited = fresh();
-    const unvisitedBefore = { day: unvisited.day, hour: unvisited.hour, energy: unvisited.stats.energy };
+    const unvisitedBefore = structuredClone(unvisited);
     expect(inspectDockMissingReports(unvisited).ok).toBe(false);
-    expect({ day: unvisited.day, hour: unvisited.hour, energy: unvisited.stats.energy }).toEqual(unvisitedBefore);
+    expect(unvisited).toEqual(unvisitedBefore);
 
     const s = visitDocks();
     s.clues = s.clues.filter(clue => clue.id !== 'dock_missing_reports');
@@ -161,6 +182,21 @@ describe('码头确定性检定', () => {
     expect(after.contributingClueIds).toContain('dock_crate_trace');
     expect(after.outcome).toBe('blocked');
   });
+
+  it('河与海公开告示仅提供小额辅助，不能替代码头正式失踪登记', () => {
+    const noticesOnly = fresh();
+    applyEffects(noticesOnly, [{ k: 'clue', id: 'river_sea_missing_notices' }]);
+    expect(evaluateExplorationCheck(noticesOnly, 'dock_manifest_trace')).toMatchObject({
+      outcome: 'blocked', reason: 'missing_required_clue', contributingClueIds: ['river_sea_missing_notices'],
+    });
+
+    const baseline = withReports();
+    const before = evaluateExplorationCheck(baseline, 'dock_manifest_trace');
+    applyEffects(baseline, [{ k: 'clue', id: 'river_sea_missing_notices' }]);
+    const after = evaluateExplorationCheck(baseline, 'dock_manifest_trace');
+    expect(after.score - before.score).toBe(3);
+    expect(after.contributingClueIds).toContain('river_sea_missing_notices');
+  });
 });
 
 describe('异常仓单动作与原有组织链', () => {
@@ -225,15 +261,14 @@ describe('v11 码头调查迁移', () => {
     return loadGame()!;
   }
 
-  it('visited-only 不补关键线索，情报则只补公开登记', () => {
+  it('visited-only 与仅有传闻都不补关键线索', () => {
     const visited = loadV11(s => { s.visitedLocations = ['docks']; });
     expect(visited.schemaVersion).toBe(17);
     expect(visited.clues.filter(clue => clue.caseId === 'dock_manifest')).toEqual([]);
 
     const intel = loadV11(s => { s.intel.push('dock_missing'); });
-    expect(intel.clues.filter(clue => clue.caseId === 'dock_manifest')).toEqual([
-      expect.objectContaining({ id: 'dock_missing_reports', sourceKind: 'migration' }),
-    ]);
+    expect(intel.clues.filter(clue => clue.caseId === 'dock_manifest')).toEqual([]);
+    expect(isLocationUnlocked(intel, 'docks')).toBe(true);
   });
 
   it('可信 found 及以后进度补足三条线索，存取幂等', () => {

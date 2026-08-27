@@ -112,7 +112,7 @@ describe('地点行动、搜集与店铺', () => {
     expect(buyFromShop(s, 'market_general_store', 'whiskey').ok).toBe(true);
     expect(s.pence).toBe(money - 12);
     expect(buyFromShop(s, 'black_market_stall', 'whiskey').ok).toBe(false);
-    expect(getBookSourceOffers(s).map(offer => offer.bookId)).toEqual(['municipal_archive_manual']);
+    expect(getBookSourceOffers(s).map(offer => offer.bookId)).toEqual([]);
     expect(acquireBook(s, 'dock_manifest_manual').ok).toBe(false);
   });
 

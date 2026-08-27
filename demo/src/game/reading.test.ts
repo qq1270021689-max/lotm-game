@@ -15,6 +15,7 @@ import {
   leaveCurrentLocation,
   loadGame,
   newGame,
+  performTingenLandmarkAction,
   readBookSession,
   readingIssue,
   saveGame,
@@ -56,13 +57,17 @@ describe('固定书源与独立阅读', () => {
     expect(s.pendingEvent).toBeNull();
   });
 
-  it('新档在家不泄露地点书源，抵达市集才看见市政手册', () => {
+  it('新档在家和市集不泄露书源，取得城市目录并抵达市政图书馆后才看见市政手册', () => {
     const s = fresh();
     expect(getBookSourceOffers(s).map(offer => offer.bookId)).toEqual([]);
     const before = structuredClone(s);
     expect(acquireBook(s, 'manor_guest_registry_book')).toEqual(acquireBook(s, 'not_a_book'));
     expect(s).toEqual(before);
     expect(travelToLocation(s, 'market', 'walk').ok).toBe(true);
+    expect(getBookSourceOffers(s).map(offer => offer.bookId)).toEqual([]);
+    expect(performTingenLandmarkAction(s, 'market_city_directory').ok).toBe(true);
+    expect(leaveCurrentLocation(s).ok).toBe(true);
+    expect(travelToLocation(s, 'municipal_library', 'walk').ok).toBe(true);
     expect(getBookSourceOffers(s).map(offer => offer.bookId)).toEqual(['municipal_archive_manual']);
     expect(leaveCurrentLocation(s).ok).toBe(true);
 
@@ -85,7 +90,8 @@ describe('固定书源与独立阅读', () => {
 
   it('每本书保持独立进度，quick_wit只对成功阅读多计一小时且不溢出', () => {
     const s = fresh('clerk', ['quick_wit']); s.stats.energy = 100;
-    expect(travelToLocation(s, 'market', 'walk').ok).toBe(true);
+    acquireClue(s, 'tingen_city_directory');
+    expect(travelToLocation(s, 'municipal_library', 'walk').ok).toBe(true);
     expect(acquireBook(s, 'municipal_archive_manual').ok).toBe(true);
     expect(leaveCurrentLocation(s).ok).toBe(true);
     expect(readBookSession(s, 'municipal_archive_manual').ok).toBe(true);

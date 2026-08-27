@@ -11,6 +11,7 @@ import {
   doAdventure,
   doSleep,
   forceEvent,
+  inspectDockMissingReports,
   instantiateEventBlueprint,
   loadGame,
   maybeTrigger,
@@ -269,6 +270,8 @@ describe('固定奖励与权威回执', () => {
     resolveChoice(s, 1);
     expect(s.currentLocation?.locationId).toBe('docks');
     expect(s.clues).toContainEqual(expect.objectContaining({ id: 'dock_crate_trace', sourceKind: 'event' }));
+    expect(compareDockCargoRecordsIssue(s)).toMatch(/公开失踪登记/);
+    expect(inspectDockMissingReports(s)).toMatchObject({ ok: true });
     expect(compareDockCargoRecordsIssue(s)).toBeNull();
     expect(compareDockCargoRecords(s)).toMatchObject({ ok: true });
     expect(s.clues).toContainEqual(expect.objectContaining({ id: 'dock_manifest_discrepancy' }));

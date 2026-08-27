@@ -251,7 +251,7 @@ export interface DivinationAttempt {
 }
 
 export type LanguageProficiency = 'none' | 'reading' | 'fluent';
-export type BookSourceKind = 'market' | 'location' | 'npc';
+export type BookSourceKind = 'market' | 'public_location' | 'location' | 'npc';
 
 export interface BookState {
   bookId: string;
@@ -413,6 +413,23 @@ export interface LocationDef {
   actions: readonly LocationActionId[];
 }
 
+export type TingenLandmarkRequirement = 'abnormal_witness';
+
+export interface TingenLandmarkActionDef {
+  id: string;
+  locationId: string;
+  label: string;
+  description: string;
+  hours: number;
+  energyCost: number;
+  openFrom?: number;
+  openTo?: number;
+  requirement?: TingenLandmarkRequirement;
+  completion: { kind: 'clue' | 'intel' | 'knowledge' | 'flag'; id: string };
+  effects: readonly Effect[];
+  result: string;
+}
+
 export interface GameEvent {
   id: string;
   slot: string;           // work / adventure / rest / study / social / act / street / daily / timer
@@ -467,6 +484,7 @@ export interface RouteAttempt {
   step: string;
   outcome: 'started' | 'passed' | 'failed' | 'declined' | 'migrated';
   note?: string;
+  evidenceId?: string;
 }
 
 /** 每条途径独立保存资格与准备，防止一个组织的候选资格被挪到另一条途径。 */

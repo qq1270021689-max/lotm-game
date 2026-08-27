@@ -7,10 +7,20 @@ const LOCATION_INTEL: Partial<Record<string, readonly string[]>> = {
 };
 
 const LOCATION_CLUES: Partial<Record<string, readonly string[]>> = {
-  docks: ['dock_missing_reports', 'dock_manifest_discrepancy', 'dock_marked_manifest'],
+  docks: ['dock_missing_reports', 'dock_manifest_discrepancy', 'dock_marked_manifest', 'river_sea_missing_notices'],
   canal: ['dock_manifest_discrepancy'],
   old_tower: ['clocktower_public_complaints', 'clocktower_repair_orders'],
   manor: ['manor_address'],
+  factory: ['tingen_factory_repairs'],
+  st_selena_church: ['tingen_city_directory'],
+  dewill_library: ['tingen_city_directory'],
+  municipal_library: ['tingen_city_directory'],
+  hoy_university: ['tingen_honest_paper'],
+  divination_club: ['tingen_honest_paper'],
+  hound_tavern: ['tingen_honest_paper'],
+  dragon_bar: ['tingen_honest_paper'],
+  st_number_church: ['tingen_church_directory'],
+  river_sea_church: ['tingen_church_directory'],
 };
 
 export function isMaterialRouteValid(state: GameState, sourceId: string): boolean {
@@ -32,10 +42,27 @@ function hasMatchingMaterialRoute(state: GameState, locationId: string): boolean
     source.locationId === locationId && isMaterialRouteValid(state, source.sourceId));
 }
 
+function hasFormalBlackthornRoute(state: GameState): boolean {
+  const route = state.organizationRoutes?.nightwatch;
+  return !!route && (['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(route.status)
+    || route.history.some(entry => !!entry && entry.step === 'report_to_evelyn' && entry.outcome === 'passed'));
+}
+
+export function hasVerifiedBlackthornReferral(state: GameState): boolean {
+  const clue = state.clues?.find(record => record.id === 'blackthorn_referral');
+  const route = state.organizationRoutes?.nightwatch;
+  return clue?.sourceKind === 'location' && clue.sourceId === 'hound_message'
+    && !!route?.history.some(entry => !!entry && entry.step === 'hound_security_referral'
+      && entry.outcome === 'passed' && entry.evidenceId === 'blackthorn_referral');
+}
+
 /** 只接受玩家已经掌握的、可核验的地点入口证据。 */
 export function isLocationUnlocked(state: GameState, locationId: string): boolean {
   const location = LOCATIONS.find(candidate => candidate.id === locationId);
   if (!location) return false;
+  if (locationId === 'blackthorn_security') {
+    return hasFormalBlackthornRoute(state) || hasVerifiedBlackthornReferral(state);
+  }
   if (location.public) return true;
   if ((state.visitedLocations ?? []).includes(locationId)) return true;
   if (state.activeCommission?.locationId === locationId) return true;

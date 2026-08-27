@@ -1,14 +1,14 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode, TingenLandmarkActionDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
-import { isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
+import { hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
 export const CURRENT_SCHEMA_VERSION = 17;
 export type { ActionResult } from './types';
-export { getVisibleLocations, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
+export { getVisibleLocations, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 function blankPathwayLead(): PathwayLead {
   return { history: [], routeStep: 'none', commitment: false };
@@ -452,7 +452,7 @@ function providerIssue(s: GameState, provider: DivinationProvider, method: Divin
   } else {
     const evelyn = findAnyNPC(s, 'evelyn');
     if (!evelyn || !isMet(s, 'evelyn')) return '你尚未与负责异常事务的教会执事建立联系。';
-    if (!npcAvailable(evelyn, s.day, s.hour)) return '伊芙琳此刻不在圣塞缪尔教堂。';
+    if (!npcAvailable(evelyn, s.day, s.hour)) return '伊芙琳此刻不在圣赛琳娜教堂。';
     if (!hasOfficialEvelynDivinationRelationship(s)) return '教会尚未把你或这件事纳入正式异常记录。';
     if (!(target.id === 'old_tower' || target.id === 'anomaly_evidence')) return '这不属于伊芙琳会受理的官方异常或证物范围。';
     if (method !== 'cards') return '官方记录室采用的是受控象征核验。';
@@ -650,9 +650,6 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     s.stats[key] = clamp(s.stats[key] + (v ?? 0));
   }
   for (const [npc, f] of Object.entries(origin.favors ?? {})) s.relations[npc] = f;
-  if (origin.id === 'docker' && s.intel.includes('dock_missing')) {
-    acquireClue(s, 'dock_missing_reports', 'public_records', 'origin:docker');
-  }
   if (origin.id === 'orphan') {
     const churchBook = s.books.church_festivals_excerpt;
     churchBook.acquired = true;
@@ -828,7 +825,6 @@ export function applyEffects(s: GameState, effects: Effect[]): AppliedEffectRece
           if (!receipt.before) s.intel.push(e.id);
           receipt.after = s.intel.includes(e.id);
           receipt.applied = receipt.before !== receipt.after;
-          if (e.id === 'dock_missing') acquireClue(s, 'dock_missing_reports', 'event', 'intel:dock_missing');
         }
         break;
       case 'clue':
@@ -1047,9 +1043,9 @@ function dailySettlement(s: GameState) {
   }
 
   const news = [
-    '《贝克兰德晨报》：东区雾灾持续，市政厅提醒市民减少夜间出行。',
+    '《廷根市诚实报》：东区雾气持续，市政厅提醒市民减少夜间出行。',
     '《塔索克报》：码头工会与资方谈判破裂，罢工一触即发。',
-    '《贝克兰德晨报》：又一起失踪案。值夜者呼吁市民「相信教会」。',
+    '《廷根市诚实报》：又一起失踪案，家属仍在等待治安部门的公开进展。',
     '《每日观察报》：黑面粉价格上涨，贫民区动荡加剧。',
   ];
   addLog(s, `📰 ${news[rnd(news.length)]}`, 'system');
@@ -1557,6 +1553,75 @@ export function performAtLocationAction(s: GameState, actionId: LocationActionId
   return performAtLocationActionInternal(s, actionId, 1);
 }
 
+const LANDMARK_EFFECT_KINDS = new Set<Effect['k']>(['clue', 'intel', 'knowledge', 'flag']);
+
+function hasAbnormalWitnessForReferral(s: GameState): boolean {
+  return s.awareness !== 'ordinary'
+    || !!s.flags.met_beyonder
+    || ['anomaly_evidence', 'cryptic_note', 'dock_scale_evidence'].some(itemId => (s.items[itemId] ?? 0) > 0)
+    || hasClue(s, 'dock_crate_trace')
+    || !!s.organizationRoutes.nightwatch?.history.some(entry => entry.step === 'clocktower_witness' && entry.outcome === 'started');
+}
+
+function landmarkRequirementMet(s: GameState, def: TingenLandmarkActionDef): boolean {
+  return def.requirement !== 'abnormal_witness' || hasAbnormalWitnessForReferral(s);
+}
+
+function landmarkActionCompleted(s: GameState, def: TingenLandmarkActionDef): boolean {
+  if (def.id === 'hound_leave_security_message') return hasVerifiedBlackthornReferral(s);
+  const { kind, id } = def.completion;
+  if (kind === 'clue') return hasClue(s, id);
+  if (kind === 'intel') return s.intel.includes(id);
+  if (kind === 'knowledge') return s.knowledge.includes(id);
+  return !!s.flags[id];
+}
+
+function landmarkActionOpen(s: GameState, def: TingenLandmarkActionDef): boolean {
+  if (def.openFrom === undefined || def.openTo === undefined) return true;
+  const hour = def.openTo > 24 && s.hour < def.openFrom ? s.hour + 24 : s.hour;
+  return hour >= def.openFrom && hour < def.openTo;
+}
+
+/** 只返回当前地点、且玩家已具备显示资格的公开地标行动。 */
+export function getTingenLandmarkActions(s: GameState): readonly TingenLandmarkActionDef[] {
+  const locationId = s.currentLocation?.locationId;
+  if (!locationId || !isLocationUnlocked(s, locationId)) return [];
+  return TINGEN_LANDMARK_ACTIONS.filter(def => def.locationId === locationId && landmarkRequirementMet(s, def));
+}
+
+export function landmarkActionIssue(s: GameState, actionId: string): string | null {
+  const def = TINGEN_LANDMARK_ACTIONS.find(candidate => candidate.id === actionId);
+  if (!def || s.currentLocation?.locationId !== def.locationId || !isLocationUnlocked(s, def.locationId) || !landmarkRequirementMet(s, def)) {
+    return '当前地点没有这项可核实的公开活动。';
+  }
+  if (s.atWork) return '需先结束工作再处理地点事务。';
+  if (landmarkActionCompleted(s, def)) return '这项公开资料已经记入笔记，重复查阅不会产生新收获。';
+  if (!landmarkActionOpen(s, def)) {
+    const end = def.openTo! > 24 ? def.openTo! - 24 : def.openTo!;
+    return `该公开窗口在${def.openFrom}:00–${end}:00办理。`;
+  }
+  if (s.stats.energy < energyCost(s, def.energyCost) + 3) return '你现在太疲惫，无法认真完成这项查阅或交谈。';
+  if (!def.effects.every(effect => LANDMARK_EFFECT_KINDS.has(effect.k))) return '这项地点活动的数据不符合公共奖励边界。';
+  return null;
+}
+
+export function performTingenLandmarkAction(s: GameState, actionId: string): ActionResult {
+  const issue = landmarkActionIssue(s, actionId);
+  if (issue) return { ok: false, msg: issue };
+  const def = TINGEN_LANDMARK_ACTIONS.find(candidate => candidate.id === actionId)!;
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, def.energyCost) }]);
+  if (def.id === 'hound_leave_security_message') {
+    s.clues = s.clues.filter(record => record.id !== 'blackthorn_referral');
+  }
+  applyEffects(s, [...def.effects]);
+  if (def.id === 'hound_leave_security_message') {
+    recordOrganizationRoute(s, 'nightwatch', 'hound_security_referral', 'passed', undefined, 'blackthorn_referral');
+  }
+  advanceHours(s, def.hours);
+  addLog(s, def.result, 'info');
+  return { ok: true };
+}
+
 export function performLocationAction(s: GameState, locationId: string, actionId: LocationActionId, mode: TravelMode, companionId?: string): ActionResult {
   if (s.currentLocation) {
     if (s.currentLocation.locationId !== locationId) return { ok: false, msg: '你已经身处另一个地点，需先离开才能改道。' };
@@ -1602,7 +1667,7 @@ function hasAbridgedOccultNotesAccess(s: GameState): boolean {
 function visibleBookSource(s: GameState, bookId: string): boolean {
   const source = BOOK_SOURCE_DEFS.find(candidate => candidate.bookId === bookId);
   if (!source) return false;
-  if (source.kind === 'market') return s.currentLocation?.locationId === source.sourceId;
+  if (source.kind === 'market' || source.kind === 'public_location') return s.currentLocation?.locationId === source.sourceId;
   if (source.kind === 'location') return s.currentLocation?.locationId === source.sourceId && hasVisitedLocation(s, source.sourceId);
   const npc = findAnyNPC(s, source.sourceId);
   const npcSourceVisible = !!npc && isMet(s, source.sourceId) && (s.relations[source.sourceId] ?? -100) >= VISIT_FAVOR
@@ -1935,8 +2000,8 @@ export function organizationRoute(s: GameState, organizationId: OrganizationId):
   return s.organizationRoutes[organizationId];
 }
 
-function recordOrganizationRoute(s: GameState, organizationId: OrganizationId, step: string, outcome: PathwayLead['history'][number]['outcome'], note?: string) {
-  organizationRoute(s, organizationId).history.push({ day: s.day, step, outcome, note });
+function recordOrganizationRoute(s: GameState, organizationId: OrganizationId, step: string, outcome: PathwayLead['history'][number]['outcome'], note?: string, evidenceId?: string) {
+  organizationRoute(s, organizationId).history.push({ day: s.day, step, outcome, ...(note ? { note } : {}), ...(evidenceId ? { evidenceId } : {}) });
 }
 
 export const organizationDef = (organizationId: OrganizationId) => ORGANIZATIONS.find(org => org.id === organizationId);
@@ -2401,6 +2466,7 @@ function dockManifestBaseIssue(s: GameState): string | null {
 export function inspectDockMissingReportsIssue(s: GameState): string | null {
   if (s.atWork) return '工作期间不能离岗查阅失踪登记。';
   if (isBeyonder(s)) return '这条公开登记只属于尚未成为非凡者的普通人。';
+  if (s.currentLocation?.locationId !== 'docks') return '需要先抵达东区码头，才能核对当地的公开失踪登记。';
   if (s.leads.iron_blood_token.stage !== 'unknown') return '异常仓单已经取得，无需重新查阅失踪登记。';
   if (hasClue(s, 'dock_missing_reports')) return '失踪登记已经记入调查笔记。';
   if (!isChurchOfficeHours(s.hour)) return '治安所与公开档案室只在9:00至17:00间可以查阅。';
@@ -2412,6 +2478,9 @@ export function inspectDockMissingReports(s: GameState): ActionResult {
   const issue = inspectDockMissingReportsIssue(s);
   if (issue) return { ok: false, msg: issue };
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, 8) }]);
+  // 这项登记只能在码头现场办理；成功核对本身也构成一次真实到访，
+  // 后续货运档案步骤无需再强迫玩家做一次泛化“探索”。
+  recordLocationCompletion(s, 'docks');
   acquireClue(s, 'dock_missing_reports');
   addLog(s, '你把治安所的失踪报案与码头公布的临时工名册逐项对照，确认有几个名字都曾在同一片仓区工作。', 'info');
   addLog(s, '✦ 公开失踪登记已记入调查笔记。它只能证明人员去向可疑，还需要货运记录作为旁证。', 'system');
@@ -2420,9 +2489,12 @@ export function inspectDockMissingReports(s: GameState): ActionResult {
 }
 
 export function compareDockCargoRecordsIssue(s: GameState): string | null {
+  if (s.atWork) return '工作期间不能离岗调查码头档案。';
+  if (isBeyonder(s)) return '这条世俗调查只属于尚未成为非凡者的普通人。';
+  if (s.leads.iron_blood_token.stage !== 'unknown') return '异常仓单已经取得，无需重复追查。';
+  if (!hasClue(s, 'dock_missing_reports')) return '请先核对码头的公开失踪登记。';
   const issue = dockManifestBaseIssue(s);
   if (issue) return issue;
-  if (!hasClue(s, 'dock_missing_reports')) return '请先核对码头的公开失踪登记。';
   if (hasClue(s, 'dock_manifest_discrepancy')) return '货运记录已经比对并记入调查笔记。';
   if (s.stats.energy < 8) return '你当前太过疲惫，无法继续比对货运档案。';
   return null;
@@ -2440,6 +2512,10 @@ export function compareDockCargoRecords(s: GameState): ActionResult {
 }
 
 export function traceDockMarkedManifestIssue(s: GameState): string | null {
+  if (s.atWork) return '工作期间不能离岗调查码头档案。';
+  if (isBeyonder(s)) return '这条世俗调查只属于尚未成为非凡者的普通人。';
+  if (s.leads.iron_blood_token.stage !== 'unknown') return '异常仓单已经取得，无需重复追查。';
+  if (!hasClue(s, 'dock_missing_reports')) return '调查笔记里还缺少公开失踪登记。';
   const issue = dockManifestBaseIssue(s);
   if (issue) return issue;
   if (s.stats.energy < 15) return '你当前太过疲惫，无法完成这次细致追查。';
@@ -2507,7 +2583,7 @@ export function traceClocktowerAnomaly(s: GameState): ActionResult {
   route.routeStep = 'evidence_ready';
   recordOrganizationRoute(s, 'nightwatch', 'clocktower_witness', 'started', '取得染着冷灰的铜质铭牌');
   addLog(s, '你循着停摆钟楼的午夜敲响追查到一名失去影子的伤者。黑风衣人封锁现场前，你捡到一枚染着冷灰的铜质铭牌。你无法解释所见，但证物真实存在。', 'event');
-  addLog(s, '✦ 异常记录已建立。你可以把证物交给圣塞缪尔教堂的伊芙琳；也可以就此停下，继续普通生活。', 'system');
+  addLog(s, '✦ 异常记录已建立。你可以把证物交给圣赛琳娜教堂的伊芙琳；也可以就此停下，继续普通生活。', 'system');
   advanceHours(s, 3);
   return { ok: true, outcome: 'passed' };
 }
@@ -3529,6 +3605,11 @@ export function loadGame(): GameState | null {
       const route = oldOrganizationRoutes[org.id];
       if (route && typeof route === 'object') s.organizationRoutes[org.id] = { ...s.organizationRoutes[org.id], ...route, history: Array.isArray(route.history) ? route.history : [] };
     }
+    // 猎犬酒馆转介必须同时保有权威来源线索与行动时写入的结构化凭据。
+    // 单独注入 clue id 或伪造来源不能在读档后开放黑荆棘。
+    if (!hasVerifiedBlackthornReferral(s)) {
+      s.clues = s.clues.filter(record => record.id !== 'blackthorn_referral');
+    }
     const oldDiaryPages = s.diaryPages && typeof s.diaryPages === 'object' ? s.diaryPages : {};
     s.diaryPages = createDiaryPages();
     for (const [id, page] of Object.entries(oldDiaryPages)) if (s.diaryPages[id] && page && typeof page === 'object') s.diaryPages[id] = { ...s.diaryPages[id], ...page };
@@ -3547,6 +3628,10 @@ export function loadGame(): GameState | null {
     s.visitedLocations = Array.isArray(s.visitedLocations)
       ? [...new Set(s.visitedLocations.filter(id => LOCATIONS.some(location => location.id === id)))]
       : [];
+    if (!isLocationUnlocked(s, 'blackthorn_security')) {
+      s.visitedLocations = s.visitedLocations.filter(id => id !== 'blackthorn_security');
+      if (s.activeCommission?.locationId === 'blackthorn_security') s.activeCommission = null;
+    }
     if (loadedVersion < 16) {
       s.currentLocation = null;
       s.completedLocationActions = [];
@@ -3793,9 +3878,6 @@ export function loadGame(): GameState | null {
       }
     }
     if (loadedVersion < 12) {
-      if (s.intel.includes('dock_missing')) {
-        acquireClue(s, 'dock_missing_reports', 'migration', `intel:dock_missing:schema:${loadedVersion}`);
-      }
       const dockLead = s.leads.iron_blood_token;
       const dockRoute = organizationRoute(s, 'iron_and_blood');
       const hunterLead = pathwayLead(s, 'hunter');

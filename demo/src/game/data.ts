@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -16,7 +16,7 @@ export const ORIGINS: Origin[] = [
   },
   {
     id: 'orphan', name: '教会孤儿院出身',
-    desc: '在圣塞缪尔教堂的孤儿院长大，唱诗、认字、守规矩。值夜者认得你的脸——这层熟悉，是护身符也是枷锁。',
+    desc: '在圣赛琳娜教堂的孤儿院长大，唱诗、认字、守规矩。教堂执事认得你的脸——这层熟悉，是护身符也是约束。',
     pence: 200, statMods: { san: 10 },
     favors: { evelyn: 15 }, knowledge: ['church_liturgy'],
     exposureMult: 0.8, mealCost: 6, initialJobId: 'church_copyist',
@@ -51,7 +51,7 @@ export const JOBS: JobDef[] = [
     tendency: '高体力消耗 · 体质倾向 · 码头传闻', coworkerIdentity: '码头装卸工',
   },
   {
-    id: 'church_copyist', name: '教会文书助理', location: '圣塞缪尔教堂',
+    id: 'church_copyist', name: '教会文书助理', location: '圣赛琳娜教堂',
     shiftStart: 8, shiftEnd: 17, commuteHours: 1, workHours: 4, pay: 38, energyCost: 20,
     desc: '整理捐赠名册、抄写布告和归档教区记录，薪水不高但环境安稳。',
     tendency: '低消耗 · 心智倾向 · 教会见闻', coworkerIdentity: '教会文书',
@@ -137,6 +137,30 @@ export const CLUE_DEFS: readonly {
     id: 'manor_guest_registry', caseId: 'manor_history', title: '庄园访客名册摘录',
     sourceKind: 'archive', sourceId: 'book:manor_guest_registry', sourceLabel: '《雾林庄园访客名册》',
   },
+  {
+    id: 'tingen_city_directory', caseId: 'tingen_landmarks', title: '廷根市公共地点目录',
+    sourceKind: 'public_records', sourceId: 'market_city_notice', sourceLabel: '铁十字街公共告示与城区地图',
+  },
+  {
+    id: 'tingen_honest_paper', caseId: 'tingen_landmarks', title: '《廷根市诚实报》公共场所索引',
+    sourceKind: 'archive', sourceId: 'dewill_periodicals', sourceLabel: '德维尔图书馆公共报刊架',
+  },
+  {
+    id: 'tingen_church_directory', caseId: 'tingen_landmarks', title: '廷根教会公共服务公告',
+    sourceKind: 'public_records', sourceId: 'st_selena_notice', sourceLabel: '圣赛琳娜教堂公开公告栏',
+  },
+  {
+    id: 'blackthorn_referral', caseId: 'blackthorn_contact', title: '安保公司异常说明转介回条',
+    sourceKind: 'location', sourceId: 'hound_message', sourceLabel: '猎犬酒馆代收的安保联络口信',
+  },
+  {
+    id: 'river_sea_missing_notices', caseId: 'dock_manifest', title: '河运失踪人员公开告示',
+    sourceKind: 'public_records', sourceId: 'river_sea_shipping_board', sourceLabel: '河与海教堂公开河运告示栏',
+  },
+  {
+    id: 'tingen_factory_repairs', caseId: 'tingen_industry', title: '城郊机械事故与修理公告',
+    sourceKind: 'public_records', sourceId: 'st_number_repairs', sourceLabel: '圣数教堂公开修理公告',
+  },
 ];
 
 export const EXPLORATION_CHECKS: readonly ExplorationCheckDef[] = [
@@ -150,7 +174,7 @@ export const EXPLORATION_CHECKS: readonly ExplorationCheckDef[] = [
     id: 'dock_manifest_trace', caseId: 'dock_manifest', stat: 'mnd', skill: 'investigate',
     difficulty: 34, skillMultiplier: 4,
     requiredClueIds: ['dock_missing_reports'],
-    clueBonuses: { dock_missing_reports: 4, dock_manifest_discrepancy: 10, dock_ledger_notation: 4, dock_crate_trace: 4 },
+    clueBonuses: { dock_missing_reports: 4, dock_manifest_discrepancy: 10, dock_ledger_notation: 4, dock_crate_trace: 4, river_sea_missing_notices: 3 },
   },
 ];
 
@@ -192,7 +216,7 @@ export const BOOK_DEFS: readonly BookDef[] = [
 ];
 
 export const BOOK_SOURCE_DEFS: readonly BookSourceDef[] = [
-  { bookId: 'municipal_archive_manual', kind: 'market', sourceId: 'market', price: 12 },
+  { bookId: 'municipal_archive_manual', kind: 'public_location', sourceId: 'municipal_library', price: 12 },
   { bookId: 'dock_manifest_manual', kind: 'location', sourceId: 'docks', price: 0 },
   { bookId: 'church_festivals_excerpt', kind: 'npc', sourceId: 'evelyn', price: 0 },
   { bookId: 'old_feysac_primer', kind: 'npc', sourceId: 'nelson', price: 36 },
@@ -269,7 +293,7 @@ export const PATHWAYS: Pathway[] = [
 ];
 
 export const ORGANIZATIONS = [
-  { id: 'nightwatch', name: '黑夜教会值夜者', heldPathways: ['sleepless', 'seer'], contactNpc: 'evelyn', entry: '圣塞缪尔教堂', qualification: '接受教会背景审查与封锁线观察勤务', membership: '签署保密、夜间调遣与定期评估义务' },
+  { id: 'nightwatch', name: '黑夜教会值夜者', heldPathways: ['sleepless', 'seer'], contactNpc: 'evelyn', entry: '圣赛琳娜教堂', qualification: '接受教会背景审查与封锁线观察勤务', membership: '签署保密、夜间调遣与定期评估义务' },
   { id: 'secret_order', name: '密修会外围研究结社', heldPathways: ['seer'], contactNpc: 'nelson', entry: '由可信古书商代转外围研究者的引荐信', qualification: '完成来源核验与保密边界测试', membership: '接受外围结社的保密、研究记录与召回义务' },
   { id: 'psychology_alchemists', name: '心理炼金会外围研究会', heldPathways: ['spectator'], contactNpc: 'ella', entry: '由可信心理医生提交匿名病例观察记录', qualification: '完成观察伦理与保密测试', membership: '接受病例匿名、监督用药与定期评估义务' },
   { id: 'iron_and_blood', name: '铁血十字会外围互助会', heldPathways: ['hunter'], contactNpc: 'victor', entry: '先调查码头异常仓单，再由码头掮客辨认', qualification: '完成野外执行与保密边界测试', membership: '接受任务召集、战利品登记与互助担保义务' },
@@ -500,9 +524,9 @@ export const NPCS: NPCDef[] = [
     schedule: [{ from: 10, to: 20, location: '「斑纹」旧书店', interactable: true, days: [1, 2, 3, 4, 5, 6] }], // 周日闭店
   },
   {
-    id: 'evelyn', name: '「夜莺」伊芙琳', identity: '圣塞缪尔教堂执事', secret: '值夜者小队队长（序列7）',
+    id: 'evelyn', name: '「夜莺」伊芙琳', identity: '圣赛琳娜教堂执事', secret: '值夜者成员（序列7）',
     desc: '黑夜教会的超凡执法者。对野生非凡者而言，她是保护伞，也是铡刀。',
-    schedule: [{ from: 9, to: 18, location: '圣塞缪尔教堂', interactable: true }],
+    schedule: [{ from: 9, to: 18, location: '圣赛琳娜教堂', interactable: true }],
   },
   {
     id: 'ella', name: '艾拉医生', identity: '北区诊所心理医生', secret: '观众途径序列8',
@@ -533,6 +557,9 @@ export const KNOWLEDGE_NAMES: Record<string, string> = {
   archive_method: '市政档案检索法',
   cargo_notation: '港务编号与仓单抄写法',
   church_liturgy: '教会礼仪与档案常识',
+  tingen_public_records: '廷根公共记录索引常识',
+  tingen_history_lecture: '廷根地方史公开讲座笔记',
+  public_divination_etiquette: '民间占卜礼仪常识',
   occult_theory: '神秘学理论常识',
   spirit_vision_theory: '灵视概念（仅理论）',
   ritual_basic: '仪式魔法基础',
@@ -553,12 +580,22 @@ export const SKILL_NAMES: Record<string, string> = {
 export const LOCATION_REGIONS = ['城区', '城郊', '远方'];
 export const LOCATIONS: LocationDef[] = [
   // —— 城区：雾城之内，当日往返 ——
-  { id: 'market', name: '铁十字街市集', region: '城区', desc: '全城最热闹的露天市集。三教九流在此碰头，消息比货物转手更快。', hours: 1, danger: 8, public: true, actions: ['explore', 'wander', 'shop'] },
+  { id: 'market', name: '铁十字街（街市段）', region: '城区', desc: '全城最热闹的露天街市。公共告示、城区地图和日常货摊都集中在这里。', hours: 1, danger: 8, public: true, actions: ['explore', 'wander', 'shop'] },
   { id: 'tavern', name: '「醉水手」酒馆', region: '城区', desc: '码头工、跑腿人和消息贩子常去的酒馆。老板麦克记得每一张常客的脸。', hours: 2, danger: 10, public: true, actions: ['tavern'] },
+  { id: 'st_selena_church', name: '圣赛琳娜教堂', region: '城区', desc: '红月亮街上的黑夜女神教堂，面向市民提供礼拜、慈善与救济公告。', hours: 2, danger: 8, actions: ['explore'] },
+  { id: 'river_sea_church', name: '河与海教堂', region: '城区', desc: '位于廷根北部的风暴之主教堂，来往河运人员常在公开告示栏寻找航运消息。', hours: 2, danger: 8, actions: ['explore'] },
+  { id: 'divination_club', name: '占卜俱乐部', region: '城区', desc: '北区豪尔斯街13号二楼的民间俱乐部，提供会员咨询与普通占卜礼仪交流。', hours: 2, danger: 9, actions: ['explore'] },
+  { id: 'blackthorn_security', name: '黑荆棘安保公司', region: '城区', desc: '佐特兰街36号二楼，一家承接护卫、寻人与风险说明的安保公司。', hours: 2, danger: 10, actions: ['explore'] },
+  { id: 'hoy_university', name: '霍伊大学', region: '城区', desc: '廷根的高等学府，校内不时公布面向市民的历史讲座与馆藏目录。', hours: 2, danger: 7, actions: ['explore'] },
+  { id: 'dewill_library', name: '德维尔图书馆', region: '城区', desc: '收藏地方报刊与通俗读物的公共图书馆，阅览架按日期整理。', hours: 2, danger: 7, actions: ['explore'] },
+  { id: 'municipal_library', name: '市政图书馆', region: '城区', desc: '面向公众开放的市政图书馆，可查询城市目录、旧报索引和常用办事手册。', hours: 2, danger: 7, actions: ['explore'] },
+  { id: 'hound_tavern', name: '猎犬酒馆', region: '城区', desc: '一间客人来去频繁的普通酒馆，常有人在这里谈论工作、球赛与城区新闻。', hours: 2, danger: 11, actions: ['explore'] },
+  { id: 'dragon_bar', name: '恶龙酒吧', region: '城区', desc: '灯光昏暗、设有拳台的热闹酒吧，公开区域以酒水和比赛招徕客人。', hours: 2, danger: 14, actions: ['explore'] },
   { id: 'docks', name: '东区码头', region: '城区', desc: '货箱、缆绳与雾气。失踪案的传闻都从这里开始。', hours: 2, danger: 20, actions: ['explore', 'salvage'] },
   { id: 'canal', name: '运河仓库', region: '城区', desc: '成排的货仓，锁着的门比开着的多。走私者的中转站。', hours: 2, danger: 25, actions: ['explore', 'salvage'] },
   { id: 'black_market', name: '黑市后巷', region: '城区', desc: '只在深夜张开的灰色集市。规矩：不问来路，不问去处。', hours: 2, danger: 30, nightOnly: true, actions: ['explore', 'shop'] },
   // —— 城郊：出城半日，雾野与废墟 ——
+  { id: 'st_number_church', name: '圣数教堂', region: '城郊', desc: '位于城郊的蒸汽与机械之神教堂，公开栏会张贴机械事故、修理与工匠互助信息。', hours: 3, danger: 8, actions: ['explore'] },
   { id: 'graveyard', name: '拉斐尔墓园', region: '城郊', desc: '新坟旧冢层层叠叠。夜里的抓挠声，守墓人已经习惯了。', hours: 3, danger: 40, actions: ['explore', 'salvage'] },
   { id: 'sewer', name: '下水道', region: '城郊', desc: '城市的肠腹。黑暗、污水，和比狗大的东西。', hours: 3, danger: 45, actions: ['explore', 'salvage'] },
   { id: 'factory', name: '废弃印刷厂', region: '城郊', desc: '停产三年的厂房。据说午夜还能听见机器运转的声音。', hours: 3, danger: 55, actions: ['explore', 'salvage'] },
@@ -568,6 +605,81 @@ export const LOCATIONS: LocationDef[] = [
   { id: 'ramd', name: '拉姆德废镇', region: '远方', desc: '一夜之间全镇消失的小镇，官方口径是「瘟疫」。去过的人回来都病了——病在梦里。', hours: 6, danger: 80, actions: ['explore'] },
   { id: 'honakisu', name: '霍纳奇斯山麓', region: '远方', desc: '主峰终年埋在云里，传说山顶有「夜之国度」的遗迹。采药人只在山麓活动，更深处的路标会自己挪动。', hours: 8, danger: 90, actions: ['explore'] },
 ];
+
+export const TINGEN_LANDMARK_ACTIONS: readonly TingenLandmarkActionDef[] = [
+  {
+    id: 'market_city_directory', locationId: 'market', label: '查看城市公共告示与地图',
+    description: '核对公开街区图、公共机构名录与告示栏。', hours: 1, energyCost: 3, openFrom: 7, openTo: 20,
+    completion: { kind: 'clue', id: 'tingen_city_directory' }, effects: [{ k: 'clue', id: 'tingen_city_directory' }],
+    result: '你抄下几处公开机构的名称与方位，并把来源记为铁十字街公共告示。',
+  },
+  {
+    id: 'st_selena_public_notices', locationId: 'st_selena_church', label: '查看慈善与教会公告',
+    description: '只查阅面向普通市民开放的礼拜、救济与教区服务信息。', hours: 1, energyCost: 3, openFrom: 8, openTo: 18,
+    completion: { kind: 'clue', id: 'tingen_church_directory' }, effects: [{ k: 'clue', id: 'tingen_church_directory' }],
+    result: '你从公开公告中整理出另外两处教堂的名称与大致方位，没有接触任何内部事务。',
+  },
+  {
+    id: 'dewill_public_periodicals', locationId: 'dewill_library', label: '查阅公共报刊',
+    description: '翻查《廷根市诚实报》的城市版与公共场所栏目。', hours: 1, energyCost: 4, openFrom: 9, openTo: 18,
+    completion: { kind: 'clue', id: 'tingen_honest_paper' }, effects: [{ k: 'clue', id: 'tingen_honest_paper' }],
+    result: '你从报刊索引中抄下大学、俱乐部与两间酒馆的公开地址，内容仅限城市生活信息。',
+  },
+  {
+    id: 'municipal_old_news_index', locationId: 'municipal_library', label: '查询城市目录与旧报索引',
+    description: '学习公共目录、索引卡和旧报合订本的查找方式。', hours: 1, energyCost: 4, openFrom: 9, openTo: 18,
+    completion: { kind: 'knowledge', id: 'tingen_public_records' }, effects: [{ k: 'knowledge', id: 'tingen_public_records' }],
+    result: '你记下了市政图书馆的目录规则，今后能更稳妥地定位公开记录。',
+  },
+  {
+    id: 'hoy_public_history_lecture', locationId: 'hoy_university', label: '查看历史系公开讲座',
+    description: '阅读校方公开张贴的地方史讲座目录。', hours: 1, energyCost: 3, openFrom: 9, openTo: 17,
+    completion: { kind: 'knowledge', id: 'tingen_history_lecture' }, effects: [{ k: 'knowledge', id: 'tingen_history_lecture' }],
+    result: '你旁听了一段廷根地方史导论，只留下可核验的公开讲座笔记。',
+  },
+  {
+    id: 'divination_club_etiquette', locationId: 'divination_club', label: '咨询会员制度与普通占卜礼仪',
+    description: '了解民间俱乐部的预约、记录与礼仪边界，不涉及能力训练。', hours: 1, energyCost: 3, openFrom: 10, openTo: 20,
+    completion: { kind: 'knowledge', id: 'public_divination_etiquette' }, effects: [{ k: 'knowledge', id: 'public_divination_etiquette' }],
+    result: '接待员说明了会员规则和普通礼仪。你得到的只是公开礼仪常识，不构成任何特殊能力或正式训练。',
+  },
+  {
+    id: 'hound_public_visit', locationId: 'hound_tavern', label: '在酒馆听普通见闻',
+    description: '听客人谈论工作、球赛与城区日常。', hours: 1, energyCost: 3, openFrom: 16, openTo: 26,
+    completion: { kind: 'flag', id: 'hound_tavern_visit' }, effects: [{ k: 'flag', id: 'hound_tavern_visit', v: 1 }],
+    result: '你坐了一会儿，只记下几条关于工作、球赛和物价的普通城市见闻。',
+  },
+  {
+    id: 'hound_leave_security_message', locationId: 'hound_tavern', label: '给安保联络人留口信',
+    description: '只说明自己亲历的异常或持有的可疑证物，请求正规风险咨询。', hours: 1, energyCost: 4, openFrom: 16, openTo: 26, requirement: 'abnormal_witness',
+    completion: { kind: 'clue', id: 'blackthorn_referral' }, effects: [{ k: 'clue', id: 'blackthorn_referral' }],
+    result: '酒保收下了写明事实边界的口信，稍后交给你一张安保公司前台转介回条。',
+  },
+  {
+    id: 'blackthorn_public_report', locationId: 'blackthorn_security', label: '递交异常情况说明',
+    description: '向前台递交时间、地点与证物清单，只索取公开受理回执。', hours: 1, energyCost: 4, openFrom: 9, openTo: 17,
+    completion: { kind: 'flag', id: 'blackthorn_public_receipt' }, effects: [{ k: 'flag', id: 'blackthorn_public_receipt', v: 1 }],
+    result: '前台收下说明，给了你一张普通受理回执，并请你回去等待书面答复。',
+  },
+  {
+    id: 'dragon_watch_boxing', locationId: 'dragon_bar', label: '观看公开拳台',
+    description: '只在公开区域观看比赛和酒客往来。', hours: 1, energyCost: 4, openFrom: 16, openTo: 26,
+    completion: { kind: 'flag', id: 'dragon_boxing_observed' }, effects: [{ k: 'flag', id: 'dragon_boxing_observed', v: 1 }],
+    result: '你看完一场拳赛便离开，只记住了公开赛程、酒水牌和几位拳手的名字。',
+  },
+  {
+    id: 'river_sea_shipping_notices', locationId: 'river_sea_church', label: '查看失踪船员与河运告示',
+    description: '核对船员家属张贴的寻人启事和公开河运记录。', hours: 1, energyCost: 4, openFrom: 8, openTo: 18,
+    completion: { kind: 'clue', id: 'river_sea_missing_notices' }, effects: [{ k: 'clue', id: 'river_sea_missing_notices' }],
+    result: '你把几份失踪船员告示与河运日期抄入笔记。这只能指出码头方向，仍需亲自核对当地的正式失踪登记。',
+  },
+  {
+    id: 'st_number_repair_notices', locationId: 'st_number_church', label: '查询机械事故与修理公告',
+    description: '查看工匠互助、机械事故和停产修理的公开信息。', hours: 1, energyCost: 4, openFrom: 9, openTo: 17,
+    completion: { kind: 'clue', id: 'tingen_factory_repairs' }, effects: [{ k: 'clue', id: 'tingen_factory_repairs' }],
+    result: '你整理出一处停产工厂的公开修理记录；它只说明世俗事故与设备异常，仍需实地核对。',
+  },
+] as const;
 
 export const SALVAGE_DEFS: readonly SalvageDef[] = [
   { id: 'salvage_docks_crate', locationId: 'docks', hours: 1, energyCost: 6, reward: { kind: 'item', itemId: 'whiskey', amount: 1 }, requiresVisited: true },
@@ -810,7 +922,7 @@ export const EVENTS: GameEvent[] = [
   },
   {
     id: 'nighthawk_visit', slot: 'daily', weight: 10, cond: 'beyonder&exposure>=85', title: '值夜者上门',
-    text: '门被敲响了。门外站着一位黑风衣女士——圣塞缪尔教堂的伊芙琳执事。她的目光平静得像深夜的湖：「别紧张。我是来给你三个选择的：登记、消失，或者……被消失。」你注意到她身后的小巷里，还有两个模糊的人影。',
+    text: '门被敲响了。门外站着一位黑风衣女士——圣赛琳娜教堂的伊芙琳执事。她的目光平静得像深夜的湖：「别紧张。我是来给你三个选择的：登记、消失，或者……被消失。」你注意到她身后的小巷里，还有两个模糊的人影。',
     choices: [
       { text: '接受登记，成为「备案野生者」', effects: [{ k: 'exposure', v: -55 }, { k: 'tag', id: 'registered', on: true }, { k: 'favor', id: 'evelyn', v: 10 }], result: '你在一份写满密文的档案上按了手印。从此你是教会眼里的「可观察者」——自由少了，追杀令也撤了。伊芙琳收笔时低声说：「聪明的选择。上一个拒绝的人，现在是2-107号封印物的燃料。」' },
       { text: '连夜逃走（赌一把）', effects: [{ k: 'money', v: -60 }, { k: 'exposure', v: -30 }, { k: 'san', v: -8 }, { k: 'tag', id: 'fugitive', on: true }], result: '你从后窗翻出，在屋顶上跑出了有生以来最快的速度。值夜者没有追——至少今晚没有。你成了「在逃者」，从此睡觉都得睁半只眼。' },

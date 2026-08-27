@@ -8,9 +8,9 @@ import {
   contactOrganization, decodeDiaryPage, decodeOrganizationEvidence, discoverDiaryPage,
   discoverOrganizationEvidence, doAdventure, doChat, drinkOfficialDose, drinkPotion,
   getOrganizationOffers, identifyOrganizationEvidence, joinOrganization, leaveOrganization,
-  inspectDockMissingReports, loadGame, newGame, openOrganizationOffers, reportAnomalyToEvelyn, requestManorAddress, requestOfficialScreening,
+  inspectDockMissingReports, leaveCurrentLocation, loadGame, newGame, openOrganizationOffers, reportAnomalyToEvelyn, requestManorAddress, requestOfficialScreening,
   researchClocktowerRumors, saveGame, traceClocktowerAnomaly, traceDockMarkedManifest, verifyDiaryPageOperationally,
-  verifyOrganizationEvidence,
+  travelToLocation, verifyOrganizationEvidence,
 } from './engine';
 
 class MemoryStorage {
@@ -41,13 +41,15 @@ function qualifyWorldRoute(s: GameState, orgId: Exclude<OrganizationId, 'nightwa
   const def = ORGANIZATION_LEAD_DEFS.find(item => item.organizationId === orgId)!;
   if (orgId === 'iron_and_blood') {
     s.stats.energy = 100;
-    s.hour = 9;
+    s.intel.push('dock_missing');
+    s.hour = 8;
+    expect(travelToLocation(s, 'docks', 'walk').ok).toBe(true);
     expect(inspectDockMissingReports(s).ok).toBe(true);
-    expect(doAdventure(s, 'docks').ok).toBe(true);
     expect(s.leads[def.id].stage).toBe('unknown');
     expect(compareDockCargoRecords(s).ok).toBe(true);
     expect(traceDockMarkedManifest(s)).toMatchObject({ ok: true, outcome: 'passed' });
     expect(s.leads[def.id].stage).toBe('found');
+    expect(leaveCurrentLocation(s).ok).toBe(true);
     establishTrust(s, 'victor');
   } else if (orgId === 'abraham_branch') {
     establishTrust(s, 'nelson');
@@ -206,7 +208,9 @@ describe('地点、配方与定向材料', () => {
     const docks = fresh();
     expect(discoverOrganizationEvidence(docks, 'iron_and_blood').ok).toBe(false);
     docks.stats.energy = 100;
-    docks.hour = 9;
+    docks.intel.push('dock_missing');
+    docks.hour = 8;
+    expect(travelToLocation(docks, 'docks', 'walk').ok).toBe(true);
     expect(inspectDockMissingReports(docks).ok).toBe(true);
     expect(doAdventure(docks, 'docks').ok).toBe(true);
     expect(docks.visitedLocations).toContain('docks');

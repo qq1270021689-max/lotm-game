@@ -397,5 +397,6 @@ describe('v17迁移、往返与UI规则入口', () => {
     expect(appSource).toContain('E.compareDockCargoRecordsIssue(state)');
     expect(appSource).toContain('E.traceDockMarkedManifestIssue(state)');
     expect(appSource).toContain('onClick={() => runAction(step.action)}');
+    expect(appSource).not.toContain('核对近期失踪公告');
   });
 });
