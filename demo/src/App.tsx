@@ -337,7 +337,7 @@ export default function App() {
           <section className="panel">
             <h3 className="panel-title">倒计时</h3>
             <ul className="text-xs space-y-1 text-stone-300">
-              {state.timers.map(t => (
+              {E.getVisibleTimers(state).map(t => (
                 <li key={t.id} className="flex justify-between">
                   <span>{t.label}</span>
                   <span className="text-amber-200/70">{Math.floor(t.hoursLeft / 24)}天{t.hoursLeft % 24}时</span>

@@ -1,4 +1,4 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, TravelMode } from './types';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode } from './types';
 import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
@@ -715,6 +715,31 @@ export function applyEffects(s: GameState, effects: Effect[]): AppliedEffectRece
 }
 
 // ============ 时间推进 ============
+/**
+ * 世界日程可以在内部持续推进，但只有掌握了可靠来源的角色才能看到精确倒计时。
+ * 未列入隐秘日程的生活义务与玩家主动接受的期限默认可见。
+ */
+export function isTimerVisible(s: GameState, timerId: string): boolean {
+  if (timerId === 'market') {
+    const route = s.organizationRoutes?.iron_and_blood;
+    return !!route && ['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(route.status);
+  }
+  if (timerId === 'audit') {
+    const route = s.organizationRoutes?.nightwatch;
+    return s.originId === 'orphan'
+      || s.jobId === 'church_copyist'
+      || s.intel.includes('church_audit')
+      || s.tags.some(tag => ['registered', 'night_watcher', 'nightwatch_candidate'].includes(tag))
+      || (isMet(s, 'evelyn') && (s.relations.evelyn ?? -100) >= VISIT_FAVOR)
+      || (!!route && route.status !== 'unknown');
+  }
+  return true;
+}
+
+export function getVisibleTimers(s: GameState): Timer[] {
+  return s.timers.filter(timer => isTimerVisible(s, timer.id));
+}
+
 export function advanceHours(s: GameState, hours: number) {
   for (let i = 0; i < hours; i++) {
     s.hour++;
@@ -733,16 +758,17 @@ function tickTimers(s: GameState) {
   for (const t of s.timers) {
     t.hoursLeft--;
     if (t.hoursLeft <= 0) {
-      addLog(s, `⏳【${t.label}】到期了。`, 'bad');
+      const visibleWhenDue = isTimerVisible(s, t.id);
+      if (visibleWhenDue) addLog(s, `⏳【${t.label}】到期了。`, 'bad');
       applyEffects(s, t.effect);
-      resolveTimerFlags(s, t.id);
+      resolveTimerFlags(s, t.id, visibleWhenDue);
       if (t.renewHours) t.hoursLeft = t.renewHours;
       else s.timers = s.timers.filter(x => x.id !== t.id);
     }
   }
 }
 
-function resolveTimerFlags(s: GameState, timerId: string) {
+function resolveTimerFlags(s: GameState, timerId: string, visibleWhenDue: boolean) {
   if (timerId === 'rent' && s.flags.rent_due) {
     s.flags.rent_due = 0;
     if (s.pence >= 240) {
@@ -756,19 +782,19 @@ function resolveTimerFlags(s: GameState, timerId: string) {
       addLog(s, '你付不起房租，行李被扔到了街上。【无家可归】：露宿让你很难真正休息好。', 'bad');
     }
   }
-  if (timerId === 'market' && isBeyonder(s)) {
+  if (timerId === 'market' && visibleWhenDue && isBeyonder(s)) {
     forceEvent(s, 'secret_gathering');
   }
   if (timerId === 'audit' && s.flags.audit_now) {
     s.flags.audit_now = 0;
     if (!isBeyonder(s)) {
-      addLog(s, '教会审查季到了。普查表格、例行问询——对普通人来说只是烦琐的官样文章。', 'system');
+      if (visibleWhenDue) addLog(s, '教会审查季到了。普查表格、例行问询——对普通人来说只是烦琐的官样文章。', 'system');
     } else if (s.exposure >= 50 || s.flags.church_suspect) {
       addLog(s, '⚠️ 教会审查季。你的名字显然已在值夜者的名单上……', 'bad');
       forceEvent(s, 'nighthawk_visit');
     } else {
       s.exposure = clamp(s.exposure + 3);
-      addLog(s, '教会审查平稳过去。你的伪装还没破——但档案里关于你的记录又厚了一页。', 'system');
+      if (visibleWhenDue) addLog(s, '教会审查平稳过去。你的伪装还没破——但档案里关于你的记录又厚了一页。', 'system');
     }
   }
 }
@@ -1843,7 +1869,9 @@ export function contactOrganization(s: GameState, organizationId: OrganizationId
   route.status = 'contacted';
   route.routeStep = 'contacted';
   recordOrganizationRoute(s, organizationId, 'contacted', 'passed');
-  addLog(s, `你与【${organizationDef(organizationId)?.name}】的外围联系人建立正式接触。你仍可同时核验其他组织，但尚未加入任何一方。`, 'system');
+  addLog(s, organizationId === 'iron_and_blood'
+    ? `你与【${organizationDef(organizationId)?.name}】的外围联系人建立正式接触。对方明确告知了下一次秘密集会的日期；你仍可同时核验其他组织，但尚未加入任何一方。`
+    : `你与【${organizationDef(organizationId)?.name}】的外围联系人建立正式接触。你仍可同时核验其他组织，但尚未加入任何一方。`, 'system');
   advanceHours(s, 1);
   return { ok: true };
 }
