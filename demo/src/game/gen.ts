@@ -1,6 +1,7 @@
 // 程序化生成器：随机 NPC 与委托事件
 import type { GenNPC, Commission, GameState, StatKey, Nemesis } from './types';
 import { NPCS, LOCATIONS } from './data';
+import { getVisibleLocations } from './location-access';
 
 const rnd = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(arr: T[]): T => arr[rnd(arr.length)];
@@ -76,6 +77,25 @@ export function generateNPC(): GenNPC {
   };
 }
 
+/** 为玩家当前职业生成一个能进入既有人脉系统的同事。 */
+export function generateCoworker(identity: string, location: string, from: number, to: number): GenNPC {
+  const name = `${pick(FIRST)}·${pick(LAST)}`;
+  const traits = [...new Set([pick(TRAITS), pick(TRAITS)])];
+  const motive = pick(MOTIVES);
+  const secret = rnd(100) < 85 ? pick(SECRETS_NORMAL) : pick(SECRETS_GRAY);
+  return {
+    id: `gen_${Date.now().toString(36)}_${npcCounter++}`,
+    name,
+    identity,
+    desc: `${traits.join('、')}。${motive}。`,
+    schedule: [{ from, to, location, interactable: true }],
+    generated: true,
+    traits,
+    motive,
+    secret,
+  };
+}
+
 // ============ 委托模板 ============
 const STRANGE = ['夜半的歌声', '连续失踪的货物', '渗血的墙壁', '镜中多出来的倒影', '暴毙的牲畜', '总在移动的石像'];
 const BEASTS = ['大如狗的巨鼠群', '雾中的野犬', '下水道的鳞怪', '发狂的流浪猫群'];
@@ -90,14 +110,15 @@ const KINDS: { kind: Commission['kind']; stat: StatKey; beyonderBias: boolean }[
 ];
 
 /** 按委托类型选择合适的真实地点 */
-function pickLocationFor(kind: Commission['kind']): string {
+function pickLocationFor(kind: Commission['kind'], availableLocationIds: string[]): string {
   const table: Record<string, string[]> = {
     investigate: ['docks', 'graveyard', 'factory', 'old_tower', 'canal', 'manor', 'ramd'],
     hunt: ['sewer', 'factory', 'docks', 'manor'],
     escort: ['canal', 'docks', 'market'],
     collect: ['canal', 'factory', 'black_market', 'manor'],
   };
-  return pick(table[kind] ?? ['docks']);
+  const matching = (table[kind] ?? []).filter(locationId => availableLocationIds.includes(locationId));
+  return pick(matching.length ? matching : availableLocationIds);
 }
 
 /** 生成一个委托 */
@@ -109,18 +130,18 @@ export function generateCommission(state: GameState): Commission {
   const t = pick(KINDS);
   const difficulty = 20 + rnd(60);
   const baseReward = 36 + difficulty * 2 + (occult ? 60 : 0);
-  const loc = LOCATIONS.find(l => l.id === pickLocationFor(t.kind)) ?? LOCATIONS[0];
+  const visibleLocations = getVisibleLocations(state).filter(location => location.actions.includes('explore'));
+  const loc = LOCATIONS.find(l => l.id === pickLocationFor(t.kind, visibleLocations.map(location => location.id)))
+    ?? visibleLocations[0] ?? LOCATIONS[0];
   let title = '', text = '';
   switch (t.kind) {
     case 'investigate':
       title = `调查${loc.name}的怪事`;
-      text = occult
-        ? `委托人压低声音：${loc.name}出现了${pick(STRANGE)}——「我知道你不是一般人。去查查，别声张。」`
-        : `${loc.name}最近不太平：${pick(STRANGE)}。委托人想知道真相，又不想自己惹麻烦。`;
+      text = `${loc.name}最近不太平：${pick(STRANGE)}。委托人想知道真相，又不想自己惹麻烦。`;
       break;
     case 'hunt':
       title = `清剿${loc.name}的${pick(BEASTS)}`;
-      text = occult ? `那不是普通的野兽——委托人的眼神闪烁，「它……咬死的人不对劲。」` : `雇主按尾巴结算，干净利落。`;
+      text = `雇主只肯按留下的可靠痕迹结算，要求干净利落。`;
       break;
     case 'escort':
       title = `护送委托人到${loc.name}`;
@@ -128,7 +149,7 @@ export function generateCommission(state: GameState): Commission {
       break;
     case 'collect':
       title = `去${loc.name}取回${pick(CARGO)}`;
-      text = occult ? `「不要打开看。不要问。送到就走。」——越是这么说，越说明里面不是普通货。` : `跑腿取货，问价不问货。`;
+      text = `跑腿取货，问价不问货。`;
       break;
   }
   return {

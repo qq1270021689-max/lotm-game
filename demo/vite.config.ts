@@ -1,12 +1,13 @@
 import path from "path"
+import { existsSync } from "node:fs"
 import react from "@vitejs/plugin-react"
+import { sites } from "@openai/sites-vite-plugin"
 import { defineConfig } from "vite"
-import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  plugins: [inspectAttr(), react()],
+  plugins: [react(), ...(existsSync(path.resolve(__dirname, ".openai/hosting.json")) ? [sites()] : [])],
   server: {
     port: 3000,
   },
