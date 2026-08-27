@@ -1,4 +1,4 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode } from './types';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Timer, TravelMode } from './types';
 import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SHOP_DEFS, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
@@ -6,7 +6,7 @@ import { isLocationUnlocked, locationAccessIssue, redactLockedLocationText } fro
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 export type { ActionResult } from './types';
 export { getVisibleLocations, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
@@ -153,61 +153,207 @@ type DivinationTargetDef = {
   pressure: 'low' | 'high';
   antiDivination?: boolean;
   clueId?: string;
-  successText: string;
+  successText: Record<DivinationMethod, string>;
 };
 
 const DIVINATION_TARGETS: readonly DivinationTargetDef[] = [
   {
     kind: 'location', id: 'old_tower', title: '旧钟楼的夜间异响', difficulty: 32, pressure: 'low',
     clueId: 'clocktower_divination_omen',
-    successText: '纸牌中的塔反复倒置，停摆的指针却总指向同一段夜色。若要前往，应先核对那些被反复改期的维修记录。',
-  },
-  {
-    kind: 'item', id: 'cryptic_note', title: '泛黄的手抄残页', difficulty: 38, pressure: 'high', antiDivination: true,
-    clueId: 'cryptic_note_warning',
-    successText: '象征没有解释文字，只显示一只从纸背回望的眼睛：不要独自朗读，也不要把它当成配方。',
-  },
-  {
-    kind: 'item', id: 'anomaly_evidence', title: '染着冷灰的旧铜牌', difficulty: 34, pressure: 'low',
-    successText: '指示牌落在“门槛”与“守夜”之间：这件东西曾属于一套有编号、有接管人的正式处置流程。',
+    successText: {
+      cards: '纸牌中的塔反复倒置，停摆的指针却总指向同一段夜色。若要前往，应先核对那些被反复改期的维修记录。',
+      dream: '梦里，旧钟楼的指针一次次退回同一刻。醒来时你只确定一件事：维修记录里藏着比传闻更可靠的入口。',
+    },
   },
 ];
 
 const genericDivinationTargetIssue = '这个目标尚未进入你能核验的调查范围。';
 
-function divinationTarget(s: GameState, kind: DivinationTargetKind, id: string): DivinationTargetDef | null {
-  const def = DIVINATION_TARGETS.find(candidate => candidate.kind === kind && candidate.id === id);
-  if (def) {
-    if (kind === 'location') return isLocationUnlocked(s, id) ? def : null;
-    const item = findItem(id);
-    return item?.occultMarked && (s.items[id] ?? 0) > 0 ? def : null;
-  }
-  if (kind !== 'item' || !MYSTIC_MATERIAL_ITEM_IDS.has(id) || (s.items[id] ?? 0) <= 0) return null;
+function divinationTargetDefinition(kind: DivinationTargetKind, id: string): DivinationTargetDef | null {
+  if (kind === 'location') return DIVINATION_TARGETS.find(candidate => candidate.kind === kind && candidate.id === id) ?? null;
+  const item = findItem(id);
+  if (item?.divination) return { kind, id, ...item.divination };
+  if (!item || !MYSTIC_MATERIAL_ITEM_IDS.has(id)) return null;
   return {
-    kind, id, title: findItem(id)?.name ?? '密封材料', difficulty: 42, pressure: 'high', antiDivination: true,
-    successText: '象征在容器边缘停住：它并非普通材料，继续接触前应先核对来源与封存记录。',
+    kind, id, title: item.surfaceName ?? '密封材料', difficulty: 42, pressure: 'high', antiDivination: true,
+    successText: {
+      cards: '象征在容器边缘停住：它并非普通材料，继续接触前应先核对来源与封存记录。',
+      dream: '梦境始终停在未拆封的容器外。有什么在里面沉睡，而你缺少足以安全辨认它的来源记录。',
+    },
   };
+}
+
+function divinationTarget(s: GameState, kind: DivinationTargetKind, id: string): DivinationTargetDef | null {
+  const target = divinationTargetDefinition(kind, id);
+  if (!target) return null;
+  if (kind === 'location') return isLocationUnlocked(s, id) ? target : null;
+  return (s.items[id] ?? 0) > 0 ? target : null;
+}
+
+function canonicalDivinationText(target: DivinationTargetDef, method: DivinationMethod, provider: DivinationProvider, outcome: DivinationOutcome): string {
+  let text: string;
+  if (outcome === 'omen' || outcome === 'hint') text = target.successText[method];
+  else if (outcome === 'obscured') text = '所有象征都在关键处被雾遮住，像有另一只手故意把答案推离桌面。继续强求只会让记录失真。';
+  else if (outcome === 'backlash') text = '象征突然越过了你设下的边界。你及时中断仪式，却仍被一阵不属于自己的恐惧攫住。';
+  else text = '牌面彼此矛盾，没有形成可以交叉核验的指向。你只记录了“无结果”，没有自行补全答案。';
+  return provider === 'evelyn' ? `${text} 伊芙琳把过程摘要封入了教会异常档案。` : text;
 }
 
 export function getDivinationTargets(s: GameState): { kind: DivinationTargetKind; id: string; title: string }[] {
   const known = DIVINATION_TARGETS.filter(def => divinationTarget(s, def.kind, def.id)).map(({ kind, id, title }) => ({ kind, id, title }));
+  const canRecognizeItemTarget = s.divinationTraining.cards || s.divinationTraining.dream
+    || (isMet(s, 'nelson') && (s.relations.nelson ?? -100) >= VISIT_FAVOR)
+    || (isMet(s, 'evelyn') && (s.awareness === 'informed' || s.organizationRoutes.nightwatch.status !== 'unknown'));
+  if (!canRecognizeItemTarget) return known;
   for (const [id, count] of Object.entries(s.items)) {
-    if (count <= 0 || !MYSTIC_MATERIAL_ITEM_IDS.has(id) || known.some(target => target.kind === 'item' && target.id === id)) continue;
-    known.push({ kind: 'item', id, title: findItem(id)?.name ?? '密封材料' });
+    const target = count > 0 ? divinationTarget(s, 'item', id) : null;
+    if (!target || known.some(candidate => candidate.kind === 'item' && candidate.id === id)) continue;
+    known.push({ kind: 'item', id, title: itemPresentation(s, id)?.name ?? target.title });
   }
   return known;
+}
+
+function successfulItemDivination(s: GameState, itemId: string): DivinationInsight | undefined {
+  const target = divinationTargetDefinition('item', itemId);
+  if (!target) return undefined;
+  const record = [...(s.divinationInsights ?? [])].reverse().find(insight => insight.targetKind === 'item'
+    && insight.targetId === itemId && insight.outcome === 'hint'
+    && (s.divinationAttempts ?? []).some(candidate => {
+      const attempt = normalizedRecordedDivinationAttempt(s, candidate);
+      return attempt?.targetKind === insight.targetKind && attempt.targetId === insight.targetId
+        && attempt.method === insight.method && attempt.provider === insight.provider
+        && attempt.outcome === insight.outcome && attempt.day === insight.day && attempt.hour === insight.hour;
+    }));
+  return record ? { ...record, text: canonicalDivinationText(target, record.method, record.provider, record.outcome), clueId: target.clueId } : undefined;
+}
+
+function itemKnowledgeState(s: GameState, itemId: string): ItemKnowledgeState {
+  s.itemKnowledge ??= {};
+  return s.itemKnowledge[itemId] ??= {
+    itemId, spiritVisionInspected: false, identifiedAsOccult: false, knownInfo: [],
+  };
+}
+
+function hasDivinationTrainingCredential(s: GameState, source: 'formal_seer_training' | 'nelson', method: DivinationMethod): boolean {
+  return (s.divinationCredentials ?? []).some(credential => credential.kind === 'training'
+    && credential.source === source && credential.method === method);
+}
+
+function addDivinationTrainingCredential(s: GameState, source: 'formal_seer_training' | 'nelson', method: DivinationMethod) {
+  s.divinationCredentials ??= [];
+  if (hasDivinationTrainingCredential(s, source, method)) return;
+  s.divinationCredentials.push({ kind: 'training', source, method, day: s.day, hour: s.hour });
+}
+
+function hasDivinationConsultationCredential(s: GameState, provider: 'nelson' | 'evelyn', targetKind: DivinationTargetKind, targetId: string, method: DivinationMethod, day: number, hour: number): boolean {
+  return (s.divinationCredentials ?? []).some(credential => credential.kind === 'consultation'
+    && credential.provider === provider && credential.targetKind === targetKind && credential.targetId === targetId
+    && credential.method === method && credential.day === day && credential.hour === hour);
+}
+
+function addDivinationConsultationCredential(s: GameState, provider: 'nelson' | 'evelyn', targetKind: DivinationTargetKind, targetId: string, method: DivinationMethod, day: number, hour: number) {
+  s.divinationCredentials ??= [];
+  if (hasDivinationConsultationCredential(s, provider, targetKind, targetId, method, day, hour)) return;
+  s.divinationCredentials.push({ kind: 'consultation', provider, targetKind, targetId, method, day, hour });
+}
+
+function hasTrustedSeerSpiritVisionSource(s: GameState): boolean {
+  return hasSeerDivinationSequence(s)
+    && s.divinationTraining.teachers.includes('formal_seer_training')
+    && hasDivinationTrainingCredential(s, 'formal_seer_training', 'dream');
+}
+
+export function hasSpiritVisionAbility(s: GameState): boolean {
+  return hasTrustedSeerSpiritVisionSource(s) && s.knowledge.includes('spirit_vision');
 }
 
 export function itemPresentation(s: GameState, itemId: string): { name: string; description: string } | null {
   const item = findItem(itemId);
   if (!item) return null;
   const concealed = item.occultMarked || MYSTIC_MATERIAL_ITEM_IDS.has(itemId);
-  const base = concealed
-    ? (item.surfaceDesc ?? '密封容器上只写着名称与批次，来源和性质仍待核验。')
-    : item.desc;
-  const insight = [...(s.divinationInsights ?? [])].reverse().find(record => record.targetKind === 'item'
-    && record.targetId === itemId && (record.outcome === 'omen' || record.outcome === 'hint'));
-  return { name: item.name, description: insight ? `${base} 占卜记录：${insight.text}` : base };
+  const knowledge = s.itemKnowledge?.[itemId];
+  const name = concealed && !knowledge?.spiritVisionInspected ? (item.surfaceName ?? '未鉴定的密封样本') : item.name;
+  const base = concealed ? (item.surfaceDesc ?? '密封容器上只剩外观与批次，来源和性质仍待核验。') : item.desc;
+  const knownInfo = knowledge?.knownInfo ?? [];
+  const insight = successfulItemDivination(s, itemId);
+  const additions = [
+    ...knownInfo.map(info => `灵视记录：${info}`),
+    ...(insight ? [`占卜记录：${insight.text}`] : []),
+  ];
+  return { name, description: additions.length ? `${base} ${additions.join(' ')}` : base };
+}
+
+export function spiritVisionInspectionIssue(s: GameState, itemId: string): string | null {
+  if (!hasSpiritVisionAbility(s)) return '你尚未真正掌握灵视；灵性数值或理论知识不能代替非凡能力。';
+  if (!isAtHome(s)) return '需要先回到住处，在可控环境中检视物品。';
+  if ((s.items[itemId] ?? 0) <= 0) return '这件物品并不在你的持有物中。';
+  const item = findItem(itemId);
+  if (!item?.spiritVision) return '这件物品没有可由灵视稳定辨认的记录。';
+  if (s.itemKnowledge?.[itemId]?.spiritVisionInspected) return '这件物品已经完成过灵视检视。';
+  if (s.stats.energy < energyCost(s, 5) + 3) return '你现在太疲惫，无法稳定维持灵视。';
+  return null;
+}
+
+export function inspectItemWithSpiritVision(s: GameState, itemId: string): ActionResult {
+  const issue = spiritVisionInspectionIssue(s, itemId);
+  if (issue) return { ok: false, msg: issue };
+  const item = findItem(itemId)!;
+  const definition = item.spiritVision!;
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+  if (definition.sanityCost) applyEffects(s, [{ k: 'san', v: -definition.sanityCost }]);
+  if (definition.corruptionCost) applyEffects(s, [{ k: 'cor', v: definition.corruptionCost }]);
+  advanceHours(s, 1);
+  const knowledge = itemKnowledgeState(s, itemId);
+  knowledge.spiritVisionInspected = true;
+  knowledge.identifiedAsOccult = definition.revealsOccult;
+  knowledge.inspectedDay = s.day;
+  knowledge.inspectedHour = s.hour;
+  if (!knowledge.knownInfo.includes(definition.result)) knowledge.knownInfo.push(definition.result);
+  addLog(s, `灵视检视：${definition.result}`, definition.corruptionCost || (definition.sanityCost ?? 0) >= 3 ? 'bad' : 'info');
+  return { ok: true, outcome: 'passed' };
+}
+
+export function getInventoryEntries(s: GameState): {
+  kind: 'item' | 'book';
+  id: string;
+  category: ItemCategory;
+  name: string;
+  description: string;
+  quantity: number;
+  knownInfo: string[];
+  actions: { spiritVision: boolean; divination: boolean; read: boolean };
+}[] {
+  const itemTargets = new Set(getDivinationTargets(s).filter(target => target.kind === 'item').map(target => target.id));
+  const items = Object.entries(s.items).flatMap(([id, quantity]) => {
+    if (quantity <= 0) return [];
+    const definition = findItem(id);
+    const presentation = itemPresentation(s, id);
+    if (!definition || !presentation) return [];
+    const knowledge = s.itemKnowledge?.[id];
+    const occultKnown = knowledge?.identifiedAsOccult === true || !!successfulItemDivination(s, id);
+    const category: ItemCategory = definition.category === 'occult' && !occultKnown ? 'misc' : definition.category;
+    return [{
+      kind: 'item' as const, id, category, name: presentation.name, description: presentation.description,
+      quantity, knownInfo: [...(knowledge?.knownInfo ?? [])],
+      actions: {
+        spiritVision: hasSpiritVisionAbility(s) && !!definition.spiritVision && !knowledge?.spiritVisionInspected,
+        divination: itemTargets.has(id), read: false,
+      },
+    }];
+  });
+  const books = Object.values(s.books).flatMap(book => {
+    if (!book.acquired) return [];
+    const definition = BOOK_DEFS.find(candidate => candidate.id === book.bookId);
+    if (!definition) return [];
+    return [{
+      kind: 'book' as const, id: book.bookId, category: definition.category as ItemCategory,
+      name: definition.title, description: definition.surfaceDesc, quantity: 1,
+      knownInfo: [book.completed ? '已经读完' : `阅读进度 ${book.readHours}/${definition.totalHours}小时`],
+      actions: { spiritVision: false, divination: false, read: !book.completed },
+    }];
+  });
+  const order: ItemCategory[] = ['tool', 'book', 'misc', 'occult'];
+  return [...items, ...books].sort((left, right) => order.indexOf(left.category) - order.indexOf(right.category));
 }
 
 export function locationRiskPresentation(s: GameState, locationId: string): string {
@@ -229,11 +375,45 @@ function grantSeerDivinationTraining(s: GameState) {
   if (!s.divinationTraining.media.includes('symbol_cards')) s.divinationTraining.media.push('symbol_cards');
   if (!s.divinationTraining.teachers.includes('formal_seer_training')) s.divinationTraining.teachers.push('formal_seer_training');
   s.items.symbol_cards = Math.max(1, s.items.symbol_cards ?? 0);
+  addDivinationTrainingCredential(s, 'formal_seer_training', 'cards');
+  addDivinationTrainingCredential(s, 'formal_seer_training', 'dream');
+  if (!s.knowledge.includes('spirit_vision')) s.knowledge.push('spirit_vision');
+}
+
+function hasTrustedNelsonDivinationRelationship(s: GameState): boolean {
+  return !!findAnyNPC(s, 'nelson') && isMet(s, 'nelson') && (s.relations.nelson ?? -100) >= VISIT_FAVOR;
+}
+
+function hasOfficialEvelynDivinationRelationship(s: GameState): boolean {
+  return !!findAnyNPC(s, 'evelyn') && isMet(s, 'evelyn')
+    && (s.awareness === 'informed' || organizationRoute(s, 'nightwatch').status !== 'unknown' || !!s.flags.church_noticed);
+}
+
+function hasTrustedCardDivinationTraining(s: GameState): boolean {
+  if (!s.divinationTraining.cards || !s.divinationTraining.media.includes('symbol_cards')) return false;
+  const formalSeerTraining = hasSeerDivinationSequence(s)
+    && s.divinationTraining.teachers.includes('formal_seer_training')
+    && hasDivinationTrainingCredential(s, 'formal_seer_training', 'cards');
+  const nelsonTraining = s.divinationTraining.teachers.includes('nelson')
+    && hasDivinationTrainingCredential(s, 'nelson', 'cards');
+  return formalSeerTraining || nelsonTraining;
+}
+
+function recordedDivinationProviderAllowed(s: GameState, provider: DivinationProvider, method: DivinationMethod, target: DivinationTargetDef, day: number, hour: number): boolean {
+  if (provider === 'self') {
+    return method === 'cards'
+      ? hasTrustedCardDivinationTraining(s)
+      : hasTrustedSeerSpiritVisionSource(s) && s.divinationTraining.dream;
+  }
+  if (provider === 'nelson') return method === 'cards'
+    && hasDivinationConsultationCredential(s, provider, target.kind, target.id, method, day, hour);
+  return method === 'cards' && (target.id === 'old_tower' || target.id === 'anomaly_evidence')
+    && hasDivinationConsultationCredential(s, provider, target.kind, target.id, method, day, hour);
 }
 
 export function learnCardDivinationIssue(s: GameState): string | null {
   if (s.atWork) return '需先下班离开工作地点。';
-  if (s.divinationTraining.cards) return '你已经掌握了这套安全纸牌方法。';
+  if (hasTrustedCardDivinationTraining(s)) return '你已经掌握了这套安全纸牌方法。';
   const trust = trustedNpcIssue(s, 'nelson');
   if (trust) return trust;
   if (s.stats.energy < energyCost(s, 8) + 5) return '你现在太疲惫，难以记牢完整的象征次序。';
@@ -249,6 +429,7 @@ export function learnCardDivination(s: GameState): ActionResult {
   if (!s.divinationTraining.media.includes('symbol_cards')) s.divinationTraining.media.push('symbol_cards');
   if (!s.divinationTraining.teachers.includes('nelson')) s.divinationTraining.teachers.push('nelson');
   s.items.symbol_cards = Math.max(1, s.items.symbol_cards ?? 0);
+  addDivinationTrainingCredential(s, 'nelson', 'cards');
   addLog(s, '尼尔逊让你反复练习固定象征的摆放与收牌顺序，并明确划出不可越过的边界。你带走一副旧纸牌；它只能给出微弱、含混的启示。', 'good');
   return { ok: true };
 }
@@ -257,10 +438,10 @@ function providerIssue(s: GameState, provider: DivinationProvider, method: Divin
   if (s.atWork) return '需先下班离开工作地点。';
   if (provider === 'self') {
     if (method === 'cards') {
-      if (!s.divinationTraining.cards || !s.divinationTraining.media.includes('symbol_cards') || (s.items.symbol_cards ?? 0) <= 0) {
+      if (!hasTrustedCardDivinationTraining(s) || (s.items.symbol_cards ?? 0) <= 0) {
         return '你尚未接受可信教学并准备固定象征纸牌。';
       }
-    } else if (!(hasSeerDivinationSequence(s) && s.divinationTraining.dream)) {
+    } else if (!(hasTrustedSeerSpiritVisionSource(s) && s.divinationTraining.dream)) {
       return '只有完成正式训练的占卜家才能独自进行梦境占卜。';
     }
   } else if (provider === 'nelson') {
@@ -272,8 +453,7 @@ function providerIssue(s: GameState, provider: DivinationProvider, method: Divin
     const evelyn = findAnyNPC(s, 'evelyn');
     if (!evelyn || !isMet(s, 'evelyn')) return '你尚未与负责异常事务的教会执事建立联系。';
     if (!npcAvailable(evelyn, s.day, s.hour)) return '伊芙琳此刻不在圣塞缪尔教堂。';
-    const officialRelation = s.awareness === 'informed' || organizationRoute(s, 'nightwatch').status !== 'unknown' || !!s.flags.church_noticed;
-    if (!officialRelation) return '教会尚未把你或这件事纳入正式异常记录。';
+    if (!hasOfficialEvelynDivinationRelationship(s)) return '教会尚未把你或这件事纳入正式异常记录。';
     if (!(target.id === 'old_tower' || target.id === 'anomaly_evidence')) return '这不属于伊芙琳会受理的官方异常或证物范围。';
     if (method !== 'cards') return '官方记录室采用的是受控象征核验。';
   }
@@ -324,18 +504,17 @@ export function performDivination(s: GameState, targetKind: DivinationTargetKind
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }]);
   if (provider === 'nelson') applyEffects(s, [{ k: 'money', v: -24 }]);
   advanceHours(s, method === 'dream' ? 4 : 2);
-  let text: string;
-  if (result.outcome === 'omen' || result.outcome === 'hint') text = target.successText;
-  else if (result.outcome === 'obscured') text = '所有象征都在关键处被雾遮住，像有另一只手故意把答案推离桌面。继续强求只会让记录失真。';
-  else if (result.outcome === 'backlash') {
-    text = '象征突然越过了你设下的边界。你及时中断仪式，却仍被一阵不属于自己的恐惧攫住。';
+  const text = canonicalDivinationText(target, method, provider, result.outcome);
+  if (result.outcome === 'backlash') {
     applyEffects(s, [{ k: 'san', v: -6 }, { k: 'cor', v: 3 }]);
-  } else text = '牌面彼此矛盾，没有形成可以交叉核验的指向。你只记录了“无结果”，没有自行补全答案。';
+  }
   if (provider === 'evelyn') {
     s.flags.official_divination_record = true;
-    text += ' 伊芙琳把过程摘要封入了教会异常档案。';
   }
   const attempt: DivinationAttempt = { targetKind, targetId, method, provider, outcome: result.outcome, day: s.day, hour: s.hour, score: result.score };
+  if (provider === 'nelson' || provider === 'evelyn') {
+    addDivinationConsultationCredential(s, provider, targetKind, targetId, method, attempt.day, attempt.hour);
+  }
   s.divinationAttempts.push(attempt);
   const insight: DivinationInsight = {
     id: `divination:${s.day}:${s.hour}:${s.divinationAttempts.length}`, targetKind, targetId, method, provider,
@@ -345,6 +524,10 @@ export function performDivination(s: GameState, targetKind: DivinationTargetKind
     acquireClue(s, target.clueId, provider === 'self' ? 'event' : 'npc', `divination:${provider}`);
     insight.clueId = target.clueId;
     if (target.clueId === 'cryptic_note_warning') forceEvent(s, 'divination_note_echo');
+  }
+  if ((result.outcome === 'omen' || result.outcome === 'hint') && targetKind === 'item') {
+    const item = findItem(targetId);
+    if (item?.category === 'occult') itemKnowledgeState(s, targetId).identifiedAsOccult = true;
   }
   s.divinationInsights.push(insight);
   addLog(s, `占卜记录：${text}`, result.outcome === 'backlash' ? 'bad' : result.outcome === 'inconclusive' || result.outcome === 'obscured' ? 'info' : 'good');
@@ -421,6 +604,7 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     clues: [],
     explorationAttempts: [],
     divinationTraining: { cards: false, dream: false, media: [], teachers: [] },
+    divinationCredentials: [],
     divinationInsights: [],
     divinationAttempts: [],
     books: createBooks(),
@@ -428,6 +612,7 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     awareness: 'ordinary',
     pathwayLeads: createPathwayLeads(),
     items: { ...(origin.items ?? {}) },
+    itemKnowledge: {},
     intel: [...(origin.intel ?? [])],
     knowledge: [...(origin.knowledge ?? [])],
     studyProgress: 0,
@@ -3012,6 +3197,181 @@ function checkGameOver(s: GameState) {
 }
 
 // ============ 存档 ============
+function rawDivinationAttemptHasMatchingInsight(attempt: Partial<DivinationAttempt>, rawInsights: unknown[]): boolean {
+  return rawInsights.some(value => {
+    if (!value || typeof value !== 'object') return false;
+    const insight = value as Partial<DivinationInsight>;
+    return insight.targetKind === attempt.targetKind && insight.targetId === attempt.targetId
+      && insight.method === attempt.method && insight.provider === attempt.provider && insight.outcome === attempt.outcome
+      && insight.day === attempt.day && insight.hour === attempt.hour;
+  });
+}
+
+function rebuildDivinationCredentials(s: GameState, rawCredentials: unknown[], rawAttempts: unknown[], rawInsights: unknown[]) {
+  const credentials: DivinationCredential[] = [];
+  const validTime = (day: unknown, hour: unknown) => Number.isInteger(day) && (day as number) >= 1
+    && Number.isInteger(hour) && (hour as number) >= 0 && (hour as number) < 24;
+  const pushCredential = (credential: DivinationCredential) => {
+    const duplicate = credentials.some(existing => existing.kind === credential.kind
+      && (credential.kind === 'training'
+        ? existing.kind === 'training' && existing.source === credential.source && existing.method === credential.method
+        : existing.kind === 'consultation' && existing.provider === credential.provider
+          && existing.targetKind === credential.targetKind && existing.targetId === credential.targetId
+          && existing.method === credential.method && existing.day === credential.day && existing.hour === credential.hour));
+    if (!duplicate) credentials.push(credential);
+  };
+  for (const value of rawCredentials) {
+    if (!value || typeof value !== 'object') continue;
+    const raw = value as Partial<DivinationCredential>;
+    if (!validTime(raw.day, raw.hour)) continue;
+    if (raw.kind === 'training') {
+      if (!['formal_seer_training', 'nelson'].includes(raw.source ?? '') || !['cards', 'dream'].includes(raw.method ?? '')) continue;
+      const source = raw.source as 'formal_seer_training' | 'nelson';
+      const method = raw.method as DivinationMethod;
+      const trainingMatches = method === 'cards'
+        ? s.divinationTraining.cards && s.divinationTraining.media.includes('symbol_cards') && s.divinationTraining.teachers.includes(source)
+        : source === 'formal_seer_training' && s.divinationTraining.dream && s.divinationTraining.teachers.includes(source) && hasSeerDivinationSequence(s);
+      if (trainingMatches) pushCredential({ kind: 'training', source, method, day: raw.day!, hour: raw.hour! });
+      continue;
+    }
+    if (raw.kind !== 'consultation' || !['nelson', 'evelyn'].includes(raw.provider ?? '')
+      || !['location', 'item'].includes(raw.targetKind ?? '') || typeof raw.targetId !== 'string'
+      || !['cards', 'dream'].includes(raw.method ?? '')) continue;
+    const provider = raw.provider as 'nelson' | 'evelyn';
+    const targetKind = raw.targetKind as DivinationTargetKind;
+    const method = raw.method as DivinationMethod;
+    const target = divinationTargetDefinition(targetKind, raw.targetId);
+    const matchingAttempt = rawAttempts.some(value => {
+      if (!value || typeof value !== 'object') return false;
+      const attempt = value as Partial<DivinationAttempt>;
+      return attempt.provider === provider && attempt.targetKind === targetKind && attempt.targetId === raw.targetId
+        && attempt.method === method && attempt.day === raw.day && attempt.hour === raw.hour
+        && rawDivinationAttemptHasMatchingInsight(attempt, rawInsights);
+    });
+    const supported = !!target && method === 'cards'
+      && (provider === 'nelson' || target.id === 'old_tower' || target.id === 'anomaly_evidence');
+    if (supported && matchingAttempt) pushCredential({
+      kind: 'consultation', provider, targetKind, targetId: raw.targetId, method, day: raw.day!, hour: raw.hour!,
+    });
+  }
+
+  s.divinationCredentials = credentials;
+  // 兼容旧档时只从可交叉核验的正式训练状态和当下可信关系保守补证；关系下降后的新凭据不会再被撤销。
+  if (hasSeerDivinationSequence(s) && s.divinationTraining.teachers.includes('formal_seer_training')) {
+    if (s.divinationTraining.cards && s.divinationTraining.media.includes('symbol_cards')) addDivinationTrainingCredential(s, 'formal_seer_training', 'cards');
+    if (s.divinationTraining.dream) addDivinationTrainingCredential(s, 'formal_seer_training', 'dream');
+  }
+  if (hasTrustedNelsonDivinationRelationship(s) && s.divinationTraining.teachers.includes('nelson')
+    && s.divinationTraining.cards && s.divinationTraining.media.includes('symbol_cards')) {
+    addDivinationTrainingCredential(s, 'nelson', 'cards');
+  }
+  for (const value of rawAttempts) {
+    if (!value || typeof value !== 'object') continue;
+    const attempt = value as Partial<DivinationAttempt>;
+    if (!['nelson', 'evelyn'].includes(attempt.provider ?? '') || !['location', 'item'].includes(attempt.targetKind ?? '')
+      || typeof attempt.targetId !== 'string' || !['cards', 'dream'].includes(attempt.method ?? '')
+      || !validTime(attempt.day, attempt.hour) || !rawDivinationAttemptHasMatchingInsight(attempt, rawInsights)) continue;
+    const provider = attempt.provider as 'nelson' | 'evelyn';
+    const targetKind = attempt.targetKind as DivinationTargetKind;
+    const method = attempt.method as DivinationMethod;
+    const target = divinationTargetDefinition(targetKind, attempt.targetId);
+    const sourceWasTrusted = provider === 'nelson' ? hasTrustedNelsonDivinationRelationship(s) : hasOfficialEvelynDivinationRelationship(s);
+    const supported = !!target && method === 'cards'
+      && (provider === 'nelson' || target.id === 'old_tower' || target.id === 'anomaly_evidence');
+    if (sourceWasTrusted && supported) addDivinationConsultationCredential(s, provider, targetKind, attempt.targetId, method, attempt.day!, attempt.hour!);
+  }
+}
+
+function normalizedRecordedDivinationAttempt(s: GameState, value: unknown): DivinationAttempt | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<DivinationAttempt>;
+  if (!['location', 'item'].includes(raw.targetKind ?? '') || typeof raw.targetId !== 'string') return null;
+  if (!['cards', 'dream'].includes(raw.method ?? '') || !['self', 'nelson', 'evelyn'].includes(raw.provider ?? '')) return null;
+  if (!['inconclusive', 'omen', 'hint', 'obscured', 'backlash'].includes(raw.outcome ?? '')) return null;
+  if (!Number.isInteger(raw.day) || (raw.day ?? 0) < 1 || !Number.isInteger(raw.hour) || (raw.hour ?? -1) < 0 || (raw.hour ?? 24) > 23 || !Number.isFinite(raw.score)) return null;
+  const targetKind = raw.targetKind as DivinationTargetKind;
+  const method = raw.method as DivinationMethod;
+  const provider = raw.provider as DivinationProvider;
+  const outcome = raw.outcome as DivinationOutcome;
+  const target = divinationTargetDefinition(targetKind, raw.targetId);
+  if (!target || (targetKind === 'location' && !isLocationUnlocked(s, raw.targetId))) return null;
+  if (!recordedDivinationProviderAllowed(s, provider, method, target, raw.day!, raw.hour!)) return null;
+  const successOutcome = targetKind === 'location' ? 'omen' : 'hint';
+  if ((outcome === 'omen' || outcome === 'hint') && (outcome !== successOutcome || raw.score! < target.difficulty)) return null;
+  if (outcome === 'inconclusive' && (raw.score! >= target.difficulty || method !== 'cards' || target.pressure !== 'low')) return null;
+  if (outcome === 'backlash' && (raw.score! >= target.difficulty || (method !== 'dream' && target.pressure !== 'high'))) return null;
+  return {
+    targetKind, targetId: raw.targetId, method, provider, outcome,
+    day: raw.day!, hour: raw.hour!, score: raw.score!,
+  };
+}
+
+function rebuildPersistedDivinationAndItemKnowledge(
+  s: GameState,
+  rawAttempts: unknown[],
+  rawInsights: unknown[],
+  rawItemKnowledge: Record<string, unknown>,
+) {
+  const usedInsights = new Set<number>();
+  const attempts: DivinationAttempt[] = [];
+  const insights: DivinationInsight[] = [];
+  for (const candidate of rawAttempts) {
+    const attempt = normalizedRecordedDivinationAttempt(s, candidate);
+    if (!attempt) continue;
+    const matchingInsightIndex = rawInsights.findIndex((value, index) => {
+      if (usedInsights.has(index) || !value || typeof value !== 'object') return false;
+      const raw = value as Partial<DivinationInsight>;
+      return raw.targetKind === attempt.targetKind && raw.targetId === attempt.targetId
+        && raw.method === attempt.method && raw.provider === attempt.provider && raw.outcome === attempt.outcome
+        && raw.day === attempt.day && raw.hour === attempt.hour;
+    });
+    if (matchingInsightIndex < 0) continue;
+    usedInsights.add(matchingInsightIndex);
+    attempts.push(attempt);
+    const target = divinationTargetDefinition(attempt.targetKind, attempt.targetId)!;
+    const success = attempt.outcome === 'omen' || attempt.outcome === 'hint';
+    insights.push({
+      id: `divination:${attempt.day}:${attempt.hour}:${attempts.length}`,
+      targetKind: attempt.targetKind,
+      targetId: attempt.targetId,
+      method: attempt.method,
+      provider: attempt.provider,
+      outcome: attempt.outcome,
+      text: canonicalDivinationText(target, attempt.method, attempt.provider, attempt.outcome),
+      clueId: success ? target.clueId : undefined,
+      day: attempt.day,
+      hour: attempt.hour,
+    });
+  }
+  s.divinationAttempts = attempts;
+  s.divinationInsights = insights;
+
+  const successfullyDivinedItems = new Set(insights.filter(insight => insight.targetKind === 'item' && insight.outcome === 'hint').map(insight => insight.targetId));
+  s.itemKnowledge = {};
+  for (const itemId of new Set([...Object.keys(rawItemKnowledge), ...successfullyDivinedItems])) {
+    const item = findItem(itemId);
+    if (!item) continue;
+    const raw = rawItemKnowledge[itemId] && typeof rawItemKnowledge[itemId] === 'object'
+      ? rawItemKnowledge[itemId] as Partial<ItemKnowledgeState>
+      : undefined;
+    const authoritativeSpiritResult = item.spiritVision?.result;
+    const spiritVisionInspected = !!(raw?.spiritVisionInspected && authoritativeSpiritResult
+      && hasSpiritVisionAbility(s) && Array.isArray(raw.knownInfo) && raw.knownInfo.includes(authoritativeSpiritResult));
+    const identifiedByDivination = item.category === 'occult' && successfullyDivinedItems.has(itemId);
+    if (!spiritVisionInspected && !identifiedByDivination) continue;
+    const inspectedDay = spiritVisionInspected && Number.isInteger(raw?.inspectedDay) && (raw?.inspectedDay ?? 0) >= 1 ? raw!.inspectedDay : undefined;
+    const inspectedHour = spiritVisionInspected && Number.isInteger(raw?.inspectedHour) && (raw?.inspectedHour ?? -1) >= 0 && (raw?.inspectedHour ?? 24) <= 23 ? raw!.inspectedHour : undefined;
+    s.itemKnowledge[itemId] = {
+      itemId,
+      spiritVisionInspected,
+      identifiedAsOccult: identifiedByDivination || (spiritVisionInspected && item.spiritVision!.revealsOccult),
+      knownInfo: spiritVisionInspected ? [authoritativeSpiritResult!] : [],
+      inspectedDay,
+      inspectedHour,
+    };
+  }
+}
+
 const SAVE_KEY = 'lotm-demo-save-v6';
 export function saveGame(s: GameState) {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
@@ -3035,10 +3395,12 @@ export function loadGame(): GameState | null {
       clues?: GameState['clues'];
       explorationAttempts?: GameState['explorationAttempts'];
       divinationTraining?: GameState['divinationTraining'];
+      divinationCredentials?: GameState['divinationCredentials'];
       divinationInsights?: GameState['divinationInsights'];
       divinationAttempts?: GameState['divinationAttempts'];
       books?: GameState['books'];
       languages?: GameState['languages'];
+      itemKnowledge?: GameState['itemKnowledge'];
       canReadRoselleScript?: boolean;
       jobId?: string | null;
       atWork?: boolean;
@@ -3077,15 +3439,15 @@ export function loadGame(): GameState | null {
       media: Array.isArray(training?.media) ? [...new Set(training.media.filter(id => typeof id === 'string'))] : [],
       teachers: Array.isArray(training?.teachers) ? [...new Set(training.teachers.filter(id => typeof id === 'string'))] : [],
     };
-    s.divinationInsights = Array.isArray(s.divinationInsights)
-      ? s.divinationInsights.filter(insight => insight && ['location', 'item'].includes(insight.targetKind)
-        && ['inconclusive', 'omen', 'hint', 'obscured', 'backlash'].includes(insight.outcome))
-      : [];
-    s.divinationAttempts = Array.isArray(s.divinationAttempts)
-      ? s.divinationAttempts.filter(attempt => attempt && ['location', 'item'].includes(attempt.targetKind)
-        && ['self', 'nelson', 'evelyn'].includes(attempt.provider)
-        && ['inconclusive', 'omen', 'hint', 'obscured', 'backlash'].includes(attempt.outcome))
-      : [];
+    const rawDivinationCredentials: unknown[] = Array.isArray(s.divinationCredentials) ? [...s.divinationCredentials] : [];
+    const rawDivinationInsights: unknown[] = Array.isArray(s.divinationInsights) ? [...s.divinationInsights] : [];
+    const rawDivinationAttempts: unknown[] = Array.isArray(s.divinationAttempts) ? [...s.divinationAttempts] : [];
+    const rawItemKnowledge: Record<string, unknown> = s.itemKnowledge && typeof s.itemKnowledge === 'object' ? { ...s.itemKnowledge } : {};
+    // 玩家可见的识别结果在完成全部身份迁移后，从权威定义和可核验尝试记录重建。
+    s.divinationCredentials = [];
+    s.divinationInsights = [];
+    s.divinationAttempts = [];
+    s.itemKnowledge = {};
     const legacyOccultNotes = s.items?.occult_notes ?? 0;
     const legacyStudyProgress = Number.isFinite(s.studyProgress) ? Math.max(0, s.studyProgress) : 0;
     const oldBooks = s.books && typeof s.books === 'object' ? s.books : {};
@@ -3431,7 +3793,8 @@ export function loadGame(): GameState | null {
         acquireClue(s, 'dock_marked_manifest', 'migration', `schema:${loadedVersion}`);
       }
     }
-    if (loadedVersion < 14 && hasSeerDivinationSequence(s)) grantSeerDivinationTraining(s);
+    rebuildDivinationCredentials(s, rawDivinationCredentials, rawDivinationAttempts, rawDivinationInsights);
+    if (loadedVersion < 17 && hasSeerDivinationSequence(s)) grantSeerDivinationTraining(s);
     if (loadedVersion < 15) {
       if (legacyOccultNotes > 0) {
         const notes = s.books.abridged_occult_notes;
@@ -3454,6 +3817,10 @@ export function loadGame(): GameState | null {
     }
     s.items.occult_notes = 0;
     s.studyProgress = 0;
+    // 灵视只由占卜家正式训练授予；普通人和其他途径旧档中的误授予一律清理。
+    if (!hasTrustedSeerSpiritVisionSource(s)) s.knowledge = s.knowledge.filter(id => id !== 'spirit_vision');
+    else if (!s.knowledge.includes('spirit_vision')) s.knowledge.push('spirit_vision');
+    rebuildPersistedDivinationAndItemKnowledge(s, rawDivinationAttempts, rawDivinationInsights, rawItemKnowledge);
     // v13 开始委托板不得泄露尚未掌握的去向；已接委托作为有效入口保留。
     s.board = Array.isArray(s.board)
       ? s.board.filter(commission => commission && typeof commission.locationId === 'string'

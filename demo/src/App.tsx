@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import './App.css';
 import type { GameState, SkillKey, OrganizationId } from './game/types';
-import { BOOK_DEFS, CLUE_DEFS, NPCS, ORIGINS, JOBS, TALENTS, SKILL_NAMES, LOCATIONS, LOCATION_REGIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findPathway, findItem, findJob, npcAvailable, npcLocation, scheduleHint, weekdayOf, WEEKDAY_NAMES, INTEL_NAMES, KNOWLEDGE_NAMES, formulaName, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES, sequenceEvidenceLabel } from './game/data';
+import { BOOK_DEFS, CLUE_DEFS, NPCS, ORIGINS, JOBS, TALENTS, SKILL_NAMES, LOCATIONS, LOCATION_REGIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, INVENTORY_CATEGORY_LABELS, findPathway, findItem, findJob, npcAvailable, npcLocation, scheduleHint, weekdayOf, WEEKDAY_NAMES, INTEL_NAMES, KNOWLEDGE_NAMES, formulaName, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES, sequenceEvidenceLabel } from './game/data';
 import * as E from './game/engine';
 
 const HOURS = ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23'];
@@ -153,12 +153,81 @@ function CharacterSheet({ state, onClose }: { state: GameState; onClose: () => v
             <p>{E.isBeyonder(state) ? '配方' : '未验证配方线索'}：{state.formulas.length ? state.formulas.map(formulaName).join('、') : '无'}</p>
             <p>情报：{state.intel.length ? state.intel.map(i => INTEL_NAMES[i] ?? i).join('、') : '无'}</p>
             <p>知识：{state.knowledge.length ? state.knowledge.map(k => KNOWLEDGE_NAMES[k] ?? k).join('、') : '无'}</p>
-            <p>物品：{Object.entries(state.items).filter(([, n]) => n > 0).map(([id, n]) => `${findItem(id)?.name ?? id}×${n}`).join('、') || '无'}</p>
+            <p>物品：{E.getInventoryEntries(state).map(entry => `${entry.name}×${entry.quantity}`).join('、') || '无'}</p>
           </div>
         </section>
       </div>
     </div>
   );
+}
+
+function InventoryPanel({ state, interactive, onAction, onClose }: {
+  state: GameState;
+  interactive: boolean;
+  onAction: (fn: (s: GameState) => E.ActionResult) => void;
+  onClose: () => void;
+}) {
+  const entries = E.getInventoryEntries(state);
+  return <div data-inventory-panel className="panel border-violet-300/30 text-xs space-y-3">
+    <div className="flex items-center justify-between gap-2">
+      <h3 className="panel-title">物品栏</h3>
+      <button className="text-stone-500 hover:text-stone-200" onClick={onClose}>收起</button>
+    </div>
+    <p className="text-stone-500 leading-5">这里只展示你目前能够确认的外观与记录。未经检视的异常物不会提前暴露真实分类或危险。</p>
+    {!interactive && <p className="rounded border border-stone-800 p-2 text-stone-600">你可以随时查看随身记录；使用、阅读和检视需回到住处后进行。</p>}
+    {entries.length === 0
+      ? <p className="text-stone-600">物品栏还是空的。</p>
+      : (['tool', 'book', 'misc', 'occult'] as const).map(category => {
+        const categoryEntries = entries.filter(entry => entry.category === category);
+        if (!categoryEntries.length) return null;
+        return <section key={category} className="space-y-2">
+          <h4 className="text-stone-300 border-b border-stone-800 pb-1">{INVENTORY_CATEGORY_LABELS[category]}</h4>
+          {categoryEntries.map(entry => {
+            const reading = entry.kind === 'book' ? E.readingIssue(state, entry.id) : null;
+            return <div key={`${entry.kind}:${entry.id}`} className="rounded border border-stone-700 p-2">
+              <div className="flex justify-between gap-2"><span className={category === 'occult' ? 'text-purple-200/90' : category === 'book' ? 'text-violet-100/90' : 'text-stone-200'}>{entry.name}</span><span className="text-stone-500">×{entry.quantity}</span></div>
+              <p className="text-stone-500 mt-1 leading-5">{entry.description}</p>
+              {entry.knownInfo.length > 0 && <p className="text-sky-200/60 mt-1">已知：{entry.knownInfo.join('；')}</p>}
+              {interactive && <div className="flex flex-wrap gap-2 mt-2">
+                {entry.actions.read && <button disabled={!!reading} title={reading ?? ''} className="text-violet-200/80 disabled:opacity-40"
+                  onClick={() => onAction(s => E.readBookSession(s, entry.id))}>阅读一节 <small className="text-stone-600">2h</small></button>}
+                {entry.actions.spiritVision && (() => {
+                  const issue = E.spiritVisionInspectionIssue(state, entry.id);
+                  return <button disabled={!!issue} title={issue ?? ''} className="text-sky-200/80 disabled:opacity-40"
+                    onClick={() => onAction(s => E.inspectItemWithSpiritVision(s, entry.id))}>用灵视检视</button>;
+                })()}
+                {entry.actions.divination && (['cards', 'dream'] as const).map(method => {
+                  const issue = E.divinationIssue(state, 'item', entry.id, method, 'self');
+                  return <button key={method} disabled={!!issue} title={issue ?? ''} className="text-violet-200/80 disabled:opacity-35"
+                    onClick={() => onAction(s => E.performDivination(s, 'item', entry.id, method, 'self'))}>
+                    {method === 'cards' ? '纸牌占卜' : '梦境占卜'}
+                  </button>;
+                })}
+                {entry.actions.divination && (['nelson', 'evelyn'] as const).map(provider => {
+                  const issue = E.divinationIssue(state, 'item', entry.id, 'cards', provider);
+                  return <button key={provider} disabled={!!issue} title={issue ?? ''} className="text-sky-200/80 disabled:opacity-35"
+                    onClick={() => onAction(s => E.performDivination(s, 'item', entry.id, 'cards', provider))}>
+                    请{provider === 'nelson' ? '尼尔逊代占' : '伊芙琳核验'}
+                  </button>;
+                })}
+              </div>}
+            </div>;
+          })}
+        </section>;
+      })}
+    {interactive && E.getBookSourceOffers(state).length > 0 && <div className="border-t border-stone-800 pt-2 space-y-1">
+      <p className="text-stone-400">当前可核验的固定书源</p>
+      {E.getBookSourceOffers(state).map(offer => {
+        const def = BOOK_DEFS.find(candidate => candidate.id === offer.bookId)!;
+        const issue = E.acquireBookIssue(state, offer.bookId);
+        return <button key={offer.bookId} disabled={!!issue} title={issue ?? ''}
+          className="block w-full text-left text-sky-200/80 disabled:opacity-40"
+          onClick={() => onAction(s => E.acquireBook(s, offer.bookId))}>
+          取得{def.title} <small className="text-stone-600">1h{offer.price ? ` · ${E.fmtMoney(offer.price)}` : ' · 借阅'}</small>
+        </button>;
+      })}
+    </div>}
+  </div>;
 }
 
 export default function App() {
@@ -167,7 +236,7 @@ export default function App() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
   const [actingOpen, setActingOpen] = useState(false);
-  const [readingOpen, setReadingOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [companionId, setCompanionId] = useState(''); // 冒险同行者（空=独自）
   const [nameInput, setNameInput] = useState('');
   const [originChoice, setOriginChoice] = useState('clerk');
@@ -291,6 +360,8 @@ export default function App() {
   const clocktowerClues = state.clues.filter(clue => clue.caseId === 'clocktower');
   const visibleLocations = E.getVisibleLocations(state);
   const visibleBoard = state.board.filter(commission => E.isLocationUnlocked(state, commission.locationId));
+  const inventoryEntries = E.getInventoryEntries(state);
+  const locationDivinationTargets = E.getDivinationTargets(state).filter(target => target.kind === 'location');
 
   return (
     <div className="min-h-screen bg-[#0c0f0e] text-stone-200 font-serif">
@@ -346,24 +417,23 @@ export default function App() {
             </ul>
           </section>
           <section className="panel">
-            <h3 className="panel-title">持有</h3>
-            <ul className="text-xs space-y-1 text-stone-300 max-h-48 overflow-y-auto">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="panel-title">物品栏</h3>
+              <button className="text-xs text-violet-200/80" onClick={() => setInventoryOpen(value => !value)}>
+                {inventoryOpen ? '收起' : '查看'}
+              </button>
+            </div>
+            <ul className="text-xs space-y-1 text-stone-300">
               {beyonder
                 ? state.formulas.map(f => <li key={f} className="text-purple-200/80">🧪 {formulaName(f)}</li>)
                 : state.formulas.length > 0 && <li className="text-amber-200/70">📄 未验证配方线索 ×{state.formulas.length}</li>}
-              {Object.entries(state.items).filter(([, n]) => n > 0).map(([id, n]) => (
-                <li key={id} className="flex justify-between" title={E.itemPresentation(state, id)?.description}>
-                  <span>{E.itemPresentation(state, id)?.name ?? id}</span><span>×{n}</span>
-                </li>
-              ))}
-              {Object.values(state.books).some(book => book.acquired) && <li className="pt-1 text-stone-500">— 书架 —</li>}
-              {Object.values(state.books).filter(book => book.acquired).map(book => {
-                const def = BOOK_DEFS.find(candidate => candidate.id === book.bookId);
-                return def ? <li key={book.bookId} className="text-violet-200/80">📚 {def.title}{book.completed ? ' · 已读完' : ''}</li> : null;
+              {(['tool', 'book', 'misc', 'occult'] as const).map(category => {
+                const count = inventoryEntries.filter(entry => entry.category === category).reduce((sum, entry) => sum + entry.quantity, 0);
+                return count > 0 ? <li key={category} className="flex justify-between"><span>{INVENTORY_CATEGORY_LABELS[category]}</span><span>×{count}</span></li> : null;
               })}
               {state.intel.map(i => <li key={i} className="text-sky-300/80">🕵 {INTEL_NAMES[i] ?? i}</li>)}
               {state.knowledge.map(k => <li key={k} className="text-emerald-300/80">📖 {KNOWLEDGE_NAMES[k] ?? k}</li>)}
-              {!state.formulas.length && !Object.values(state.items).some(n => n > 0) && !Object.values(state.books).some(book => book.acquired) && !state.intel.length && !state.knowledge.length &&
+              {!state.formulas.length && !inventoryEntries.length && !state.intel.length && !state.knowledge.length &&
                 <li className="text-stone-600">两袖清风。</li>}
             </ul>
           </section>
@@ -378,6 +448,13 @@ export default function App() {
               </p>
             ))}
           </div>
+
+          {inventoryOpen && <InventoryPanel
+            state={state}
+            interactive={E.isAtHome(state) && !ev}
+            onAction={runAction}
+            onClose={() => setInventoryOpen(false)}
+          />}
 
           {ev ? (
             <div className="panel border-amber-200/40">
@@ -481,43 +558,13 @@ export default function App() {
                 <button className={`act-btn ${advOpen ? 'border-amber-200/80 bg-amber-100/5' : ''}`} onClick={() => setAdvOpen(v => !v)}>前往地点<small>选择去向与交通</small></button>
                 <button className={`act-btn ${actingOpen ? 'border-purple-300/70' : ''}`} disabled={state.sequence !== 9} title={state.sequence === 9 ? '' : '仅序列9需要本阶段扮演证据'}
                   onClick={() => setActingOpen(value => !value)}>扮演场景<small>{state.sequence === 9 ? '选择具体原则行动' : '当前阶段不可用'}</small></button>
-                <button className={`act-btn ${readingOpen ? 'border-violet-300/70' : ''}`} onClick={() => setReadingOpen(value => !value)}>阅读书籍<small>选择已取得书籍</small></button>
+                <button className={`act-btn ${inventoryOpen ? 'border-violet-300/70' : ''}`} onClick={() => setInventoryOpen(value => !value)}>物品栏<small>分类、检视与使用</small></button>
                 <button className="act-btn" onClick={() => update(s => E.doMeal(s))}>正餐<small>1h · 花费4便士</small></button>
                 <button className="act-btn" onClick={() => update(s => E.doNap(s))}>小睡<small>1h · 稍作休息</small></button>
                 <button className="act-btn border-sky-300/40" onClick={() => update(s => E.doSleep(s))}>
                   {state.pathwayId === 'sleepless' ? '静夜冥想' : '睡觉'}<small>{state.pathwayId === 'sleepless' ? '2h · 不眠者' : '至次日7:00'}</small>
                 </button>
               </div>
-
-              {readingOpen && <div className="mt-3 rounded border border-violet-300/30 p-3 text-xs space-y-3">
-                <h3 className="panel-title">书架与固定来源</h3>
-                {Object.values(state.books).filter(book => book.acquired).length === 0
-                  ? <p className="text-stone-600">书架还是空的。只能从已经进入视野的固定来源取得书目。</p>
-                  : Object.values(state.books).filter(book => book.acquired).map(book => {
-                    const def = BOOK_DEFS.find(candidate => candidate.id === book.bookId)!;
-                    const issue = E.readingIssue(state, book.bookId);
-                    const language = E.canReadLanguage(state, def.language) ? '语言可读' : '语言尚未掌握';
-                    return <div key={book.bookId} className="rounded border border-stone-700 p-2">
-                      <div className="flex justify-between gap-2"><span className="text-violet-100/90">{def.title}</span><span className="text-stone-500">{book.readHours}/{def.totalHours}h</span></div>
-                      <p className="text-stone-500 mt-1">{def.surfaceDesc}</p>
-                      <p className="text-stone-600 mt-1">{language}{book.completed ? ' · 已完成' : issue ? ` · ${issue}` : ' · 可继续阅读'}</p>
-                      <button disabled={!!issue} title={issue ?? ''} className="mt-1 text-violet-200/80 disabled:opacity-40"
-                        onClick={() => runAction(s => E.readBookSession(s, book.bookId))}>阅读一节 <small className="text-stone-600">2h</small></button>
-                    </div>;
-                  })}
-                {E.getBookSourceOffers(state).length > 0 && <div className="border-t border-stone-800 pt-2 space-y-1">
-                  <p className="text-stone-400">当前可核验的固定书源</p>
-                  {E.getBookSourceOffers(state).map(offer => {
-                    const def = BOOK_DEFS.find(candidate => candidate.id === offer.bookId)!;
-                    const issue = E.acquireBookIssue(state, offer.bookId);
-                    return <button key={offer.bookId} disabled={!!issue} title={issue ?? ''}
-                      className="block w-full text-left text-sky-200/80 disabled:opacity-40"
-                      onClick={() => runAction(s => E.acquireBook(s, offer.bookId))}>
-                      取得{def.title} <small className="text-stone-600">1h{offer.price ? ` · ${E.fmtMoney(offer.price)}` : ' · 借阅'}</small>
-                    </button>;
-                  })}
-                </div>}
-              </div>}
 
               {actingOpen && state.sequence === 9 && state.pathwayId && (() => {
                 const def = SEQUENCE8_ACTING_DEFS[state.pathwayId as keyof typeof SEQUENCE8_ACTING_DEFS];
@@ -655,12 +702,12 @@ export default function App() {
                 </div>
               )}
 
-              {E.getDivinationTargets(state).length > 0 && (
+              {locationDivinationTargets.length > 0 && (
                 <div className="mt-3 border-t border-stone-800 pt-3">
                   <h3 className="panel-title">占卜与预兆</h3>
                   <p className="text-xs text-stone-500 leading-5 mb-2">占卜需要一个足够明确的问题。象征只会留下模糊启示，真正的含义仍要结合已有调查判断。</p>
                   <div className="space-y-2">
-                    {E.getDivinationTargets(state).map(target => (
+                    {locationDivinationTargets.map(target => (
                       <div key={`${target.kind}:${target.id}`} className="rounded border border-violet-300/20 p-2 text-xs">
                         <p className="text-stone-200 mb-1">{target.title}</p>
                         <div className="flex flex-wrap gap-2">

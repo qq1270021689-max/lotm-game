@@ -278,7 +278,7 @@ describe('v9到v10迁移与资源旁路', () => {
 
   it('v9凡人保持null；序列9旧配方变legacy_unverified且required=1并幂等', () => {
     const mortal = newGame('凡人', 'clerk', []); saveV9(mortal);
-    expect(loadGame()).toMatchObject({ schemaVersion: 16, sequence8Progress: null });
+    expect(loadGame()).toMatchObject({ schemaVersion: 17, sequence8Progress: null });
 
     const old = seq9('seer'); old.digestion = 73; old.items.goat_horn = 1; old.formulas.push('seer8'); saveV9(old);
     const loaded = loadGame()!;
@@ -292,7 +292,7 @@ describe('v9到v10迁移与资源旁路', () => {
   it('v9已序列8迁移completed且不降级', () => {
     const old = seq9('sleepless'); old.sequence = 8; old.formulas.push('sleepless8'); saveV9(old);
     const loaded = loadGame()!;
-    expect(loaded).toMatchObject({ schemaVersion: 16, sequence: 8, sequence8Progress: { stage: 'completed' } });
+    expect(loaded).toMatchObject({ schemaVersion: 17, sequence: 8, sequence8Progress: { stage: 'completed' } });
   });
 
   it('v9无组织记录的序列9通过一次旧身份审计恢复完整可达性并保持幂等', () => {

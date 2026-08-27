@@ -154,35 +154,35 @@ export const EXPLORATION_CHECKS: readonly ExplorationCheckDef[] = [
 export const BOOK_DEFS: readonly BookDef[] = [
   {
     id: 'municipal_archive_manual', title: '《市政档案检索与编号手册》',
-    surfaceDesc: '市政窗口常见的工具书，讲解卷宗编号、索引卡和调阅次序。', language: 'ruen', totalHours: 4,
+    surfaceDesc: '市政窗口常见的工具书，讲解卷宗编号、索引卡和调阅次序。', category: 'book', language: 'ruen', totalHours: 4,
     rewards: [{ kind: 'knowledge', id: 'archive_method' }, { kind: 'skill', id: 'investigate', maxGain: 1 }],
   },
   {
     id: 'dock_manifest_manual', title: '《港务编号与仓单抄写规范》',
-    surfaceDesc: '港务处内部使用的旧版抄写规范，夹有大量更正页。', language: 'ruen', totalHours: 6,
+    surfaceDesc: '港务处内部使用的旧版抄写规范，夹有大量更正页。', category: 'book', language: 'ruen', totalHours: 6,
     minSkill: { id: 'investigate', level: 1 },
     check: { stat: 'mnd', skill: 'investigate', difficulty: 30, clueBonuses: { dock_missing_reports: 4, dock_manifest_discrepancy: 6 } },
     rewards: [{ kind: 'knowledge', id: 'cargo_notation' }, { kind: 'clue', id: 'dock_ledger_notation' }],
   },
   {
     id: 'church_festivals_excerpt', title: '《黑夜教会节期与礼仪摘录》',
-    surfaceDesc: '面向教区志愿者的节期与礼仪摘录，不含内部教义。', language: 'ruen', totalHours: 4,
+    surfaceDesc: '面向教区志愿者的节期与礼仪摘录，不含内部教义。', category: 'book', language: 'ruen', totalHours: 4,
     rewards: [{ kind: 'knowledge', id: 'church_liturgy' }],
   },
   {
     id: 'old_feysac_primer', title: '《旧弗萨克语入门》',
-    surfaceDesc: '一本写满音变、格位和抄写练习的旧语言教材。', language: 'ruen', totalHours: 8, minMind: 18,
+    surfaceDesc: '一本写满音变、格位和抄写练习的旧语言教材。', category: 'book', language: 'ruen', totalHours: 8, minMind: 18,
     rewards: [{ kind: 'language', id: 'old_feysac', level: 'reading' }],
   },
   {
     id: 'manor_guest_registry_book', title: '《雾林庄园访客名册》',
-    surfaceDesc: '虫蛀严重的访客名册，多数姓名用旧弗萨克语写成。', language: 'old_feysac', totalHours: 8,
+    surfaceDesc: '虫蛀严重的访客名册，多数姓名用旧弗萨克语写成。', category: 'book', language: 'old_feysac', totalHours: 8,
     minSkill: { id: 'investigate', level: 2 },
     rewards: [{ kind: 'clue', id: 'manor_guest_registry' }, { kind: 'event', id: 'manor_registry_memory' }],
   },
   {
     id: 'abridged_occult_notes', title: '《神秘学札记·删节本》',
-    surfaceDesc: '删除了仪式步骤与危险实例的理论札记，只保留术语、辨伪和安全边界。', language: 'ruen', totalHours: 10,
+    surfaceDesc: '删除了仪式步骤与危险实例的理论札记，只保留术语、辨伪和安全边界。', category: 'book', language: 'ruen', totalHours: 10,
     rewards: [{ kind: 'knowledge', id: 'occult_theory' }, { kind: 'skill', id: 'occult', maxGain: 1 }],
   },
 ];
@@ -379,35 +379,72 @@ export const SEQUENCE8_RITUAL_DEFS = {
 // ============ 物品 ============
 export const ITEMS: ItemDef[] = [
   // 序列9 魔药材料
-  { id: 'octopus_blood', name: '拉瓦章鱼血液', desc: '深蓝色的小瓶，晃一晃会泛起微光。', price: 48 },
-  { id: 'star_crystal', name: '星水晶', desc: '对着光看，内部有星点缓缓移动。', price: 55 },
-  { id: 'manhal_eye', name: '曼哈尔鱼眼珠', desc: '一对浑圆的鱼眼，据说死后的曼哈尔鱼仍在观察世界。', price: 40 },
-  { id: 'hornfish_blood', name: '羊角黑鱼血液', desc: '粘稠如墨，倒入水中会聚成羊角形状。', price: 42 },
-  { id: 'deer_heart', name: '红角麋鹿心脏', desc: '离体已久，摸起来仍是温热的。', price: 45 },
-  { id: 'iron_fern', name: '铁线蕨粉末', desc: '磨得极细的灰绿粉末，有铁锈味。', price: 30 },
-  { id: 'bat_eye', name: '夜光蝙蝠眼珠', desc: '在黑暗中会发出微弱的绿光。', price: 44 },
-  { id: 'deep_sleep_flower', name: '深眠花粉末', desc: '闻一下就会犯困的紫色粉末。', price: 36 },
-  { id: 'gecko_skin', name: '幻影壁虎尾皮', desc: '半透明的尾皮，边缘偶尔消失在空气里。', price: 46 },
-  { id: 'mold_spore', name: '门后霉菌孢子', desc: '只生长在老宅门后的诡异霉菌。', price: 38 },
+  { id: 'octopus_blood', name: '拉瓦章鱼血液', desc: '深蓝色的小瓶，晃一晃会泛起微光。', category: 'occult', surfaceName: '密封的深蓝样本', surfaceDesc: '没有成分标签的深蓝色小瓶，来源与性质仍待核验。', occultMarked: true, price: 48 },
+  { id: 'star_crystal', name: '星水晶', desc: '对着光看，内部有星点缓缓移动。', category: 'occult', surfaceName: '带星点的晶体样本', surfaceDesc: '一枚密封晶体，内部似有反光，来源与性质仍待核验。', occultMarked: true, price: 55 },
+  { id: 'manhal_eye', name: '曼哈尔鱼眼珠', desc: '一对浑圆的鱼眼，据说死后的曼哈尔鱼仍在观察世界。', category: 'occult', surfaceName: '防腐液中的眼状样本', surfaceDesc: '浸在防腐液里的圆形组织，标签只剩批次号。', occultMarked: true, price: 40 },
+  { id: 'hornfish_blood', name: '羊角黑鱼血液', desc: '粘稠如墨，倒入水中会聚成羊角形状。', category: 'occult', surfaceName: '密封的黑色液体', surfaceDesc: '一瓶粘稠黑色液体，成分标签已经脱落。', occultMarked: true, price: 42 },
+  { id: 'deer_heart', name: '红角麋鹿心脏', desc: '离体已久，摸起来仍是温热的。', category: 'occult', surfaceName: '封存的动物组织', surfaceDesc: '严密包裹的动物组织，具体物种无法从外观确认。', occultMarked: true, price: 45 },
+  { id: 'iron_fern', name: '铁线蕨粉末', desc: '磨得极细的灰绿粉末，有铁锈味。', category: 'occult', surfaceName: '灰绿色粉末样本', surfaceDesc: '封口纸包里是带铁锈味的灰绿粉末。', occultMarked: true, price: 30 },
+  { id: 'bat_eye', name: '夜光蝙蝠眼珠', desc: '在黑暗中会发出微弱的绿光。', category: 'occult', surfaceName: '避光保存的眼状样本', surfaceDesc: '一只装在深色小瓶里的眼状组织，标签模糊。', occultMarked: true, price: 44 },
+  { id: 'deep_sleep_flower', name: '深眠花粉末', desc: '闻一下就会犯困的紫色粉末。', category: 'occult', surfaceName: '密封的紫色花粉', surfaceDesc: '紫色粉末被双层蜡纸封住，没有可读标签。', occultMarked: true, price: 36 },
+  { id: 'gecko_skin', name: '幻影壁虎尾皮', desc: '半透明的尾皮，边缘偶尔消失在空气里。', category: 'occult', surfaceName: '半透明蜥类蜕皮', surfaceDesc: '一片干燥的半透明蜕皮，物种与来源不明。', occultMarked: true, price: 46 },
+  { id: 'mold_spore', name: '门后霉菌孢子', desc: '只生长在老宅门后的诡异霉菌。', category: 'occult', surfaceName: '密封的霉菌样本', surfaceDesc: '玻璃片间夹着少量暗色霉菌，采集地点没有记录。', occultMarked: true, price: 38 },
   // 序列8 魔药材料
-  { id: 'goat_horn', name: '灰山羊独角结晶', desc: '霍纳奇斯山脉灰山羊的独角结晶，散发着让人想发笑的气味。', price: 96 },
-  { id: 'face_rose', name: '人脸玫瑰', desc: '花瓣的纹路酷似一张扭曲的人脸。', price: 84 },
-  { id: 'toad_brain', name: '三目蟾蜍脑垂体', desc: '浸泡在防腐液中的灰白色小块。', price: 90 },
-  { id: 'lizard_scale', name: '心灵蜥蜴鳞粉', desc: '在光线下会随观察者情绪变色。', price: 88 },
-  { id: 'ape_brain', name: '暴怒猿猴脑髓液', desc: '瓶中的液体至今仍在愤怒地翻涌。', price: 92 },
-  { id: 'scorpion_sting', name: '仇恨之蝎尾针', desc: '被它蛰到的人会死于自己的怒火。', price: 86 },
-  { id: 'nightingale_throat', name: '安魂夜莺歌喉', desc: '即使离体，午夜仍会发出无声的鸣唱。', price: 94 },
-  { id: 'jellyfish_crystal', name: '沉眠水母伞盖结晶', desc: '握着它的人会做最深的梦。', price: 82 },
-  { id: 'parrot_tongue', name: '双簧鹦鹉舌骨', desc: '能同时说出两句互相矛盾的真话。', price: 88 },
-  { id: 'mirror_mercury', name: '镜面水银', desc: '水银表面映出的不是你的脸。', price: 90 },
+  { id: 'goat_horn', name: '灰山羊独角结晶', desc: '霍纳奇斯山脉灰山羊的独角结晶，散发着让人想发笑的气味。', category: 'occult', surfaceName: '角质结晶样本', surfaceDesc: '一小块角质结晶，被蜡封在无名纸盒中。', occultMarked: true, price: 96 },
+  { id: 'face_rose', name: '人脸玫瑰', desc: '花瓣的纹路酷似一张扭曲的人脸。', category: 'occult', surfaceName: '压干的异形花朵', surfaceDesc: '压干花瓣的纹路有些古怪，但物种无法确认。', occultMarked: true, price: 84 },
+  { id: 'toad_brain', name: '三目蟾蜍脑垂体', desc: '浸泡在防腐液中的灰白色小块。', category: 'occult', surfaceName: '灰白组织样本', surfaceDesc: '防腐液中漂着一小块灰白组织，标签缺失。', occultMarked: true, price: 90 },
+  { id: 'lizard_scale', name: '心灵蜥蜴鳞粉', desc: '在光线下会随观察者情绪变色。', category: 'occult', surfaceName: '细碎鳞粉样本', surfaceDesc: '一管细碎鳞粉会随光线略微变色，来源不明。', occultMarked: true, price: 88 },
+  { id: 'ape_brain', name: '暴怒猿猴脑髓液', desc: '瓶中的液体至今仍在愤怒地翻涌。', category: 'occult', surfaceName: '浑浊组织液样本', surfaceDesc: '小瓶中的浑浊组织液一直没有完全沉淀。', occultMarked: true, price: 92 },
+  { id: 'scorpion_sting', name: '仇恨之蝎尾针', desc: '被它蛰到的人会死于自己的怒火。', category: 'occult', surfaceName: '封蜡的蝎尾针', surfaceDesc: '一枚用厚蜡封住的蝎尾针，采集记录已经遗失。', occultMarked: true, price: 86 },
+  { id: 'nightingale_throat', name: '安魂夜莺歌喉', desc: '即使离体，午夜仍会发出无声的鸣唱。', category: 'occult', surfaceName: '封存的鸟类组织', surfaceDesc: '避光盒里封着一小块鸟类喉部组织。', occultMarked: true, price: 94 },
+  { id: 'jellyfish_crystal', name: '沉眠水母伞盖结晶', desc: '握着它的人会做最深的梦。', category: 'occult', surfaceName: '半透明胶质结晶', surfaceDesc: '半透明结晶被装在软垫盒中，没有种类说明。', occultMarked: true, price: 82 },
+  { id: 'parrot_tongue', name: '双簧鹦鹉舌骨', desc: '能同时说出两句互相矛盾的真话。', category: 'occult', surfaceName: '细小鸟类舌骨', surfaceDesc: '两枚相连的细小鸟类舌骨，来源标签已被撕去。', occultMarked: true, price: 88 },
+  { id: 'mirror_mercury', name: '镜面水银', desc: '水银表面映出的不是你的脸。', category: 'occult', surfaceName: '密封的银色液体', surfaceDesc: '双层玻璃瓶里封着少量银色液体，不能直接开启。', occultMarked: true, price: 90 },
   // 普通物品
-  { id: 'anomaly_evidence', name: '染着冷灰的铜质铭牌', desc: '从旧钟楼附近异常现场带回的证物。触感冰冷，边缘刻着被人为刮去的教会编号。', surfaceDesc: '一枚染着冷灰的旧铜牌，边缘有被刮擦过的痕迹。', occultMarked: true, price: 0 },
-  { id: 'cryptic_note', name: '看不懂的手抄纸', desc: '来源不明的密文残页，字迹仿佛在缓慢蠕动。独自学习无法验证，需要可信机构或导师鉴定。', surfaceDesc: '一张泛黄的手抄纸，字迹杂乱，来源无法确认。', occultMarked: true, price: 0 },
-  { id: 'symbol_cards', name: '固定象征纸牌', desc: '按固定象征整理过的一副旧纸牌，只适合安全、浅层的民间占卜。', surfaceDesc: '一副边角磨损、画着重复象征的旧纸牌。', occultMarked: true, price: 0 },
-  { id: 'whiskey', name: '黑麦威士忌', desc: '南区蒸馏所出品，劣等但够劲。送礼佳品。', price: 12 },
-  { id: 'occult_notes', name: '神秘学札记', desc: '老尼尔逊的手抄本，记录着仪式魔法的入门知识。', price: 60 },
-  { id: 'revolver', name: '左轮手枪', desc: '六发。对非凡者意义有限，对劫匪意义重大。', price: 150 },
+  {
+    id: 'anomaly_evidence', name: '染着冷灰的铜质铭牌', desc: '从旧钟楼附近异常现场带回的证物。触感冰冷，边缘刻着被人为刮去的教会编号。',
+    category: 'occult', surfaceName: '染着冷灰的旧铜牌', surfaceDesc: '一枚染着冷灰的旧铜牌，边缘有被刮擦过的痕迹。', occultMarked: true,
+    spiritVision: { result: '灵视中，铜牌边缘残留着极淡的黑夜气息；被刮去的位置曾属于一套教会编号。残留已经衰弱，但不宜随意丢弃。', sanityCost: 1, revealsOccult: true },
+    divination: {
+      title: '染着冷灰的旧铜牌', difficulty: 34, pressure: 'low',
+      successText: {
+        cards: '指示牌落在“门槛”与“守夜”之间：这件东西曾属于一套有编号、有接管人的正式处置流程。',
+        dream: '梦里，铜牌被一只戴黑手套的手放回编号柜；醒来后你记住了“交给守夜的人”，却看不清那张脸。',
+      },
+    }, price: 0,
+  },
+  {
+    id: 'cryptic_note', name: '看不懂的手抄纸', desc: '来源不明的密文残页，字迹仿佛在缓慢蠕动。独自学习无法验证，需要可信机构或导师鉴定。',
+    category: 'occult', surfaceName: '泛黄的手抄纸', surfaceDesc: '一张泛黄的手抄纸，字迹杂乱，来源无法确认。', occultMarked: true,
+    spiritVision: { result: '灵视刚触及纸面，字迹背后便浮出一层朝观察者转动的暗影。它像是在反过来辨认你；不要独自朗读，也不要长时间注视。', sanityCost: 4, corruptionCost: 1, revealsOccult: true },
+    divination: {
+      title: '泛黄的手抄残页', difficulty: 38, pressure: 'high', antiDivination: true, clueId: 'cryptic_note_warning',
+      successText: {
+        cards: '象征没有解释文字，只显示一只从纸背回望的眼睛：不要独自朗读，也不要把它当成配方。',
+        dream: '梦中的纸页自行翻到背面，一只没有眼睑的眼睛正等待你读出第一句。你在开口前惊醒，只留下“必须交叉鉴定”的警告。',
+      },
+    }, price: 0,
+  },
+  {
+    id: 'symbol_cards', name: '固定象征纸牌', desc: '按固定象征整理过的一副旧纸牌，只适合安全、浅层的民间占卜。',
+    category: 'tool', surfaceDesc: '一副边角磨损、画着重复象征的旧纸牌。',
+    spiritVision: { result: '牌面没有非凡残留；真正起作用的是固定象征、受训者的灵性与严格的收牌边界。它是媒介，不是力量来源。', revealsOccult: false },
+    divination: {
+      title: '固定象征纸牌', difficulty: 26, pressure: 'low',
+      successText: {
+        cards: '所有牌最终指回摆牌者的手：这副牌只负责固定象征，答案来自方法、问题与已有信息，而不是纸牌本身。',
+        dream: '梦里的纸牌围成闭环，环外一片空白。它提醒你：可靠的媒介首先应当守住边界。',
+      },
+    }, price: 0,
+  },
+  { id: 'whiskey', name: '黑麦威士忌', desc: '南区蒸馏所出品，劣等但够劲。送礼佳品。', category: 'misc', price: 12 },
+  { id: 'occult_notes', name: '神秘学札记', desc: '老尼尔逊的手抄本，记录着仪式魔法的入门知识。', category: 'misc', price: 60 },
+  { id: 'revolver', name: '左轮手枪', desc: '六发。对非凡者意义有限，对劫匪意义重大。', category: 'tool', price: 150 },
 ];
+
+export const INVENTORY_CATEGORY_LABELS = {
+  tool: '工具', book: '书籍', misc: '杂物', occult: '超凡物品',
+} as const;
 
 // ============ 魔药配方 ============
 export const FORMULA_PRICE_NELSON = 180; // 老尼尔逊的价：15苏勒

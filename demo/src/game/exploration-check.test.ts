@@ -192,7 +192,7 @@ describe('v10探索字段迁移', () => {
 
   it('public_rumor 补公开投诉，完成节点补足两条线索并保持读档幂等', () => {
     const publicRumor = loadLegacy('public_rumor');
-    expect(publicRumor.schemaVersion).toBe(16);
+    expect(publicRumor.schemaVersion).toBe(17);
     expect(publicRumor.clues.map(clue => clue.id)).toEqual(['clocktower_public_complaints']);
     expect(publicRumor.explorationAttempts).toEqual([]);
 

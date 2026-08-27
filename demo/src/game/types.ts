@@ -87,13 +87,35 @@ export interface Commission {
   occult: boolean;      // 暗藏非凡要素
 }
 
+export type ItemCategory = 'tool' | 'book' | 'misc' | 'occult';
+
+export interface ItemSpiritVisionDef {
+  result: string;
+  sanityCost?: number;
+  corruptionCost?: number;
+  revealsOccult: boolean;
+}
+
+export interface ItemDivinationDef {
+  title: string;
+  difficulty: number;
+  pressure: 'low' | 'high';
+  antiDivination?: boolean;
+  clueId?: string;
+  successText: Record<DivinationMethod, string>;
+}
+
 export interface ItemDef {
   id: string;
   name: string;
   desc: string;
+  category: Exclude<ItemCategory, 'book'>;
   /** 未经辨认时允许展示的外观；神秘物品不得直接把内部危害渲染给玩家。 */
+  surfaceName?: string;
   surfaceDesc?: string;
   occultMarked?: boolean;
+  spiritVision?: ItemSpiritVisionDef;
+  divination?: ItemDivinationDef;
   price: number; // 便士
 }
 
@@ -185,6 +207,24 @@ export interface DivinationTraining {
   teachers: string[];
 }
 
+export type DivinationCredential =
+  | {
+      kind: 'training';
+      source: 'formal_seer_training' | 'nelson';
+      method: DivinationMethod;
+      day: number;
+      hour: number;
+    }
+  | {
+      kind: 'consultation';
+      provider: 'nelson' | 'evelyn';
+      targetKind: DivinationTargetKind;
+      targetId: string;
+      method: DivinationMethod;
+      day: number;
+      hour: number;
+    };
+
 export interface DivinationInsight {
   id: string;
   targetKind: DivinationTargetKind;
@@ -236,12 +276,22 @@ export interface BookDef {
   id: string;
   title: string;
   surfaceDesc: string;
+  category: 'book';
   language: string;
   totalHours: number;
   minSkill?: { id: SkillKey; level: number };
   minMind?: number;
   check?: { stat: StatKey; skill: SkillKey; difficulty: number; clueBonuses: Record<string, number> };
   rewards: BookReward[];
+}
+
+export interface ItemKnowledgeState {
+  itemId: string;
+  spiritVisionInspected: boolean;
+  identifiedAsOccult: boolean;
+  knownInfo: string[];
+  inspectedDay?: number;
+  inspectedHour?: number;
 }
 
 export interface BookSourceDef {
@@ -533,6 +583,7 @@ export interface GameState {
   clues: ClueRecord[];
   explorationAttempts: ExplorationAttempt[];
   divinationTraining: DivinationTraining;
+  divinationCredentials: DivinationCredential[];
   divinationInsights: DivinationInsight[];
   divinationAttempts: DivinationAttempt[];
   books: Record<string, BookState>;
@@ -540,6 +591,7 @@ export interface GameState {
   awareness: Awareness;
   pathwayLeads: Record<string, PathwayLead>;
   items: Record<string, number>;
+  itemKnowledge: Record<string, ItemKnowledgeState>;
   intel: string[];
   knowledge: string[];
   /** v14及更早存档迁移兼容字段；v15运行时固定为0，不再增长或决定奖励。 */

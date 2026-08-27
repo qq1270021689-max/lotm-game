@@ -63,6 +63,10 @@ describe('占卜资格、目标与确定性', () => {
     const seer = fresh(); unlockTower(seer);
     seer.pathwayId = 'seer'; seer.sequence = 9;
     seer.divinationTraining = { cards: true, dream: true, media: ['symbol_cards'], teachers: ['formal_seer_training'] };
+    seer.divinationCredentials = [
+      { kind: 'training', source: 'formal_seer_training', method: 'cards', day: 1, hour: 7 },
+      { kind: 'training', source: 'formal_seer_training', method: 'dream', day: 1, hour: 7 },
+    ];
     seer.items.symbol_cards = 1;
     expect(divinationIssue(seer, 'location', 'old_tower', 'dream', 'self')).toBeNull();
 
@@ -72,6 +76,9 @@ describe('占卜资格、目标与确定性', () => {
     const hunter = structuredClone(seer);
     hunter.pathwayId = 'hunter';
     hunter.divinationTraining.dream = false;
+    hunter.divinationTraining.teachers = ['nelson'];
+    hunter.divinationCredentials = [{ kind: 'training', source: 'nelson', method: 'cards', day: 1, hour: 7 }];
+    hunter.relations.nelson = 45;
     expect(divinationIssue(hunter, 'location', 'old_tower', 'cards', 'self')).toBeNull();
     expect(divinationIssue(hunter, 'location', 'old_tower', 'dream', 'self')).toMatch(/占卜家/);
   });
@@ -176,7 +183,7 @@ describe('v14迁移', () => {
     delete (ordinary as Partial<GameState>).divinationInsights;
     delete (ordinary as Partial<GameState>).divinationAttempts;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
-    expect(loadGame()).toMatchObject({ schemaVersion: 16, divinationTraining: { cards: false, dream: false }, divinationAttempts: [], divinationInsights: [] });
+    expect(loadGame()).toMatchObject({ schemaVersion: 17, divinationTraining: { cards: false, dream: false }, divinationAttempts: [], divinationInsights: [] });
 
     const seer = fresh() as typeof ordinary;
     seer.schemaVersion = 13; seer.pathwayId = 'seer'; seer.sequence = 8;
