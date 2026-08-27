@@ -1,12 +1,13 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import { evaluateCheck, sanitizeCheckAttemptRecord, toPublicCheckResult } from './checks';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
 import { hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 20;
+export const CURRENT_SCHEMA_VERSION = 21;
 export type { ActionResult } from './types';
 export { getVisibleLocations, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
@@ -124,36 +125,57 @@ export function acquireClue(s: GameState, clueId: string, sourceKind?: ClueSourc
   return true;
 }
 
-/** 确定性探索检定：仅定义中指定的属性、技能和线索参与。 */
+function explorationCheckRequest(s: GameState, checkId: string, startedAt = { day: s.day, hour: s.hour }) {
+  const def = EXPLORATION_CHECKS.find(candidate => candidate.id === checkId);
+  const context: CheckContext = {
+    target: def?.target ?? { kind: 'case', id: checkId },
+    stats: {}, skills: {}, clueIds: [], toolIds: [], abilityIds: [], preparationIds: [],
+  };
+  if (def) {
+    for (const term of def.contributions) {
+      if (term.kind === 'stat') context.stats[term.id] = s.stats[term.id];
+      else if (term.kind === 'skill') context.skills[term.id] = s.skills[term.id] ?? 0;
+    }
+    const relevantClues = new Set([
+      ...def.requirements.filter(requirement => requirement.kind === 'clue').map(requirement => requirement.id),
+      ...def.contributions.filter(term => term.kind === 'clue').map(term => term.id),
+    ]);
+    context.clueIds = s.clues.map(clue => clue.id).filter(id => relevantClues.has(id));
+  }
+  return { checkId, definitionVersion: def?.version, context, startedAt };
+}
+
+/** 规则层内部结果；包含审计数值，UI 不得直接读取。 */
+export function evaluateExplorationCheckInternal(s: GameState, checkId: string, startedAt = { day: s.day, hour: s.hour }): CheckInternalResult {
+  return evaluateCheck(EXPLORATION_CHECKS, explorationCheckRequest(s, checkId, startedAt));
+}
+
+export function getExplorationCheckPublicResult(s: GameState, checkId: string) {
+  return toPublicCheckResult(evaluateExplorationCheckInternal(s, checkId));
+}
+
+/** 兼容旧 API：公式由纯内核计算，旧结果形状保持不变。 */
 export function evaluateExplorationCheck(s: GameState, checkId: string): ExplorationCheckResult {
-  const check = EXPLORATION_CHECKS.find(candidate => candidate.id === checkId);
-  if (!check) {
-    return {
-      checkId, outcome: 'blocked', reason: 'unknown_check', score: 0,
-      difficulty: Number.POSITIVE_INFINITY, contributingClueIds: [],
-    };
-  }
-  const contributingClueIds = Object.keys(check.clueBonuses).filter(clueId => hasClue(s, clueId));
-  const score = s.stats[check.stat] + (s.skills[check.skill] ?? 0) * check.skillMultiplier
-    + contributingClueIds.reduce((sum, clueId) => sum + (check.clueBonuses[clueId] ?? 0), 0);
-  if (check.requiredClueIds.some(clueId => !hasClue(s, clueId))) {
-    return { checkId, outcome: 'blocked', reason: 'missing_required_clue', score, difficulty: check.difficulty, contributingClueIds };
-  }
+  const result = evaluateExplorationCheckInternal(s, checkId);
+  const reason: ExplorationCheckResult['reason'] = result.reason === 'passed' ? 'passed'
+    : result.reason === 'missing_requirement' ? 'missing_required_clue'
+      : result.reason === 'insufficient' ? 'insufficient' : 'unknown_check';
   return {
     checkId,
-    outcome: score >= check.difficulty ? 'passed' : 'blocked',
-    reason: score >= check.difficulty ? 'passed' : 'insufficient',
-    score,
-    difficulty: check.difficulty,
-    contributingClueIds,
+    outcome: result.outcome,
+    reason,
+    score: result.score,
+    difficulty: result.difficulty,
+    contributingClueIds: result.contributions
+      .filter(term => term.kind === 'clue').map(term => term.id.slice('clue:'.length)),
   };
 }
 
-function recordExplorationAttempt(s: GameState, result: ExplorationCheckResult) {
+function recordExplorationAttempt(s: GameState, result: ExplorationCheckResult, startedAt = { day: s.day, hour: s.hour }) {
   const attempt: ExplorationAttempt = {
     checkId: result.checkId,
-    day: s.day,
-    hour: s.hour,
+    day: startedAt.day,
+    hour: startedAt.hour,
     outcome: result.outcome,
     reason: result.reason,
     score: result.score,
@@ -161,6 +183,54 @@ function recordExplorationAttempt(s: GameState, result: ExplorationCheckResult) 
   };
   s.explorationAttempts ??= [];
   s.explorationAttempts.push(attempt);
+}
+
+function recordCheckAttempt(s: GameState, internal: CheckInternalResult, context: CheckContext, receipt: CheckReceipt, startedAt: { day: number; hour: number }) {
+  s.checkAttempts ??= [];
+  let sequence = s.checkAttempts.length + 1;
+  let attemptId = `${internal.checkId}:${startedAt.day}:${startedAt.hour}:${sequence}`;
+  while (s.checkAttempts.some(attempt => attempt.attemptId === attemptId)) {
+    sequence += 1;
+    attemptId = `${internal.checkId}:${startedAt.day}:${startedAt.hour}:${sequence}`;
+  }
+  const attempt: CheckAttemptRecord = {
+    attemptId,
+    checkId: internal.checkId,
+    definitionVersion: internal.definitionVersion,
+    context: structuredClone(context),
+    fingerprint: internal.fingerprint,
+    startedDay: startedAt.day,
+    startedHour: startedAt.hour,
+    outcome: internal.outcome,
+    reason: internal.reason,
+    publicContributionIds: internal.contributions.map(term => term.id).sort(),
+    receipt: structuredClone(receipt),
+  };
+  s.checkAttempts.push(attempt);
+  if (s.checkAttempts.length > 200) s.checkAttempts.splice(0, s.checkAttempts.length - 200);
+}
+
+function repeatedBlockedExplorationIssue(s: GameState, internal: CheckInternalResult): string | null {
+  if (internal.reason !== 'insufficient') return null;
+  const repeated = [...(s.checkAttempts ?? [])].reverse().find(attempt => attempt.checkId === internal.checkId
+    && attempt.definitionVersion === internal.definitionVersion && attempt.fingerprint === internal.fingerprint);
+  return repeated?.outcome === 'blocked'
+    ? '现有调查条件与上次没有实质变化；请先补充线索、工具或调查经验。'
+    : null;
+}
+
+function receiptEntry(id: string, receipt: AppliedEffectReceipt) {
+  return {
+    id,
+    applied: receipt.applied,
+    before: receipt.before,
+    after: receipt.after,
+    actualDelta: receipt.actualDelta,
+  };
+}
+
+function hoursReceipt(hours: number) {
+  return { id: 'hours', applied: hours > 0, before: 0, after: hours, actualDelta: hours };
 }
 
 type DivinationTargetDef = {
@@ -646,6 +716,7 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     landmarkEncounters: [],
     clues: [],
     explorationAttempts: [],
+    checkAttempts: [],
     divinationTraining: { cards: false, dream: false, media: [], teachers: [] },
     divinationCredentials: [],
     divinationInsights: [],
@@ -746,43 +817,136 @@ export const isBeyonder = (s: GameState) => s.pathwayId !== null;
 export const isAtHome = (s: GameState) => !s.atWork && !s.currentLocation;
 
 // ============ 条件检查 ============
-export function checkCond(s: GameState, cond?: string): boolean {
-  if (!cond) return true;
-  return cond.split('&').every(c => checkSingle(s, c.trim()));
+export interface ConditionValidationResult { valid: boolean; diagnostics: string[] }
+type ParsedCondition = string[][]; // OR 分组，每组内部为 AND；即 & 优先于 |
+const CONDITION_ID = /^[A-Za-z0-9_-]+$/;
+const CONDITION_STATS = new Set(['phy', 'spi', 'mnd', 'cha', 'san', 'cor', 'energy']);
+const ENGINE_FLAG_IDS = new Set(['audit_now', 'rent_due']);
+
+function effectIds(kind: Effect['k']): Set<string> {
+  const ids = new Set<string>();
+  const collect = (effects: readonly Effect[]) => effects.forEach(effect => {
+    if (effect.k === kind && effect.id) ids.add(effect.id);
+    if (effect.timerEffect) collect(effect.timerEffect);
+  });
+  EVENTS.forEach(event => event.choices.forEach(choice => collect(choice.effects)));
+  RANDOM_TEXT_EVENTS.forEach(event => event.choices.forEach(choice => collect(choice.effects)));
+  return ids;
 }
-function checkSingle(s: GameState, c: string): boolean {
-  if (c.includes('|')) return c.split('|').some(x => checkSingle(s, x.trim())); // 或条件
-  if (c === 'mortal') return !isBeyonder(s);
-  if (c === 'beyonder') return isBeyonder(s);
-  if (c.startsWith('intel:')) return s.intel.includes(c.slice(6));
-  if (c.startsWith('clue:')) return hasClue(s, c.slice(5));
-  if (c.startsWith('item:')) return (s.items[c.slice(5)] ?? 0) > 0;
-  if (c.startsWith('not-item:')) return (s.items[c.slice(9)] ?? 0) <= 0;
-  if (c.startsWith('knowledge:')) return s.knowledge.includes(c.slice(10));
-  if (c.startsWith('not-knowledge:')) return !s.knowledge.includes(c.slice(14));
-  if (c.startsWith('tag:')) return s.tags.includes(c.slice(4));
-  if (c.startsWith('flag:')) return !!s.flags[c.slice(5)];
-  if (c.startsWith('formula:')) return s.formulas.includes(c.slice(8));
-  const m = c.match(/^(\w+)(?::(\w+))?\s*(>=|<=|>|<|==)\s*(-?\d+)$/);
-  if (!m) return true;
-  const [, key, sub, op, raw] = m;
-  const target = Number(raw);
-  let val = 0;
-  if (key === 'money') val = s.pence;
-  else if (key === 'digestion') val = s.digestion;
-  else if (key === 'exposure') val = s.exposure;
-  else if (key === 'favor' && sub) val = s.relations[sub] ?? 0;
-  else if (key === 'skill' && sub) val = s.skills[sub as SkillKey] ?? 0;
-  else if (key in s.stats) val = s.stats[key as keyof typeof s.stats];
-  else return true;
-  switch (op) {
-    case '>=': return val >= target;
-    case '<=': return val <= target;
-    case '>': return val > target;
-    case '<': return val < target;
-    case '==': return val === target;
+
+function knownConditionId(prefix: string, id: string, s?: GameState): boolean {
+  if (!CONDITION_ID.test(id)) return false;
+  switch (prefix) {
+    case 'intel': return id in INTEL_NAMES;
+    case 'clue': return CLUE_DEFS.some(def => def.id === id);
+    case 'item': return !!findItem(id);
+    case 'knowledge': return id in KNOWLEDGE_NAMES;
+    case 'tag': return ORIGINS.some(origin => origin.tags?.includes(id)) || effectIds('tag').has(id);
+    case 'flag': return ENGINE_FLAG_IDS.has(id) || effectIds('flag').has(id);
+    case 'formula': return PATHWAYS.some(pathway => id === `${pathway.id}9` || id === `${pathway.id}8`);
+    case 'favor': return NPCS.some(npc => npc.id === id)
+      || TINGEN_LANDMARK_ENCOUNTERS.some(encounter => encounter.npc.id === id)
+      || !!s?.genNpcs.some(npc => npc.id === id);
+    case 'skill': return id in SKILL_NAMES;
+    default: return false;
   }
-  return true;
+}
+
+function conditionAtomDiagnostic(atom: string, s?: GameState): string | null {
+  if (!atom) return '存在空条件子句';
+  if (atom === 'mortal' || atom === 'beyonder') return null;
+  const prefixed = atom.match(/^(not-item|not-knowledge|intel|clue|item|knowledge|tag|flag|formula):(.+)$/);
+  if (prefixed) {
+    const [, rawPrefix, id] = prefixed;
+    const prefix = rawPrefix.startsWith('not-') ? rawPrefix.slice(4) : rawPrefix;
+    return knownConditionId(prefix, id, s) ? null : `未知或非法的 ${rawPrefix} 条件目标`;
+  }
+  const comparison = atom.match(/^([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z0-9_-]+))?\s*(>=|<=|>|<|==)\s*(-?\d+)$/);
+  if (!comparison) return '无法识别的条件原子';
+  const [, key, sub] = comparison;
+  if (key === 'money' || key === 'digestion' || key === 'exposure' || CONDITION_STATS.has(key)) {
+    return sub ? `${key} 不接受子键` : null;
+  }
+  if (key === 'favor' || key === 'skill') {
+    return sub && knownConditionId(key, sub, s) ? null : `${key} 缺少或使用了未知子键`;
+  }
+  return `未知比较键 ${key}`;
+}
+
+function parseConditionExpression(cond: string, s?: GameState): { parsed: ParsedCondition | null; diagnostics: string[] } {
+  const diagnostics: string[] = [];
+  if (!cond.trim()) return { parsed: null, diagnostics: ['条件表达式为空'] };
+  if (/[()!]/.test(cond)) return { parsed: null, diagnostics: ['条件表达式含有不支持的符号'] };
+  const orGroups = cond.split('|');
+  const parsed = orGroups.map((group, groupIndex) => group.split('&').map((raw, atomIndex) => {
+    const atom = raw.trim();
+    const issue = conditionAtomDiagnostic(atom, s);
+    if (issue) diagnostics.push(`第${groupIndex + 1}组第${atomIndex + 1}项：${issue}`);
+    return atom;
+  }));
+  return { parsed: diagnostics.length ? null : parsed, diagnostics };
+}
+
+/** 开发侧语法审计；不会把内部表达式或诊断暴露给玩家。 */
+export function validateConditionExpression(cond?: string): ConditionValidationResult {
+  if (cond === undefined) return { valid: true, diagnostics: [] };
+  try {
+    const result = parseConditionExpression(cond);
+    return { valid: result.parsed !== null, diagnostics: result.diagnostics };
+  } catch {
+    return { valid: false, diagnostics: ['条件解析失败'] };
+  }
+}
+
+function evaluateConditionAtom(s: GameState, atom: string): boolean {
+  if (atom === 'mortal') return !isBeyonder(s);
+  if (atom === 'beyonder') return isBeyonder(s);
+  const prefixed = atom.match(/^(not-item|not-knowledge|intel|clue|item|knowledge|tag|flag|formula):(.+)$/)!;
+  if (prefixed) {
+    const [, prefix, id] = prefixed;
+    switch (prefix) {
+      case 'intel': return s.intel.includes(id);
+      case 'clue': return hasClue(s, id);
+      case 'item': return (s.items[id] ?? 0) > 0;
+      case 'not-item': return (s.items[id] ?? 0) <= 0;
+      case 'knowledge': return s.knowledge.includes(id);
+      case 'not-knowledge': return !s.knowledge.includes(id);
+      case 'tag': return s.tags.includes(id);
+      case 'flag': {
+        const value = s.flags[id];
+        return value === true || (typeof value === 'number' && value > 0);
+      }
+      case 'formula': return s.formulas.includes(id);
+    }
+  }
+  const comparison = atom.match(/^([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z0-9_-]+))?\s*(>=|<=|>|<|==)\s*(-?\d+)$/)!;
+  const [, key, sub, op, raw] = comparison;
+  const target = Number(raw);
+  let value: number;
+  if (key === 'money') value = s.pence;
+  else if (key === 'digestion') value = s.digestion;
+  else if (key === 'exposure') value = s.exposure;
+  else if (key === 'favor') value = s.relations[sub] ?? 0;
+  else if (key === 'skill') value = s.skills[sub as SkillKey] ?? 0;
+  else value = s.stats[key as keyof typeof s.stats];
+  switch (op) {
+    case '>=': return value >= target;
+    case '<=': return value <= target;
+    case '>': return value > target;
+    case '<': return value < target;
+    case '==': return value === target;
+    default: return false;
+  }
+}
+
+export function checkCond(s: GameState, cond?: string): boolean {
+  if (cond === undefined) return true;
+  try {
+    const { parsed } = parseConditionExpression(cond, s);
+    return parsed ? parsed.some(andGroup => andGroup.every(atom => evaluateConditionAtom(s, atom))) : false;
+  } catch {
+    return false;
+  }
 }
 
 // ============ 效果应用（含天赋/出身修正） ============
@@ -1113,7 +1277,8 @@ function dailySettlement(s: GameState) {
 const GENERATED_EFFECT_KINDS = new Set<Effect['k']>(['item', 'knowledge', 'skill']);
 
 function validGeneratedBlueprint(blueprint: EventBlueprint): boolean {
-  return blueprint.choices.every(choice => choice.effects.every(effect => {
+  if (!validateConditionExpression(blueprint.cond).valid) return false;
+  return blueprint.choices.every(choice => validateConditionExpression(choice.cond).valid && choice.effects.every(effect => {
     if (!GENERATED_EFFECT_KINDS.has(effect.k)) return false;
     if ((effect.k === 'item' || effect.k === 'knowledge') && !effect.id) return false;
     if (effect.k === 'skill' && !effect.skill) return false;
@@ -1126,6 +1291,73 @@ function cloneEffects(effects: Effect[]): Effect[] {
     ...effect,
     timerEffect: effect.timerEffect ? cloneEffects(effect.timerEffect) : undefined,
   }));
+}
+
+function normalizedEffect(effect: Effect): Record<string, unknown> {
+  const optional = (value: unknown) => value === undefined ? null : value;
+  return {
+    k: effect.k,
+    v: optional(effect.v),
+    id: optional(effect.id),
+    stat: optional(effect.stat),
+    skill: optional(effect.skill),
+    on: optional(effect.on),
+    timerLabel: optional(effect.timerLabel),
+    timerHours: optional(effect.timerHours),
+    timerEffect: effect.timerEffect ? effect.timerEffect.map(normalizedEffect) : null,
+  };
+}
+
+function sameEffects(left: unknown, right: readonly Effect[]): boolean {
+  if (!Array.isArray(left) || left.length !== right.length) return false;
+  try {
+    return JSON.stringify(left.map(effect => normalizedEffect(effect as Effect)))
+      === JSON.stringify(right.map(normalizedEffect));
+  } catch {
+    return false;
+  }
+}
+
+function sameOptionalStrings(left: unknown, right?: readonly string[]): boolean {
+  if (right === undefined) return left === undefined;
+  return Array.isArray(left) && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+/** 随机文案可保留，但一切影响结算的字段必须与当前权威蓝图完全一致。 */
+function validPersistedGeneratedEvent(pending: EventInstance, blueprint: EventBlueprint): boolean {
+  if (!validGeneratedBlueprint(blueprint)
+    || pending.source !== 'generated'
+    || typeof pending.instanceId !== 'string' || !pending.instanceId
+    || pending.id !== pending.instanceId
+    || pending.blueprintId !== blueprint.id
+    || pending.contentVersion !== blueprint.contentVersion
+    || pending.slot !== blueprint.slot
+    || pending.weight !== blueprint.weight
+    || pending.cond !== blueprint.cond
+    || pending.npc !== blueprint.npc
+    || pending.once !== blueprint.once
+    || !sameOptionalStrings(pending.locations, blueprint.locations)
+    || !blueprint.titleVariants.includes(pending.title)
+    || !blueprint.textVariants.includes(pending.text)
+    || !Array.isArray(pending.choices) || pending.choices.length !== blueprint.choices.length
+    || !Array.isArray(pending.effects) || pending.effects.length !== blueprint.choices.length
+    || !pending.context || pending.context.slot !== blueprint.slot
+    || !Number.isInteger(pending.context.day) || pending.context.day < 1
+    || !Number.isInteger(pending.context.hour) || pending.context.hour < 0 || pending.context.hour > 23
+    || pending.context.npcId !== blueprint.npc
+    || (blueprint.locations
+      ? !pending.context.locationId || !blueprint.locations.includes(pending.context.locationId)
+      : pending.context.locationId !== undefined)) return false;
+  return pending.choices.every((choice, index) => {
+    const authoritative = blueprint.choices[index];
+    return typeof choice.text === 'string' && authoritative.textVariants.includes(choice.text)
+      && typeof choice.result === 'string' && authoritative.resultVariants.includes(choice.result)
+      && choice.cond === authoritative.cond
+      && sameEffects(choice.effects, authoritative.effects)
+      && sameEffects(pending.effects[index], authoritative.effects)
+      && sameEffects(pending.effects[index], choice.effects);
+  });
 }
 
 function pickTextVariant(s: GameState, key: string, variants: string[], rng: () => number): string {
@@ -2796,34 +3028,50 @@ export function traceDockMarkedManifestIssue(s: GameState): string | null {
   const issue = dockManifestBaseIssue(s);
   if (issue) return issue;
   if (s.stats.energy < 15) return '你当前太过疲惫，无法完成这次细致追查。';
-  const check = evaluateExplorationCheck(s, 'dock_manifest_trace');
-  if (check.reason === 'missing_required_clue') return '调查笔记里还缺少公开失踪登记。';
-  if (check.reason === 'unknown_check') return '这项码头调查暂时无法继续，请稍后再试。';
+  const check = evaluateExplorationCheckInternal(s, 'dock_manifest_trace');
+  if (check.reason === 'missing_requirement') return '调查笔记里还缺少公开失踪登记。';
+  if (!check.eligible && check.reason !== 'insufficient') return '这项码头调查暂时无法继续，请稍后再试。';
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, check);
+  if (repeatedIssue) return repeatedIssue;
   return null;
 }
 
 export function traceDockMarkedManifest(s: GameState): ActionResult {
   const issue = traceDockMarkedManifestIssue(s);
   if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'dock_manifest_trace', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
   const check = evaluateExplorationCheck(s, 'dock_manifest_trace');
-  if (check.reason === 'missing_required_clue') return { ok: false, msg: '调查笔记里还缺少公开失踪登记。' };
-  if (check.reason === 'unknown_check') return { ok: false, msg: '这项码头调查暂时无法继续，请稍后再试。' };
-  recordExplorationAttempt(s, check);
-  if (check.reason === 'insufficient') {
-    applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+  if (!internal.eligible && internal.reason === 'missing_requirement') return { ok: false, msg: '调查笔记里还缺少公开失踪登记。' };
+  if (!internal.eligible) return { ok: false, msg: '这项码头调查暂时无法继续，请稍后再试。' };
+  if (internal.reason === 'insufficient') {
+    const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
     addLog(s, '你在仓单房里来回翻找，却无法把失踪者姓名、货物流向和库位变更连成可靠的追查顺序。', 'info');
     addLog(s, '也许应该再查看货运记录的备份，或先积累更多整理档案的经验。', 'system');
+    const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', applied[0]), hoursReceipt(1)] };
+    recordExplorationAttempt(s, check, startedAt);
+    recordCheckAttempt(s, internal, request.context, receipt, startedAt);
     advanceHours(s, 1);
     return { ok: true, outcome: 'blocked' };
   }
-  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 15) }]);
-  acquireClue(s, 'dock_marked_manifest');
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 15) }]);
+  const acquiredManifest = acquireClue(s, 'dock_marked_manifest');
   const lead = s.leads.iron_blood_token;
+  const leadBefore = lead.stage;
   lead.stage = 'found';
   lead.notes.push('从货运缺口中追查到一份留有陌生印记的旧仓单');
   recordOrganizationRoute(s, 'iron_and_blood', 'world_entry:iron_blood_token', 'passed', 'dock_manifest_trace');
   addLog(s, '你按照人员名册与货物转运次序，终于从被错放的旧档里抽出一份仓单。纸面的油污下留着一枚无法从公开记录解释的印记。', 'event');
   addLog(s, '✦ 异常仓单已记入调查笔记。你只能确认它值得整理和请可信的码头熟人辨认，尚不知道它指向何方。', 'system');
+  const receipt: CheckReceipt = { hoursElapsed: 2, effects: [
+    receiptEntry('energy', applied[0]), hoursReceipt(2),
+    { id: 'clue:dock_marked_manifest', applied: acquiredManifest, before: false, after: acquiredManifest },
+    { id: 'lead:iron_blood_token', applied: leadBefore !== lead.stage, before: leadBefore, after: lead.stage },
+    { id: 'route:iron_and_blood', applied: true },
+  ] };
+  recordExplorationAttempt(s, check, startedAt);
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
   advanceHours(s, 2);
   return { ok: true, outcome: 'passed' };
 }
@@ -2838,22 +3086,31 @@ export function traceClocktowerAnomaly(s: GameState): ActionResult {
   if (route.routeStep !== 'public_rumor' || lead.stage !== 'found') return { ok: false, msg: '请先查阅地方报纸和市政失修记录，确认值得追查的世俗线索。' };
   if (!isClocktowerTraceHours(s.hour)) return { ok: false, msg: '钟楼异常只在22:00至凌晨2:00之间可追查。' };
   if (s.stats.energy < 15) return { ok: false, msg: '你当前太过疲惫，贸然追查旧钟楼并不安全。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'clocktower_night_trace', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
   const check = evaluateExplorationCheck(s, 'clocktower_night_trace');
-  if (check.reason === 'missing_required_clue') {
+  if (internal.reason === 'missing_requirement') {
     return { ok: false, msg: '调查笔记里缺少支撑夜间追查的基础记录，请先核对旧钟楼的公开投诉。' };
   }
-  if (check.reason === 'unknown_check') {
+  if (!internal.eligible) {
     return { ok: false, msg: '这项调查暂时无法继续，请稍后再试。' };
   }
-  recordExplorationAttempt(s, check);
-  if (check.reason === 'insufficient') {
-    applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return { ok: false, msg: repeatedIssue };
+  if (internal.reason === 'insufficient') {
+    const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
     addLog(s, '你在旧钟楼外围守了很久，却始终无法把投诉中的时间、声音与现场痕迹连成一条可靠路线。继续贸然深入只会在雾里迷失。', 'info');
     addLog(s, '也许该去核对被分开归档的维修工单，或先从别的调查中磨练观察与推理。今晚你只能暂时退回街灯下。', 'system');
+    const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', applied[0]), hoursReceipt(1)] };
+    recordExplorationAttempt(s, check, startedAt);
+    recordCheckAttempt(s, internal, request.context, receipt, startedAt);
     advanceHours(s, 1);
     return { ok: true, outcome: 'blocked' };
   }
-  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 15) }, { k: 'san', v: -3 }, { k: 'item', id: 'anomaly_evidence', v: 1 }, { k: 'flag', id: 'met_beyonder', v: 1 }]);
+  const awarenessBefore = s.awareness;
+  const leadBefore = lead.stage;
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 15) }, { k: 'san', v: -3 }, { k: 'item', id: 'anomaly_evidence', v: 1 }, { k: 'flag', id: 'met_beyonder', v: 1 }]);
   s.awareness = 'witness';
   lead.stage = 'identified';
   lead.notes.push('取得染着冷灰的铜质铭牌');
@@ -2861,6 +3118,15 @@ export function traceClocktowerAnomaly(s: GameState): ActionResult {
   recordOrganizationRoute(s, 'nightwatch', 'clocktower_witness', 'started', '取得染着冷灰的铜质铭牌');
   addLog(s, '你循着停摆钟楼的午夜敲响追查到一名失去影子的伤者。黑风衣人封锁现场前，你捡到一枚染着冷灰的铜质铭牌。你无法解释所见，但证物真实存在。', 'event');
   addLog(s, '✦ 异常记录已建立。你可以把证物交给圣赛琳娜教堂的伊芙琳；也可以就此停下，继续普通生活。', 'system');
+  const receipt: CheckReceipt = { hoursElapsed: 3, effects: [
+    receiptEntry('energy', applied[0]), receiptEntry('san', applied[1]),
+    receiptEntry('item:anomaly_evidence', applied[2]), receiptEntry('flag:met_beyonder', applied[3]), hoursReceipt(3),
+    { id: 'state:awareness', applied: true, before: awarenessBefore, after: s.awareness },
+    { id: 'lead:nightwatch_clocktower', applied: true, before: leadBefore, after: lead.stage },
+    { id: 'route:nightwatch', applied: true },
+  ] };
+  recordExplorationAttempt(s, check, startedAt);
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
   advanceHours(s, 3);
   return { ok: true, outcome: 'passed' };
 }
@@ -4032,6 +4298,7 @@ export function loadGame(): GameState | null {
       landmarkEncounters?: LandmarkEncounterRecord[];
       clues?: GameState['clues'];
       explorationAttempts?: GameState['explorationAttempts'];
+      checkAttempts?: GameState['checkAttempts'];
       divinationTraining?: GameState['divinationTraining'];
       divinationCredentials?: GameState['divinationCredentials'];
       divinationInsights?: GameState['divinationInsights'];
@@ -4085,6 +4352,15 @@ export function loadGame(): GameState | null {
       ? s.explorationAttempts.filter(attempt => attempt && typeof attempt.checkId === 'string'
         && ['passed', 'blocked'].includes(attempt.outcome))
       : [];
+    const seenCheckAttemptIds = new Set<string>();
+    s.checkAttempts = (loadedVersion < 21 ? [] : (Array.isArray(s.checkAttempts) ? s.checkAttempts : []))
+      .map(attempt => sanitizeCheckAttemptRecord(EXPLORATION_CHECKS, attempt))
+      .filter((attempt): attempt is CheckAttemptRecord => {
+        if (!attempt || seenCheckAttemptIds.has(attempt.attemptId)) return false;
+        seenCheckAttemptIds.add(attempt.attemptId);
+        return true;
+      })
+      .slice(-200);
     s.relations = s.relations && typeof s.relations === 'object' ? s.relations : {};
     if (loadedVersion < 18) {
       s.locationRelations = {};
@@ -4176,12 +4452,17 @@ export function loadGame(): GameState | null {
     // 旧版 pendingEvent 是静态事件 id；保留该字符串即可由 currentEvent 正常解析。
     if (s.pendingEvent && typeof s.pendingEvent !== 'string') {
       const pending = s.pendingEvent as EventInstance;
+      const blueprint = RANDOM_TEXT_EVENTS.find(candidate => candidate.id === pending.blueprintId);
       if (removedShortcutEvents.has(pending.blueprintId)
-        || pending.source !== 'generated' || !pending.instanceId || !pending.blueprintId || !Array.isArray(pending.choices)) {
+        || !blueprint || !validPersistedGeneratedEvent(pending, blueprint)) {
         s.pendingEvent = null;
       }
     }
-    if (typeof s.pendingEvent === 'string' && removedShortcutEvents.has(s.pendingEvent)) s.pendingEvent = null;
+    if (typeof s.pendingEvent === 'string') {
+      const pending = findEvent(s.pendingEvent);
+      if (removedShortcutEvents.has(s.pendingEvent) || !pending || !validateConditionExpression(pending.cond).valid
+        || pending.choices.some(choice => !validateConditionExpression(choice.cond).valid)) s.pendingEvent = null;
+    }
 
     const existingLeads = s.pathwayLeads && typeof s.pathwayLeads === 'object' ? s.pathwayLeads : {};
     s.pathwayLeads = createPathwayLeads();

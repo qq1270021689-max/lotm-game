@@ -202,7 +202,7 @@ describe('通用灵视与占卜家自占', () => {
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(legacy));
 
     const seer = loadGame()!;
-    expect(seer).toMatchObject({ schemaVersion: 20, sequence9Preparations: [] });
+    expect(seer).toMatchObject({ schemaVersion: 21, sequence9Preparations: [] });
     expect(seer.divinationTraining).toMatchObject({ cards: true, dream: true });
     expect(seer.divinationTraining.media).toContain('symbol_cards');
     expect(seer.divinationTraining.teachers).toContain('formal_seer_training');

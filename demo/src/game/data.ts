@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, ExplorationCheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -163,18 +163,40 @@ export const CLUE_DEFS: readonly {
   },
 ];
 
-export const EXPLORATION_CHECKS: readonly ExplorationCheckDef[] = [
+export const EXPLORATION_CHECKS: readonly CheckDef[] = [
   {
-    id: 'clocktower_night_trace', caseId: 'clocktower', stat: 'mnd', skill: 'investigate',
-    difficulty: 34, skillMultiplier: 4,
-    requiredClueIds: ['clocktower_public_complaints'],
-    clueBonuses: { clocktower_public_complaints: 4, clocktower_repair_orders: 10, clocktower_divination_omen: 8 },
+    id: 'clocktower_night_trace', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'clocktower' }, difficulty: 34,
+    requirements: [{ kind: 'clue', id: 'clocktower_public_complaints' }],
+    contributions: [
+      { kind: 'stat', id: 'mnd', multiplier: 1, publicLabel: '现场推理' },
+      { kind: 'skill', id: 'investigate', multiplier: 4, publicLabel: '调查经验' },
+      { kind: 'clue', id: 'clocktower_public_complaints', value: 4, publicLabel: '公开投诉记录' },
+      { kind: 'clue', id: 'clocktower_repair_orders', value: 10, publicLabel: '维修工单' },
+      { kind: 'clue', id: 'clocktower_divination_omen', value: 8, publicLabel: '钟楼预兆' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+      passed: { hoursElapsed: 3, effectIds: ['energy', 'san', 'item:anomaly_evidence', 'flag:met_beyonder', 'hours', 'state:awareness', 'lead:nightwatch_clocktower', 'route:nightwatch'] },
+    },
   },
   {
-    id: 'dock_manifest_trace', caseId: 'dock_manifest', stat: 'mnd', skill: 'investigate',
-    difficulty: 34, skillMultiplier: 4,
-    requiredClueIds: ['dock_missing_reports'],
-    clueBonuses: { dock_missing_reports: 4, dock_manifest_discrepancy: 10, dock_ledger_notation: 4, dock_crate_trace: 4, river_sea_missing_notices: 3 },
+    id: 'dock_manifest_trace', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'dock_manifest' }, difficulty: 34,
+    requirements: [{ kind: 'clue', id: 'dock_missing_reports' }],
+    contributions: [
+      { kind: 'stat', id: 'mnd', multiplier: 1, publicLabel: '档案推理' },
+      { kind: 'skill', id: 'investigate', multiplier: 4, publicLabel: '调查经验' },
+      { kind: 'clue', id: 'dock_missing_reports', value: 4, publicLabel: '公开失踪登记' },
+      { kind: 'clue', id: 'dock_manifest_discrepancy', value: 10, publicLabel: '货运记录旁证' },
+      { kind: 'clue', id: 'dock_ledger_notation', value: 4, publicLabel: '仓单编号知识' },
+      { kind: 'clue', id: 'dock_crate_trace', value: 4, publicLabel: '码头现场记录' },
+      { kind: 'clue', id: 'river_sea_missing_notices', value: 3, publicLabel: '河运失踪告示' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+      passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'clue:dock_marked_manifest', 'lead:iron_blood_token', 'route:iron_and_blood'] },
+    },
   },
 ];
 

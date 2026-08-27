@@ -280,6 +280,113 @@ export interface ExplorationAttempt {
   contributingClueIds: string[];
 }
 
+export type CheckDomain = 'exploration';
+export type CheckTargetKind = 'case' | 'location' | 'item';
+export type CheckOutcome = 'passed' | 'blocked';
+export type CheckReason = 'passed' | 'unknown_check' | 'unknown_target' | 'unknown_requirement' | 'missing_requirement' | 'insufficient';
+
+export type CheckRequirement =
+  | { kind: 'clue'; id: string }
+  | { kind: 'tool'; id: string }
+  | { kind: 'ability'; id: string }
+  | { kind: 'location'; id: string };
+
+export type CheckContributionDef =
+  | { kind: 'stat'; id: StatKey; multiplier: number; publicLabel: string }
+  | { kind: 'skill'; id: SkillKey; multiplier: number; publicLabel: string }
+  | { kind: 'clue'; id: string; value: number; publicLabel: string }
+  | { kind: 'tool'; id: string; value: number; publicLabel: string }
+  | { kind: 'ability'; id: string; value: number; publicLabel: string };
+
+/** 纯检定定义；结算成本和领域推进仍由对应 engine action 掌管。 */
+export interface CheckDef {
+  id: string;
+  version: number;
+  domain: CheckDomain;
+  target: { kind: CheckTargetKind; id: string };
+  difficulty: number;
+  requirements: readonly CheckRequirement[];
+  contributions: readonly CheckContributionDef[];
+  receiptPolicy: Record<CheckOutcome, { hoursElapsed: number; effectIds: readonly string[] }>;
+}
+
+/** 只保存定义允许读取的输入，避免无关状态进入指纹或改变结果。 */
+export interface CheckContext {
+  target: { kind: CheckTargetKind; id: string };
+  locationId?: string;
+  stats: Partial<Record<StatKey, number>>;
+  skills: Partial<Record<SkillKey, number>>;
+  clueIds: string[];
+  toolIds: string[];
+  abilityIds: string[];
+  companionId?: string;
+  preparationIds: string[];
+}
+
+export interface CheckRequest {
+  checkId: string;
+  definitionVersion?: number;
+  context: CheckContext;
+  startedAt: { day: number; hour: number };
+}
+
+export interface CheckContribution {
+  id: string;
+  kind: CheckContributionDef['kind'];
+  publicLabel: string;
+  value: number;
+}
+
+/** 仅供规则层、测试和存档审计，禁止直接交给 UI。 */
+export interface CheckInternalResult {
+  checkId: string;
+  definitionVersion: number;
+  eligible: boolean;
+  outcome: CheckOutcome;
+  reason: CheckReason;
+  score: number;
+  difficulty: number;
+  fingerprint: string;
+  contributions: CheckContribution[];
+}
+
+/** 玩家侧结果不携带分数、难度、加成或概率。 */
+export interface CheckPublicResult {
+  checkId: string;
+  eligible: boolean;
+  outcome: CheckOutcome;
+  reason: 'passed' | 'missing_prerequisite' | 'needs_preparation' | 'unavailable';
+  helpedBy: string[];
+}
+
+export interface CheckReceiptEntry {
+  id: string;
+  applied: boolean;
+  before?: number | string | boolean | null;
+  after?: number | string | boolean | null;
+  actualDelta?: number;
+}
+
+export interface CheckReceipt {
+  hoursElapsed: number;
+  effects: CheckReceiptEntry[];
+}
+
+/** 统一审计记录不是授权状态，不能据此反向授予线索、路线、物品或能力。 */
+export interface CheckAttemptRecord {
+  attemptId: string;
+  checkId: string;
+  definitionVersion: number;
+  context: CheckContext;
+  fingerprint: string;
+  startedDay: number;
+  startedHour: number;
+  outcome: CheckOutcome;
+  reason: CheckReason;
+  publicContributionIds: string[];
+  receipt: CheckReceipt;
+}
+
 export type DivinationMethod = 'cards' | 'dream';
 export type DivinationProvider = 'self' | 'nelson' | 'evelyn';
 export type DivinationTargetKind = 'location' | 'item';
@@ -729,6 +836,7 @@ export interface GameState {
   landmarkEncounters: LandmarkEncounterRecord[];
   clues: ClueRecord[];
   explorationAttempts: ExplorationAttempt[];
+  checkAttempts: CheckAttemptRecord[];
   divinationTraining: DivinationTraining;
   divinationCredentials: DivinationCredential[];
   divinationInsights: DivinationInsight[];
