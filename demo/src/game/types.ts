@@ -387,6 +387,41 @@ export interface CheckAttemptRecord {
   receipt: CheckReceipt;
 }
 
+export interface DockSequence9ActionDef {
+  id: string;
+  pathwayId: string;
+  label: string;
+  description: string;
+  hours: number;
+  energyCost: number;
+  nightOnly?: boolean;
+  clueId: string;
+  result: string;
+}
+
+export interface CaseJournalFact {
+  clueId: string;
+  title: string;
+  sourceLabel: string;
+}
+
+export interface CaseJournalLocation {
+  locationId: string;
+  name: string;
+}
+
+export interface CaseJournalEntry {
+  id: 'clocktower' | 'dock_manifest';
+  title: string;
+  stage: 'rumor' | 'investigating' | 'witnessed' | 'pathway_inquiry' | 'concluded';
+  statusLabel: string;
+  facts: CaseJournalFact[];
+  unlockedLocations: CaseJournalLocation[];
+  currentQuestion: string;
+  directions: string[];
+  milestone?: string;
+}
+
 export type DivinationMethod = 'cards' | 'dream';
 export type DivinationProvider = 'self' | 'nelson' | 'evelyn';
 export type DivinationTargetKind = 'location' | 'item';

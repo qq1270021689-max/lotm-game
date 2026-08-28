@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockSequence9ActionDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -158,10 +158,62 @@ export const CLUE_DEFS: readonly {
     sourceKind: 'public_records', sourceId: 'river_sea_shipping_board', sourceLabel: '河与海教堂公开河运告示栏',
   },
   {
+    id: 'dock_seq9_seer_omen', caseId: 'dock_manifest', title: '潮痕与失踪时刻的重复预兆',
+    sourceKind: 'location', sourceId: 'dock_seq9_seer', sourceLabel: '东区码头的象征预兆记录',
+  },
+  {
+    id: 'dock_seq9_spectator_testimony', caseId: 'dock_manifest', title: '搬运工证词中的回避与矛盾',
+    sourceKind: 'location', sourceId: 'dock_seq9_spectator', sourceLabel: '东区码头的公开证词整理',
+  },
+  {
+    id: 'dock_seq9_hunter_tracks', caseId: 'dock_manifest', title: '退潮泥地上的拖行回路',
+    sourceKind: 'location', sourceId: 'dock_seq9_hunter', sourceLabel: '东区码头的痕迹追踪记录',
+  },
+  {
+    id: 'dock_seq9_sleepless_watch', caseId: 'dock_manifest', title: '夜班交接间隙的异常动静',
+    sourceKind: 'location', sourceId: 'dock_seq9_sleepless', sourceLabel: '东区码头的夜间守望记录',
+  },
+  {
+    id: 'dock_seq9_apprentice_passage', caseId: 'dock_manifest', title: '货栈之间不合常理的通路关系',
+    sourceKind: 'location', sourceId: 'dock_seq9_apprentice', sourceLabel: '东区码头的通路勘察记录',
+  },
+  {
+    id: 'dock_seq9_conclusion', caseId: 'dock_manifest', title: '码头失踪案可靠结论',
+    sourceKind: 'location', sourceId: 'dock_seq9_resolution', sourceLabel: '东区码头的综合调查结论',
+  },
+  {
     id: 'tingen_factory_repairs', caseId: 'tingen_industry', title: '城郊机械事故与修理公告',
     sourceKind: 'public_records', sourceId: 'st_number_repairs', sourceLabel: '圣数教堂公开修理公告',
   },
 ];
+
+const dockSequence9Check = (
+  pathwayId: string,
+  stat: StatKey,
+  skill: SkillKey,
+  pathClueId: string,
+  statLabel: string,
+  skillLabel: string,
+): CheckDef => ({
+  id: `dock_seq9_resolution_${pathwayId}`, version: 1, domain: 'exploration',
+  target: { kind: 'case', id: `dock_manifest_${pathwayId}` }, difficulty: 36,
+  requirements: [{ kind: 'clue', id: pathClueId }],
+  contributions: [
+    { kind: 'stat', id: stat, multiplier: 1, publicLabel: statLabel },
+    { kind: 'skill', id: skill, multiplier: 4, publicLabel: skillLabel },
+    { kind: 'clue', id: pathClueId, value: 10, publicLabel: '本途径现场记录' },
+    { kind: 'clue', id: 'dock_missing_reports', value: 4, publicLabel: '公开失踪登记' },
+    { kind: 'clue', id: 'dock_manifest_discrepancy', value: 6, publicLabel: '货运记录旁证' },
+    { kind: 'clue', id: 'dock_crate_trace', value: 4, publicLabel: '码头现场记录' },
+    { kind: 'clue', id: 'dock_ledger_notation', value: 4, publicLabel: '仓单编号知识' },
+    { kind: 'clue', id: 'dock_marked_manifest', value: 4, publicLabel: '异常仓单记录' },
+    { kind: 'clue', id: 'river_sea_missing_notices', value: 3, publicLabel: '河运失踪告示' },
+  ],
+  receiptPolicy: {
+    blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+    passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'clue:dock_seq9_conclusion'] },
+  },
+});
 
 export const EXPLORATION_CHECKS: readonly CheckDef[] = [
   {
@@ -197,6 +249,39 @@ export const EXPLORATION_CHECKS: readonly CheckDef[] = [
       blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
       passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'clue:dock_marked_manifest', 'lead:iron_blood_token', 'route:iron_and_blood'] },
     },
+  },
+  dockSequence9Check('seer', 'spi', 'occult', 'dock_seq9_seer_omen', '灵性直觉', '神秘学常识'),
+  dockSequence9Check('spectator', 'mnd', 'speech', 'dock_seq9_spectator_testimony', '细节观察', '交谈经验'),
+  dockSequence9Check('hunter', 'phy', 'investigate', 'dock_seq9_hunter_tracks', '追踪耐力', '调查经验'),
+  dockSequence9Check('sleepless', 'mnd', 'investigate', 'dock_seq9_sleepless_watch', '夜间专注', '调查经验'),
+  dockSequence9Check('apprentice', 'spi', 'sneak', 'dock_seq9_apprentice_passage', '空间感知', '潜行经验'),
+];
+
+export const DOCK_SEQUENCE9_ACTIONS: readonly DockSequence9ActionDef[] = [
+  {
+    id: 'dock_seq9_seer', pathwayId: 'seer', label: '以预兆定位潮痕',
+    description: '只对已知失踪时间与码头现场作象征整理，不扫描未知目标。', hours: 2, energyCost: 10,
+    clueId: 'dock_seq9_seer_omen', result: '你把失踪时刻、潮位和反复出现的象征并列记录。预兆没有说出答案，却稳定指向同一段货栈交接时刻。',
+  },
+  {
+    id: 'dock_seq9_spectator', pathwayId: 'spectator', label: '静观证词矛盾',
+    description: '观察公开受访者的停顿与回避，只整理可交叉核验的证词。', hours: 2, energyCost: 10,
+    clueId: 'dock_seq9_spectator_testimony', result: '你没有猜测任何人的秘密，只标出几名搬运工在同一处货栈和同一段时间上出现的共同回避。',
+  },
+  {
+    id: 'dock_seq9_hunter', pathwayId: 'hunter', label: '追踪退潮痕迹',
+    description: '沿公开仓区追踪拖痕与脚印，不制造猎物或额外掉落。', hours: 2, energyCost: 10,
+    clueId: 'dock_seq9_hunter_tracks', result: '你沿退潮泥地重走数遍，确认几组拖行痕迹会绕开值守视线，又在同一片仓区附近汇合。',
+  },
+  {
+    id: 'dock_seq9_sleepless', pathwayId: 'sleepless', label: '守望夜班交接',
+    description: '在夜间保持清醒，记录交接空档中的声音和灯火变化。', hours: 2, energyCost: 10, nightOnly: true,
+    clueId: 'dock_seq9_sleepless_watch', result: '你熬过最安静的交接空档，记下远处灯火熄灭、拖拽声出现与巡夜脚步错开的固定次序。',
+  },
+  {
+    id: 'dock_seq9_apprentice', pathwayId: 'apprentice', label: '勘察货栈通路',
+    description: '测量公开通路、门窗和视线死角，不穿越封锁或解锁未知地点。', hours: 2, energyCost: 10,
+    clueId: 'dock_seq9_apprentice_passage', result: '你逐段核对货栈之间的通路，发现一条看似绕远的搬运路线实际上总能避开两个公开岗哨。',
   },
 ];
 
@@ -947,14 +1032,14 @@ export const EVENTS: GameEvent[] = [
     text: '歇手时，一位同事压低声音：「码头又失踪了两个人……听说连尸体都找不到，就像被雾吃掉了。」',
     choices: [
       { text: '仔细打听细节', effects: [{ k: 'intel', id: 'dock_missing' }], result: '你记下了失踪地点与时间。这条情报或许值钱——或者值钱的是它背后的麻烦。' },
-      { text: '不掺和，埋头干活', effects: [{ k: 'stat', stat: 'mnd', v: 1 }], result: '你埋头干活。在这座城里，不知道有时是一种福气。' },
+      { text: '不掺和，埋头干活', effects: [], result: '你埋头干活。在这座城里，不知道有时是一种福气。' },
     ],
   },
   {
     id: 'work_accident', slot: 'work', weight: 2, cond: 'energy<40', title: '疲惫出错',
     text: '疲惫让你手脚发沉，一项重要工作出了差错。主管检查记录时，脸色立刻沉了下来。',
     choices: [
-      { text: '道歉并主动修正', effects: [{ k: 'money', v: -12 }, { k: 'stat', stat: 'cha', v: 1 }], result: '你被扣了半天工钱，但主管记住了你的担当。' },
+      { text: '道歉并主动修正', effects: [{ k: 'money', v: -12 }], result: '你被扣了半天工钱，但主管记住了你的担当。' },
       { text: '悄悄把错误混过去', effects: [{ k: 'san', v: -3 }, { k: 'flag', id: 'work_blunder', v: 1 }], result: '没人发现。至少今天没有。你总觉得那项错误还会回来找你。' },
     ],
   },
@@ -982,7 +1067,7 @@ export const EVENTS: GameEvent[] = [
     ],
   },
   {
-    id: 'adv_rat', slot: 'adventure', weight: 3, locations: ['sewer'], title: '下水道红眼',
+    id: 'adv_rat', slot: 'adventure', weight: 3, locations: ['sewer'], once: true, title: '下水道红眼',
     text: '市政维修记录里反复提到下水道的「大老鼠」。油灯照亮管道的刹那，你看见几十双红色的眼睛同时亮起——那些「老鼠」大得像狗。',
     choices: [
       { text: '抄起家伙驱散它们', effects: [{ k: 'energy', v: -15 }, { k: 'stat', stat: 'phy', v: 2 }], result: '一番恶战后，红眼睛终于退入支管。你带着几道咬伤记下了巢穴位置，这里显然不是普通鼠患。' },
@@ -991,7 +1076,7 @@ export const EVENTS: GameEvent[] = [
     ],
   },
   {
-    id: 'adv_grave', slot: 'adventure', weight: 3, locations: ['graveyard'], title: '墓园异响',
+    id: 'adv_grave', slot: 'adventure', weight: 3, locations: ['graveyard'], once: true, title: '墓园异响',
     text: '你调查夜间墓园的抓挠声时，守墓人也提着灯赶了过来。声音来自一座新下葬的墓穴——棺材里面。还很急促。',
     choices: [
       { text: '立刻开棺', effects: [{ k: 'san', v: -5 }, { k: 'stat', stat: 'cha', v: 2 }], result: '棺中是假死下葬的年轻人，再晚半小时就真死了。家属记住了你的善意，守墓人看你的眼神像看圣人。' },
@@ -1009,7 +1094,7 @@ export const EVENTS: GameEvent[] = [
     ],
   },
   {
-    id: 'adv_cult', slot: 'adventure', weight: 2, cond: 'beyonder&cor>30', locations: ['old_tower', 'factory', 'sewer'], title: '雾中的耳语',
+    id: 'adv_cult', slot: 'adventure', weight: 2, cond: 'beyonder&cor>30', locations: ['old_tower', 'factory', 'sewer'], once: true, title: '雾中的耳语',
     text: '冒险途中，你体内的非凡特性忽然躁动起来——雾里有某种同源的东西在「呼唤」你。跟着它走，也许有大收获。也许没有也许。',
     choices: [
       { text: '循着呼唤深入', effects: [{ k: 'cor', v: 10 }, { k: 'san', v: -10 }, { k: 'money', v: 120 }, { k: 'stat', stat: 'spi', v: 3 }], result: '你在雾的尽头找到一处被遗弃的仪式场，只带走了几件可变卖的普通银器。没有可核验的死者身份与死亡记录，任何异常残留都被你留在原处。' },
@@ -1021,12 +1106,12 @@ export const EVENTS: GameEvent[] = [
     text: '铁十字街人声鼎沸。一个摆摊的掮客朝你招手：「朋友，看你眼生。这儿的规矩——消息换便士，便士换消息。要来点哪样？」',
     choices: [
       { text: '花6便士买条消息', cond: 'money>=6', effects: [{ k: 'money', v: -6 }, { k: 'intel', id: 'black_market' }], result: '掮客收下便士，压低声音说了几个地名和暗号。在这座城里，知道去哪打听，比知道答案值钱。' },
-      { text: '帮摊主搭把手换人情', effects: [{ k: 'energy', v: -8 }, { k: 'money', v: 10 }, { k: 'stat', stat: 'cha', v: 1 }], result: '你帮着吆喝了一下午收摊。摊主多给了你几便士，还记住你的名字——市集上多一个熟人，不算亏。' },
+      { text: '帮摊主搭把手熟悉街面', effects: [{ k: 'energy', v: -8 }], result: '你帮着整理摊位，也顺便认了认附近的街口与招牌。掮客仍只肯按规矩卖消息，没有额外许诺。' },
       { text: '只是随便逛逛', effects: [], result: '你在人群里转了一圈，闻了闻烤栗子的香味就走了。市集永远在这儿，不急。' },
     ],
   },
   {
-    id: 'adv_manor', slot: 'adventure', weight: 3, locations: ['manor'], title: '深夜钢琴声',
+    id: 'adv_manor', slot: 'adventure', weight: 3, locations: ['manor'], once: true, title: '深夜钢琴声',
     text: '废弃庄园的楼梯在你脚下呻吟。搜到二楼时，你听见了——琴房方向传来断断续续的钢琴声。可这宅子已经空了整整三十年。',
     choices: [
       { text: '循声推开琴房的门', effects: [{ k: 'san', v: -8 }, { k: 'cor', v: 5 }, { k: 'stat', stat: 'spi', v: 3 }, { k: 'money', v: 60 }], result: '琴凳上空无一人，琴键却在自己下沉。你强迫自己搜完琴房——在暗格里摸到一串珍珠项链和一本烧掉一半的琴谱。离开时琴声停了，像是目送你。' },
@@ -1035,7 +1120,7 @@ export const EVENTS: GameEvent[] = [
     ],
   },
   {
-    id: 'adv_ramd', slot: 'adventure', weight: 2, locations: ['ramd'], title: '全镇跪拜的广场',
+    id: 'adv_ramd', slot: 'adventure', weight: 2, locations: ['ramd'], once: true, title: '全镇跪拜的广场',
     text: '拉姆德的街道安静得能听见自己的血流。广场中央，上百具干尸保持着跪拜的姿势，朝向一座门窗都被钉死的教堂。风穿过他们空洞的嘴，像一声拉长的祷词。',
     choices: [
       { text: '走进那座被钉死的教堂', effects: [{ k: 'money', v: 150 }, { k: 'cor', v: 12 }, { k: 'san', v: -12 }, { k: 'stat', stat: 'spi', v: 3 }], result: '祭坛上没有神像——只有一片焦黑的、人形的痕迹。你在灰烬里扒出几件没被烧完的教会圣物，转手能卖个好价。跨出门槛时你不敢回头：你觉得那些干尸的头，转动了一个微小的角度。' },
@@ -1057,7 +1142,7 @@ export const EVENTS: GameEvent[] = [
     id: 'street_pickpocket', slot: 'street', weight: 3, title: '三只手',
     text: '人流中，一只瘦小的手摸向你的口袋。',
     choices: [
-      { text: '当场抓住他', effects: [{ k: 'stat', stat: 'phy', v: 1 }], result: '是个面黄肌瘦的孩子。你松开手，他消失在巷子里。' },
+      { text: '当场抓住他', effects: [], result: '是个面黄肌瘦的孩子。你松开手，他消失在巷子里。' },
       { text: '装作没有察觉', effects: [{ k: 'money', v: -10 }], result: '你的钱袋轻了一点。这座城总要收点学费。' },
     ],
   },
@@ -1066,14 +1151,15 @@ export const EVENTS: GameEvent[] = [
     text: '一个黑袍教士在街角宣讲：「黑夜庇佑不眠之人，风暴涤荡不义之徒。」他独眼的目光扫过人群，在你身上停留了一瞬。',
     choices: [
       { text: '驻足聆听', effects: [{ k: 'san', v: 3 }], result: '祷词里有种让人平静的力量。你的精神好了一些。' },
-      { text: '低头快步走开', effects: [], result: '非凡者最好离教会远一点——你想起这句忠告。' },
+      { text: '不感兴趣，继续赶路', cond: 'mortal', effects: [], result: '你绕开聚集的人群，继续处理自己的日常事务。' },
+      { text: '收敛异常，快步离开', cond: 'beyonder', effects: [], result: '你不愿在公开布道场合久留，压低帽檐离开了街角。' },
     ],
   },
   {
     id: 'street_beggar_seer', slot: 'street', weight: 2, title: '独眼占卜师',
     text: '巷口的瞎眼老妇人朝你的方向「看」过来：「年轻人，一便士，婆婆给你占一占前程。」',
     choices: [
-      { text: '给她一便士', effects: [{ k: 'money', v: -1 }, { k: 'san', v: 2 }, { k: 'stat', stat: 'spi', v: 1 }], result: '她说了些模棱两可的吉言，但捏走便士时在你掌心敲了三下——某种节奏。你忽然对灵性有了一丝新的感应。' },
+      { text: '给她一便士', effects: [{ k: 'money', v: -1 }, { k: 'san', v: 2 }], result: '她说了些模棱两可的吉言，又在你掌心敲了三下。那节奏令人印象深刻，却不足以证明她真看见了命运。' },
       { text: '摇头离开', effects: [], result: '「命运不要你的便士，」她在背后说，「那它就要别的了。」' },
     ],
   },
@@ -1082,7 +1168,7 @@ export const EVENTS: GameEvent[] = [
     id: 'act_crowd', slot: 'act', weight: 3, cond: 'beyonder', title: '围观者',
     text: '你扮演时，一个醉醺醺的看客凑过来起哄，引来一群人围观。是麻烦，也是舞台。',
     choices: [
-      { text: '把他变成表演的一部分', effects: [{ k: 'digestion', v: 6 }, { k: 'stat', stat: 'cha', v: 1 }, { k: 'exposure', v: 2 }], result: '哄笑声中你完成了今天最漂亮的一次扮演。魔药在体内松动了一丝。只是……人群里似乎有道过于专注的目光。' },
+      { text: '把他变成表演的一部分', effects: [{ k: 'digestion', v: 6 }, { k: 'exposure', v: 2 }], result: '哄笑声中你完成了今天最漂亮的一次扮演。魔药在体内松动了一丝。只是……人群里似乎有道过于专注的目光。' },
       { text: '收摊避开', effects: [{ k: 'digestion', v: 1 }], result: '你提前收摊。扮演讲究顺势而为，今天「势」不在你。' },
     ],
   },
@@ -1205,7 +1291,7 @@ export const EVENTS: GameEvent[] = [
     ],
   },
   {
-    id: 'npc_brandon_loan', slot: 'social', npc: 'brandon', weight: 5, title: '血手套的善意',
+    id: 'npc_brandon_loan', slot: 'social', npc: 'brandon', weight: 5, once: true, title: '血手套的善意',
     text: '布兰登用缠着绷带的手指敲着桌面：「缺钱？找我借啊。一镑起借，一周还一镑四苏勒。还不上……」他笑了笑，「我这双手套本来是白的。」',
     choices: [
       { text: '接受一镑借款和一周还款期限', effects: [{ k: 'money', v: 240 }, { k: 'timer', id: 'debt', timerLabel: '血手套的债', timerHours: 168, timerEffect: [{ k: 'money', v: -288 }, { k: 'san', v: -10 }] }], result: '他把一镑拍在你手心：「聪明人。」你注意到他指节上的旧血渍没洗干净。' },

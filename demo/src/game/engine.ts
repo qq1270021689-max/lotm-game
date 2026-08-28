@@ -1,5 +1,5 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, DockSequence9ActionDef, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { evaluateCheck, sanitizeCheckAttemptRecord, toPublicCheckResult } from './checks';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
@@ -3071,6 +3071,108 @@ export function traceDockMarkedManifest(s: GameState): ActionResult {
     { id: 'route:iron_and_blood', applied: true },
   ] };
   recordExplorationAttempt(s, check, startedAt);
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, 2);
+  return { ok: true, outcome: 'passed' };
+}
+
+function legalDockSequence9Pathway(s: GameState): string | null {
+  return s.sequence === 9 && s.pathwayId !== null && PATHWAYS.some(pathway => pathway.id === s.pathwayId)
+    ? s.pathwayId : null;
+}
+
+export function getDockSequence9Actions(s: GameState): DockSequence9ActionDef[] {
+  const pathwayId = legalDockSequence9Pathway(s);
+  return pathwayId ? DOCK_SEQUENCE9_ACTIONS.filter(action => action.pathwayId === pathwayId) : [];
+}
+
+function dockSequence9BaseIssue(s: GameState): string | null {
+  if (!legalDockSequence9Pathway(s)) return '只有五条已知途径的合法序列9能够开展这项调查。';
+  if (!s.intel.includes('dock_missing')) return '你还不知道码头失踪案的可靠传闻，无法确定调查目标。';
+  if (s.currentLocation?.locationId !== 'docks') return '需要亲自抵达东区码头，才能开展本途径调查。';
+  return null;
+}
+
+export function dockSequence9PathActionIssue(s: GameState, actionId: string): string | null {
+  const base = dockSequence9BaseIssue(s);
+  if (base) return base;
+  const action = DOCK_SEQUENCE9_ACTIONS.find(candidate => candidate.id === actionId);
+  if (!action || action.pathwayId !== s.pathwayId) return '这不是你当前途径能够使用的调查方式。';
+  if (hasClue(s, action.clueId)) return '本途径的码头现场记录已经完成。';
+  if (hasClue(s, 'dock_seq9_conclusion')) return '这起案件已经形成可靠结论，无需重复调查。';
+  if (action.nightOnly && !isNight(s.hour)) return '这项守望只能在夜间进行。';
+  if (s.stats.energy < energyCost(s, action.energyCost)) return '你当前太过疲惫，无法保持足够谨慎。';
+  return null;
+}
+
+export function performDockSequence9PathAction(s: GameState, actionId: string): ActionResult {
+  const issue = dockSequence9PathActionIssue(s, actionId);
+  if (issue) return { ok: false, msg: issue };
+  const action = DOCK_SEQUENCE9_ACTIONS.find(candidate => candidate.id === actionId)!;
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, action.energyCost) }]);
+  acquireClue(s, action.clueId, 'location', action.id);
+  addLog(s, action.result, 'info');
+  addLog(s, '✦ 本途径的现场记录已收入案件簿。它只提供一条可核验路径，不会替代公开档案或直接揭示幕后身份。', 'system');
+  advanceHours(s, action.hours);
+  return { ok: true };
+}
+
+function dockSequence9ResolutionCheckId(s: GameState): string | null {
+  const pathwayId = legalDockSequence9Pathway(s);
+  return pathwayId ? `dock_seq9_resolution_${pathwayId}` : null;
+}
+
+export function resolveDockSequence9CaseIssue(s: GameState): string | null {
+  const base = dockSequence9BaseIssue(s);
+  if (base) return base;
+  if (hasClue(s, 'dock_seq9_conclusion')) return '这起案件已经形成可靠结论。';
+  const action = getDockSequence9Actions(s)[0];
+  if (!action || !hasClue(s, action.clueId)) return '请先完成当前途径对应的码头现场调查。';
+  if (s.stats.energy < energyCost(s, 12)) return '你当前太过疲惫，无法完成最后的交叉核验。';
+  const checkId = dockSequence9ResolutionCheckId(s);
+  if (!checkId) return '当前途径无法建立可靠的结案检定。';
+  const internal = evaluateExplorationCheckInternal(s, checkId);
+  if (!internal.eligible) return internal.reason === 'missing_requirement'
+    ? '请先完成当前途径对应的码头现场调查。' : '这项综合调查暂时无法继续。';
+  return repeatedBlockedExplorationIssue(s, internal);
+}
+
+const DOCK_SEQUENCE9_CONCLUSIONS: Record<string, string> = {
+  seer: '反复出现的象征终于与公开时间线重合：它不能说明幕后是什么，却指出失踪并非彼此无关的偶发事件。',
+  spectator: '证词中的共同回避与货运记录互相印证：有人长期利用交接空档掩盖人员去向，但现阶段仍不能指认具体身份。',
+  hunter: '拖行回路与失踪人员最后出现的位置闭合成一条稳定路线：这些人曾被有计划地带离公开岗哨范围。',
+  sleepless: '连续守望记录证明异常动静总出现在同一段交接空档：失踪与夜班秩序中的固定缺口有关。',
+  apprentice: '通路测绘与货物流向彼此吻合：表面绕远的路线实际上被反复用于避开公开视线。',
+};
+
+export function resolveDockSequence9Case(s: GameState): ActionResult {
+  const issue = resolveDockSequence9CaseIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const checkId = dockSequence9ResolutionCheckId(s)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const legacy = evaluateExplorationCheck(s, checkId);
+  if (!internal.eligible) return { ok: false, msg: '这项综合调查暂时无法继续。' };
+  if (internal.reason === 'insufficient') {
+    const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+    addLog(s, '你把本途径的现场记录与已有资料逐项对照，却仍有几处无法被独立证据支撑。现在写下结论只会把推测伪装成事实。', 'info');
+    addLog(s, '下一步应补充公开登记、货运旁证，或磨练与当前路径直接相关的调查能力。', 'system');
+    const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', applied[0]), hoursReceipt(1)] };
+    recordExplorationAttempt(s, legacy, startedAt);
+    recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+    advanceHours(s, 1);
+    return { ok: true, outcome: 'blocked' };
+  }
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 12) }]);
+  const acquired = acquireClue(s, 'dock_seq9_conclusion', 'location', `dock_seq9_resolution_${s.pathwayId}`);
+  addLog(s, DOCK_SEQUENCE9_CONCLUSIONS[s.pathwayId!] ?? '你完成了最后的交叉核验，留下了一份可复核的调查结论。', 'event');
+  addLog(s, '✦ 码头失踪案已形成可靠结论。廷根第一章·案件样板完成；你仍可继续当前人生与其他路线。', 'system');
+  const receipt: CheckReceipt = { hoursElapsed: 2, effects: [
+    receiptEntry('energy', applied[0]), hoursReceipt(2),
+    { id: 'clue:dock_seq9_conclusion', applied: acquired, before: false, after: acquired },
+  ] };
+  recordExplorationAttempt(s, legacy, startedAt);
   recordCheckAttempt(s, internal, request.context, receipt, startedAt);
   advanceHours(s, 2);
   return { ok: true, outcome: 'passed' };

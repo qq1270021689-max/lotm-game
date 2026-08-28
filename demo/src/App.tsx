@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import './App.css';
 import type { GameState, SkillKey, OrganizationId } from './game/types';
-import { BOOK_DEFS, CLUE_DEFS, NPCS, PATHWAYS, ORIGINS, JOBS, TALENTS, SKILL_NAMES, LOCATIONS, LOCATION_REGIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, INVENTORY_CATEGORY_LABELS, findPathway, findItem, findJob, npcAvailable, npcLocation, scheduleHint, weekdayOf, WEEKDAY_NAMES, INTEL_NAMES, KNOWLEDGE_NAMES, formulaName, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES, sequenceEvidenceLabel } from './game/data';
+import { BOOK_DEFS, NPCS, PATHWAYS, ORIGINS, JOBS, TALENTS, SKILL_NAMES, LOCATIONS, LOCATION_REGIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, INVENTORY_CATEGORY_LABELS, findPathway, findItem, findJob, npcAvailable, npcLocation, scheduleHint, weekdayOf, WEEKDAY_NAMES, INTEL_NAMES, KNOWLEDGE_NAMES, formulaName, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES, sequenceEvidenceLabel } from './game/data';
 import * as E from './game/engine';
+import { getCaseJournalEntries } from './game/case-journal';
 
 const HOURS = ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23'];
 
@@ -249,6 +250,7 @@ export default function App() {
   const [advOpen, setAdvOpen] = useState(false);
   const [actingOpen, setActingOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [caseJournalOpen, setCaseJournalOpen] = useState(false);
   const [companionId, setCompanionId] = useState(''); // 冒险同行者（空=独自）
   const [nameInput, setNameInput] = useState('');
   const [originChoice, setOriginChoice] = useState('clerk');
@@ -374,6 +376,8 @@ export default function App() {
   const visibleBoard = state.board.filter(commission => E.isLocationUnlocked(state, commission.locationId));
   const inventoryEntries = E.getInventoryEntries(state);
   const locationDivinationTargets = E.getDivinationTargets(state).filter(target => target.kind === 'location');
+  const caseJournalEntries = getCaseJournalEntries(state);
+  const dockCaseKnown = state.intel.includes('dock_missing') || caseJournalEntries.some(entry => entry.id === 'dock_manifest');
 
   return (
     <div className="min-h-screen bg-[#0c0f0e] text-stone-200 font-serif">
@@ -391,6 +395,10 @@ export default function App() {
         {state.tags.includes('registered') && <span className="text-xs text-sky-300/70">【教会备案】</span>}
         {state.tags.includes('fugitive') && <span className="text-xs text-red-300/70">【在逃】</span>}
         {state.tags.includes('homeless') && <span className="text-xs text-red-300/70">【无家可归】</span>}
+        <button className="text-xs text-sky-200/80 hover:text-sky-100 underline underline-offset-4 decoration-stone-600"
+          onClick={() => setCaseJournalOpen(value => !value)}>
+          案件簿{caseJournalEntries.length ? ` · ${caseJournalEntries.length}` : ''}
+        </button>
         <button className="ml-auto text-xs text-stone-500 hover:text-red-300"
           onClick={() => { if (confirm('放弃当前人生，重新开始？')) { E.clearSave(); setState(null); } }}>
           放弃此生
@@ -467,6 +475,36 @@ export default function App() {
             onAction={runAction}
             onClose={() => setInventoryOpen(false)}
           />}
+
+          {caseJournalOpen && <section data-case-journal className="panel border-sky-300/25 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sky-100/90">案件簿</h3>
+                <p className="text-[11px] text-stone-500 mt-1">只整理已经取得且能够追溯来源的事实；未知地点和幕后身份不会预先列出。</p>
+              </div>
+              <button className="text-xs text-stone-500" onClick={() => setCaseJournalOpen(false)}>收起</button>
+            </div>
+            {!caseJournalEntries.length && <p className="text-sm text-stone-500">尚未形成可记录的案件。日常生活仍是你目前最可靠的线索来源。</p>}
+            {caseJournalEntries.map(entry => <article key={entry.id} className="rounded border border-stone-700 p-3 text-xs space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h4 className="text-amber-100/90 text-sm">{entry.title}</h4>
+                <span className="text-sky-200/70">{entry.statusLabel}</span>
+              </div>
+              {entry.milestone && <p className="text-emerald-200/80">✦ {entry.milestone}</p>}
+              <div>
+                <p className="text-stone-300 mb-1">已知事实</p>
+                {entry.facts.length
+                  ? entry.facts.map(fact => <p key={fact.clueId} className="text-stone-500">· {fact.title} <span className="text-stone-600">— {fact.sourceLabel}</span></p>)
+                  : <p className="text-stone-600">尚无可以独立核验的书面或现场记录。</p>}
+              </div>
+              {entry.unlockedLocations.length > 0 && <p className="text-stone-500">已查明去向：{entry.unlockedLocations.map(location => location.name).join('、')}</p>}
+              <p className="text-stone-400">当前问题：{entry.currentQuestion}</p>
+              <div>
+                <p className="text-stone-300 mb-1">可行动方向</p>
+                {entry.directions.map((direction, index) => <p key={`${entry.id}:${index}`} className="text-stone-500">{index + 1}. {direction}</p>)}
+              </div>
+            </article>)}
+          </section>}
 
           {ev ? (
             <div className="panel border-amber-200/40">
@@ -582,6 +620,32 @@ export default function App() {
                   onClick={() => runAction(step.action)}>
                   {step.label}<small className="block text-stone-500 mt-0.5">{step.issue ?? '在当前地点继续核对'}</small>
                 </button>)}
+              </div>}
+              {loc.id === 'docks' && dockCaseKnown && state.sequence === 9 && E.getDockSequence9Actions(state).length > 0 && <div data-dock-sequence9-case className="rounded border border-violet-300/25 p-3 text-xs space-y-2">
+                <div>
+                  <p className="text-violet-100/90">码头失踪案 · 序列9调查</p>
+                  <p className="text-stone-500 mt-1">你的途径能提供一种不同的现场观察方法，但仍需与公开记录交叉核验。</p>
+                </div>
+                {E.hasClue(state, 'dock_seq9_conclusion')
+                  ? <p className="text-emerald-200/80">✦ 廷根第一章·案件样板完成。案件结论已收入案件簿。</p>
+                  : <>
+                    {E.getDockSequence9Actions(state).map(action => {
+                      const issue = E.dockSequence9PathActionIssue(state, action.id);
+                      return <button key={action.id} disabled={!!issue} title={issue ?? ''}
+                        className="block w-full rounded border border-violet-300/25 p-2 text-left text-violet-100/85 disabled:opacity-45"
+                        onClick={() => runAction(s => E.performDockSequence9PathAction(s, action.id))}>
+                        {action.label}<small className="block text-stone-500 mt-0.5">{issue ?? action.description}</small>
+                      </button>;
+                    })}
+                    {(() => {
+                      const issue = E.resolveDockSequence9CaseIssue(state);
+                      return <button disabled={!!issue} title={issue ?? ''}
+                        className="block w-full rounded border border-emerald-300/25 p-2 text-left text-emerald-100/85 disabled:opacity-45"
+                        onClick={() => runAction(s => E.resolveDockSequence9Case(s))}>
+                        综合追查并形成结论<small className="block text-stone-500 mt-0.5">{issue ?? '整合本途径记录与已知事实'}</small>
+                      </button>;
+                    })()}
+                  </>}
               </div>}
               {E.getTingenLandmarkActions(state).length > 0 && <div className="rounded border border-emerald-300/20 p-3 text-xs space-y-2">
                 <p className="text-emerald-100/90">此地的公开活动</p>
@@ -830,13 +894,10 @@ export default function App() {
                       <p className="text-xs text-stone-500 leading-5 mb-2">
                         公开记录只显示旧钟楼附近有多起夜间扰民与失踪传闻。它们不能证明超自然现象；你可以继续比对档案，也可以在深夜尝试实地追踪。
                       </p>
-                      {clocktowerClues.length > 0 && <div className="mb-2 rounded border border-stone-800 p-2 text-[11px] text-stone-500">
-                        <p className="text-stone-300 mb-1">调查笔记</p>
-                        {clocktowerClues.map(record => {
-                          const clue = CLUE_DEFS.find(def => def.id === record.id);
-                          return <p key={record.id}>· {clue?.title ?? record.id} <span className="text-stone-600">— {clue?.sourceLabel ?? record.sourceId}</span></p>;
-                        })}
-                      </div>}
+                      {clocktowerClues.length > 0 && <button className="w-full mb-2 rounded border border-stone-800 p-2 text-left text-[11px] text-stone-500"
+                        onClick={() => setCaseJournalOpen(true)}>
+                        已有{clocktowerClues.length}条可核验事实归入案件簿。打开案件簿查看来源与下一步。
+                      </button>}
                       {!E.hasClue(state, 'clocktower_repair_orders') && (() => {
                         const issue = E.compareClocktowerRepairRecordsIssue(state);
                         return <button disabled={!!issue} title={issue ?? ''}
