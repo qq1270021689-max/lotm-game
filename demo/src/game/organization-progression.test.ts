@@ -73,6 +73,10 @@ function qualifyWorldRoute(s: GameState, orgId: Exclude<OrganizationId, 'nightwa
   expect(verifyOrganizationEvidence(s, orgId).ok).toBe(true);
   expect(contactOrganization(s, orgId).ok).toBe(true);
   s.stats.energy = 100;
+  const qualificationSkill = {
+    secret_order: 'occult', psychology_alchemists: 'speech', iron_and_blood: 'investigate', abraham_branch: 'occult',
+  }[orgId] as keyof GameState['skills'];
+  s.skills[qualificationSkill] = 10;
   expect(completeOrganizationQualification(s, orgId).ok).toBe(true);
 }
 

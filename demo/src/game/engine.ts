@@ -1,5 +1,5 @@
 import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, DockSequence9ActionDef, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, ORGANIZATION_QUALIFICATION_TASKS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { evaluateCheck, sanitizeCheckAttemptRecord, toPublicCheckResult } from './checks';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
@@ -672,6 +672,7 @@ function recordLocationCompletion(s: GameState, locationId: string) {
   const lead = def && s.leads[def.id];
   if (!def || !lead || lead.stage !== 'unknown') return;
   lead.stage = 'found';
+  acquireClue(s, 'abraham_door_map', 'location', 'manor');
   lead.notes.push(`在${def.place}完成实地调查后发现：${def.publicLabel}`);
   recordOrganizationRoute(s, orgId, `world_entry:${def.id}`, 'passed', locationId);
   if (orgId === 'abraham_branch' && !s.formulas.includes('apprentice9')) {
@@ -2567,6 +2568,11 @@ export function discoverOrganizationEvidence(s: GameState, organizationId: Organ
   if (s.stats.energy < 6) return { ok: false, msg: '你当前太过疲惫，无法仔细整理这次背景询问。' };
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, 6) }]);
   lead.stage = 'found';
+  const qualificationTask = ORGANIZATION_QUALIFICATION_TASKS.find(task => task.organizationId === organizationId);
+  if (qualificationTask && organizationId !== 'iron_and_blood') {
+    acquireClue(s, qualificationTask.hardClueId, def.entryMode === 'npc_background' ? 'npc' : 'location',
+      def.entryMode === 'npc_background' ? def.contactNpc : (def.locationId ?? qualificationTask.organizationId));
+  }
   lead.notes.push(def.entryMode === 'npc_background'
     ? `${findAnyNPC(s, def.contactNpc)?.name ?? def.contactNpc}在建立信任后交出：${def.publicLabel}`
     : `在${def.place}实地调查后发现：${def.publicLabel}`);
@@ -2650,19 +2656,78 @@ export function contactOrganization(s: GameState, organizationId: OrganizationId
   return { ok: true };
 }
 
+function organizationQualificationTask(organizationId: OrganizationId) {
+  return ORGANIZATION_QUALIFICATION_TASKS.find(task => task.organizationId === organizationId) ?? null;
+}
+
+export function getOrganizationQualificationTaskView(s: GameState, organizationId: OrganizationId) {
+  const task = organizationQualificationTask(organizationId);
+  if (!task) return null;
+  const internal = evaluateExplorationCheckInternal(s, task.checkId);
+  const def = EXPLORATION_CHECKS.find(check => check.id === task.checkId);
+  const activeIds = new Set(internal.contributions.map(contribution => contribution.id));
+  const helpedBy = def?.contributions.filter(contribution => contribution.kind === 'clue'
+    && activeIds.has(`clue:${contribution.id}`)).map(contribution => contribution.publicLabel) ?? [];
+  return {
+    label: task.label,
+    narrative: task.narrative,
+    inputLabels: [task.statLabel, task.skillLabel],
+    helpedBy,
+    hours: task.passHours,
+    issue: organizationQualificationIssue(s, organizationId),
+  };
+}
+
+export function organizationQualificationIssue(s: GameState, organizationId: OrganizationId): string | null {
+  const task = organizationQualificationTask(organizationId);
+  if (!task) return '该组织不使用这项外围资格任务。';
+  if (s.atWork) return '工作期间不能完成组织资格任务。';
+  if (isBeyonder(s)) return '该候选流程只面向凡人。';
+  const route = s.organizationRoutes[task.organizationId];
+  if (!route || route.status !== 'contacted' || route.routeStep !== 'contacted') return '尚未处于该组织的正式资格任务阶段。';
+  const leadDef = leadDefForOrganization(task.organizationId);
+  if (!leadDef || s.leads[leadDef.id]?.stage !== 'verified') return '对应原始线索尚未完成真实性核验。';
+  if (!hasClue(s, task.hardClueId)) return '资格任务缺少经过来源审计的原始凭据。';
+  const internal = evaluateExplorationCheckInternal(s, task.checkId);
+  if (!internal.eligible) return internal.reason === 'missing_requirement'
+    ? '资格任务缺少经过来源审计的原始凭据。' : '这项资格任务当前无法核验。';
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return repeatedIssue;
+  if (s.stats.energy < energyCost(s, task.passEnergyCost)) return '你当前太过疲惫，无法完整完成这项资格任务。';
+  return null;
+}
+
 export function completeOrganizationQualification(s: GameState, organizationId: OrganizationId): ActionResult {
-  if (s.atWork) return { ok: false, msg: '工作期间不能完成组织资格任务。' };
-  if (isBeyonder(s)) return { ok: false, msg: '该候选流程只面向凡人。' };
-  const route = organizationRoute(s, organizationId);
-  if (route.status !== 'contacted') return { ok: false, msg: '尚未与该组织建立正式接触。' };
-  if (s.stats.energy < 18) return { ok: false, msg: '你当前太过疲惫，无法完成这项资格任务。' };
-  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 18) }]);
+  const issue = organizationQualificationIssue(s, organizationId);
+  if (issue) return { ok: false, msg: issue };
+  const task = organizationQualificationTask(organizationId)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, task.checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '这项资格任务当前无法核验。' };
+  if (internal.reason === 'insufficient') {
+    const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+    addLog(s, '你完成了一轮演练，却没能把判断边界、来源依据与撤回条件整理成可复核的记录。', 'info');
+    addLog(s, '现有材料仍可重新准备；只有与任务直接相关的能力或已取得旁证发生变化，下一次尝试才有意义。', 'system');
+    const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', applied[0]), hoursReceipt(1)] };
+    recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+    advanceHours(s, 1);
+    return { ok: true, outcome: 'blocked' };
+  }
+  const route = s.organizationRoutes[task.organizationId];
+  const beforeRoute = `${route.status}/${route.routeStep}`;
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, task.passEnergyCost) }]);
   route.status = 'qualified';
   route.routeStep = 'qualified';
-  recordOrganizationRoute(s, organizationId, 'qualification', 'passed');
-  addLog(s, `你完成了${organizationDef(organizationId)?.name}安排的资格任务：${organizationDef(organizationId)?.qualification}。资格本身不会赠送配方或材料。`, 'good');
-  advanceHours(s, 3);
-  return { ok: true };
+  recordOrganizationRoute(s, task.organizationId, `qualification_check:${task.checkId}`, 'passed');
+  const receipt: CheckReceipt = { hoursElapsed: task.passHours, effects: [
+    receiptEntry('energy', applied[0]), hoursReceipt(task.passHours),
+    { id: `route:${task.organizationId}`, applied: true, before: beforeRoute, after: `${route.status}/${route.routeStep}` },
+  ] };
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  addLog(s, `你完成了${organizationDef(task.organizationId)?.name}安排的“${task.label}”。记录通过复核，但资格本身不会赠送配方、材料或能力。`, 'good');
+  advanceHours(s, task.passHours);
+  return { ok: true, outcome: 'passed' };
 }
 
 export function joinOrganization(s: GameState, organizationId: OrganizationId): ActionResult {
@@ -3404,14 +3469,14 @@ export function completeOfficialNightWatch(s: GameState): ActionResult {
   if (lead.status !== 'contacted' || lead.routeStep !== 'interview_passed') return { ok: false, msg: '请先完成保密面谈。' };
   const timing = officialTimingIssue(s, 'night_watch');
   if (timing) return { ok: false, msg: timing };
-  if (s.stats.energy < 20) return { ok: false, msg: '你当前的状态撑不住四小时夜间观察。' };
+  if (s.stats.energy < energyCost(s, 20)) return { ok: false, msg: '你当前的状态撑不住四小时夜间观察。' };
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, 20) }, { k: 'san', v: -2 }]);
   lead.status = 'qualified';
   lead.routeStep = 'offer_pending';
   addLog(s, '你在封锁线外跟完整整一班，只记录、不触碰、不擅自追逐。天亮前，伊芙琳确认你能服从安全边界，并向你说明不眠者候选名额。', 'event');
   addLog(s, '✦ 审查通过。下一步是听取正式报价；在最终承诺前，你仍可退出。', 'system');
-  advanceHours(s, 4);
   recordOrganizationRoute(s, 'nightwatch', 'night_observation', 'passed', '完成封锁线外围观察勤务');
+  advanceHours(s, 4);
   return { ok: true };
 }
 
@@ -5019,6 +5084,21 @@ export function loadGame(): GameState | null {
             pathwayLead(s, 'hunter').formulaStatus = 'unverified';
           }
         }
+      }
+    }
+    // 新资格硬线索不另建进度字段。旧真实档只有在现有来源审计已经保留路线，或同时具备
+    // 世界入口与真实性核验历史时补录；直接伪造 contacted/verified 不能借迁移洗白。
+    for (const task of ORGANIZATION_QUALIFICATION_TASKS) {
+      if (hasClue(s, task.hardClueId)) continue;
+      const def = leadDefForOrganization(task.organizationId);
+      const route = organizationRoute(s, task.organizationId);
+      const statusPreserved = ['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(route.status);
+      const strongHistory = !!def
+        && route.history.some(record => record.step === `world_entry:${def.id}` && record.outcome === 'passed')
+        && route.history.some(record => record.step === `lead_verified:${def.id}` && record.outcome === 'passed');
+      const survivedLegacyAudit = loadedVersion === 8;
+      if (def && statusPreserved && s.leads[def.id]?.stage === 'verified' && (strongHistory || survivedLegacyAudit)) {
+        acquireClue(s, task.hardClueId, 'migration', `qualification-source-audit:${loadedVersion}`);
       }
     }
     if (loadedVersion < 10) {

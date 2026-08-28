@@ -807,6 +807,21 @@ export interface OrganizationRoute {
   history: RouteAttempt[];
 }
 
+/** 四条非值夜者组织路线的数据化资格任务；值夜者继续使用独立官方流程。 */
+export interface OrganizationQualificationTaskDef {
+  organizationId: Exclude<OrganizationId, 'nightwatch'>;
+  checkId: string;
+  label: string;
+  narrative: string;
+  stat: StatKey;
+  skill: SkillKey;
+  statLabel: string;
+  skillLabel: string;
+  hardClueId: string;
+  passEnergyCost: number;
+  passHours: number;
+}
+
 export interface DiaryPageState {
   pageId: string;
   truth: 'authentic' | 'forged';

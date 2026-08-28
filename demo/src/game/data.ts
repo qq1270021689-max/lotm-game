@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockCaseDispositionDef, DockSequence9ActionDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockCaseDispositionDef, DockSequence9ActionDef, OrganizationQualificationTaskDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -116,6 +116,18 @@ export const CLUE_DEFS: readonly {
   {
     id: 'dock_marked_manifest', caseId: 'dock_manifest', title: '留有陌生印记的仓单',
     sourceKind: 'location', sourceId: 'dock_manifest_office', sourceLabel: '东区码头旧仓单房',
+  },
+  {
+    id: 'secret_order_cipher', caseId: 'organization_secret_order', title: '旧书账册中的星象暗记夹页',
+    sourceKind: 'npc', sourceId: 'nelson', sourceLabel: '老尼尔逊交付的可信账册夹页',
+  },
+  {
+    id: 'psychology_case_notes', caseId: 'organization_psychology', title: '需要匿名处理的病例观察索引',
+    sourceKind: 'npc', sourceId: 'ella', sourceLabel: '艾拉交付的匿名病例索引',
+  },
+  {
+    id: 'abraham_door_map', caseId: 'organization_abraham', title: '门框夹层里的空间草图',
+    sourceKind: 'location', sourceId: 'manor', sourceLabel: '雾林庄园门框夹层',
   },
   {
     id: 'manor_address', caseId: 'manor_access', title: '雾林旧宅的手绘路线',
@@ -282,6 +294,52 @@ const dockSequence9SynthesisCheck = (
   },
 });
 
+export const ORGANIZATION_QUALIFICATION_TASKS: readonly OrganizationQualificationTaskDef[] = [
+  {
+    organizationId: 'secret_order', checkId: 'org_qualification_secret_order_provenance',
+    label: '来源分级与保密删节', narrative: '把一组混杂来源的研究摘记按可信程度分层，并删去会暴露无关人员的细节。',
+    stat: 'mnd', skill: 'occult', statLabel: '来源推理', skillLabel: '神秘学整理',
+    hardClueId: 'secret_order_cipher', passEnergyCost: 14, passHours: 3,
+  },
+  {
+    organizationId: 'psychology_alchemists', checkId: 'org_qualification_psychology_ethics',
+    label: '匿名观察与伦理边界', narrative: '整理一份匿名观察记录，只保留行为事实，并明确哪些推断不能越过当事人的边界。',
+    stat: 'cha', skill: 'speech', statLabel: '共情判断', skillLabel: '沟通伦理',
+    hardClueId: 'psychology_case_notes', passEnergyCost: 12, passHours: 3,
+  },
+  {
+    organizationId: 'iron_and_blood', checkId: 'org_qualification_iron_and_blood_field',
+    label: '可撤回货运路线复盘', narrative: '复盘一条货运路线，标出观察点、撤回条件与证据不足时必须停止的位置。',
+    stat: 'phy', skill: 'investigate', statLabel: '现场耐力', skillLabel: '路线调查',
+    hardClueId: 'dock_marked_manifest', passEnergyCost: 20, passHours: 4,
+  },
+  {
+    organizationId: 'abraham_branch', checkId: 'org_qualification_abraham_provenance',
+    label: '空间草图来源、退路与担保', narrative: '说明空间草图的发现来源、可核验退路与担保责任，不把未证实结构当成可开启的门。',
+    stat: 'spi', skill: 'occult', statLabel: '空间直觉', skillLabel: '神秘学辨源',
+    hardClueId: 'abraham_door_map', passEnergyCost: 16, passHours: 3,
+  },
+];
+
+const organizationQualificationCheck = (
+  task: OrganizationQualificationTaskDef,
+  difficulty: number,
+  optionalClues: readonly { id: string; value: number; publicLabel: string }[],
+): CheckDef => ({
+  id: task.checkId, version: 1, domain: 'exploration',
+  target: { kind: 'case', id: `organization_qualification:${task.organizationId}` }, difficulty,
+  requirements: [{ kind: 'clue', id: task.hardClueId }],
+  contributions: [
+    { kind: 'stat', id: task.stat, multiplier: 1, publicLabel: task.statLabel },
+    { kind: 'skill', id: task.skill, multiplier: 4, publicLabel: task.skillLabel },
+    ...optionalClues.map(clue => ({ kind: 'clue' as const, ...clue })),
+  ],
+  receiptPolicy: {
+    blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+    passed: { hoursElapsed: task.passHours, effectIds: ['energy', 'hours', `route:${task.organizationId}`] },
+  },
+});
+
 export const EXPLORATION_CHECKS: readonly CheckDef[] = [
   {
     id: 'clocktower_night_trace', version: 1, domain: 'exploration',
@@ -327,6 +385,27 @@ export const EXPLORATION_CHECKS: readonly CheckDef[] = [
   dockSequence9SynthesisCheck('hunter', 'phy', 'investigate', 'dock_seq9_hunter_tracks', 'dock_seq9_hunter_transfer_marks', '追踪耐力', '调查经验'),
   dockSequence9SynthesisCheck('sleepless', 'mnd', 'investigate', 'dock_seq9_sleepless_watch', 'dock_seq9_sleepless_shift_recollection', '夜间专注', '调查经验'),
   dockSequence9SynthesisCheck('apprentice', 'spi', 'sneak', 'dock_seq9_apprentice_passage', 'dock_seq9_apprentice_transfer_geometry', '空间感知', '潜行经验'),
+  organizationQualificationCheck(ORGANIZATION_QUALIFICATION_TASKS[0], 32, [
+    { id: 'cryptic_note_warning', value: 6, publicLabel: '经过核验的残页警告' },
+    { id: 'manor_guest_registry', value: 6, publicLabel: '庄园名册旁证' },
+    { id: 'clocktower_divination_omen', value: 4, publicLabel: '已记录的钟楼预兆' },
+  ]),
+  organizationQualificationCheck(ORGANIZATION_QUALIFICATION_TASKS[1], 32, [
+    { id: 'clocktower_public_complaints', value: 4, publicLabel: '公开投诉记录' },
+    { id: 'dock_missing_reports', value: 4, publicLabel: '公开失踪登记' },
+    { id: 'manor_guest_registry', value: 4, publicLabel: '庄园名册旁证' },
+  ]),
+  organizationQualificationCheck(ORGANIZATION_QUALIFICATION_TASKS[2], 40, [
+    { id: 'dock_manifest_discrepancy', value: 8, publicLabel: '货运记录旁证' },
+    { id: 'dock_ledger_notation', value: 4, publicLabel: '仓单编号知识' },
+    { id: 'dock_crate_trace', value: 4, publicLabel: '码头现场记录' },
+    { id: 'dock_missing_reports', value: 4, publicLabel: '公开失踪登记' },
+  ]),
+  organizationQualificationCheck(ORGANIZATION_QUALIFICATION_TASKS[3], 28, [
+    { id: 'manor_address', value: 4, publicLabel: '旧宅路线来源' },
+    { id: 'manor_guest_registry', value: 8, publicLabel: '庄园名册旁证' },
+    { id: 'cryptic_note_warning', value: 6, publicLabel: '经过核验的残页警告' },
+  ]),
 ];
 
 export const DOCK_SEQUENCE9_ACTIONS: readonly DockSequence9ActionDef[] = [

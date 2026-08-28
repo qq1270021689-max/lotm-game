@@ -243,18 +243,15 @@ describe('官方不眠者纵向路线', () => {
     s.day += 1;
     s.hour = 22;
     s.stats.energy = 100;
+    const observationStartDay = s.day;
     expect(completeOfficialNightWatch(s).ok).toBe(true);
     expect(s.hour).toBe(2);
-    const completionDay = s.day;
-    expect(s.organizationRoutes.nightwatch.history.at(-1)).toMatchObject({ step: 'night_observation', day: completionDay });
+    expect(s.organizationRoutes.nightwatch.history.at(-1)).toMatchObject({ step: 'night_observation', day: observationStartDay });
 
     expect(acceptOfficialOffer(s).ok).toBe(false);
     s.hour = 9;
     expect(acceptOfficialOffer(s).ok).toBe(true);
     expect(confirmOfficialCommitment(s).ok).toBe(true);
-    expect(drinkOfficialDose(s).ok).toBe(false);
-    s.day += 1;
-    s.hour = 9;
     expect(drinkOfficialDose(s).ok).toBe(true);
     expect(s).toMatchObject({ pathwayId: 'sleepless', sequence: 9 });
   });

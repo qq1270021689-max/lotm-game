@@ -1091,6 +1091,7 @@ export default function App() {
                     const identified = ['identified', 'verified'].includes(lead.stage) || route.status !== 'unknown';
                     const pathLead = route.selectedPathway ? state.pathwayLeads[route.selectedPathway] : undefined;
                     const sources = route.selectedPathway ? Object.values(state.materialSources).filter(source => source.pathwayId === route.selectedPathway && source.unlocked) : [];
+                    const qualificationView = route.status === 'contacted' ? E.getOrganizationQualificationTaskView(state, orgId) : null;
                     return (
                       <div key={org.id} className="rounded border border-stone-700 p-3 text-xs space-y-2">
                         <div className="flex justify-between gap-2"><span className="text-stone-200">{identified ? org.name : '来源不明的隐秘线索'}</span><span className="text-stone-500">{route.status === 'unknown' ? '尚未建立组织接触' : route.status}</span></div>
@@ -1100,7 +1101,17 @@ export default function App() {
                         {lead.stage === 'decoded' && <p className="text-sky-200/70">下一步：在相关人物按作息在场且与你建立足够信任时，请其当面辨认。</p>}
                         {lead.stage === 'identified' && <button className="text-emerald-200/80" onClick={() => runAction(s => E.verifyOrganizationEvidence(s, orgId))}>完成外围真实性核验</button>}
                         {lead.stage === 'verified' && route.status === 'unknown' && <button className="text-emerald-200/80" onClick={() => runAction(s => E.contactOrganization(s, orgId))}>建立正式组织接触</button>}
-                        {route.status === 'contacted' && <button className="text-amber-200/80" onClick={() => runAction(s => E.completeOrganizationQualification(s, orgId))}>完成资格任务：{org.qualification}（3h）</button>}
+                        {qualificationView && <div data-organization-qualification className="rounded border border-amber-300/20 p-2 space-y-1">
+                          <p className="text-amber-100/85">资格任务：{qualificationView.label}</p>
+                          <p className="text-stone-500">{qualificationView.narrative}</p>
+                          <p className="text-stone-400">可运用：{qualificationView.inputLabels.join('、')}</p>
+                          {qualificationView.helpedBy.length > 0 && <p className="text-emerald-200/70">已有帮助：{qualificationView.helpedBy.join('、')}</p>}
+                          <button disabled={!!qualificationView.issue} className="block text-amber-200/80 disabled:opacity-40"
+                            onClick={() => runAction(s => E.completeOrganizationQualification(s, orgId))}>
+                            开始资格任务
+                            <small className="block text-stone-500 mt-0.5">{qualificationView.issue ?? `预计${qualificationView.hours}小时；不足时会留下可复核的准备记录`}</small>
+                          </button>
+                        </div>}
                         {route.status === 'qualified' && <><p className="text-stone-400">成员义务：{org.membership}</p><button className="text-purple-200/80" onClick={() => runAction(s => E.joinOrganization(s, orgId))}>第一次确认：接受义务并加入</button></>}
                         {route.status === 'member' && <>
                           <p className="text-stone-400">成员可见库存：{E.getOrganizationOffers(state, orgId).map(id => findPathway(id)?.name).join('、')}</p>
