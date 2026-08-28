@@ -8,7 +8,7 @@ const LOCATION_INTEL: Partial<Record<string, readonly string[]>> = {
 
 const LOCATION_CLUES: Partial<Record<string, readonly string[]>> = {
   docks: ['dock_missing_reports', 'dock_manifest_discrepancy', 'dock_marked_manifest', 'river_sea_missing_notices'],
-  canal: ['dock_manifest_discrepancy'],
+  canal: ['dock_manifest_discrepancy', 'dock_seq9_hunter_tracks', 'dock_seq9_apprentice_passage'],
   old_tower: ['clocktower_public_complaints', 'clocktower_repair_orders'],
   manor: ['manor_address'],
   factory: ['tingen_factory_repairs'],
@@ -42,7 +42,8 @@ function hasMatchingMaterialRoute(state: GameState, locationId: string): boolean
     source.locationId === locationId && isMaterialRouteValid(state, source.sourceId));
 }
 
-function hasFormalBlackthornRoute(state: GameState): boolean {
+/** 正式值夜者接触；与只负责告知地址的猎犬酒馆转介严格区分。 */
+export function hasFormalNightwatchRoute(state: GameState): boolean {
   const route = state.organizationRoutes?.nightwatch;
   return !!route && (['contacted', 'qualified', 'member', 'offer_pending', 'committed'].includes(route.status)
     || route.history.some(entry => !!entry && entry.step === 'report_to_evelyn' && entry.outcome === 'passed'));
@@ -61,7 +62,7 @@ export function isLocationUnlocked(state: GameState, locationId: string): boolea
   const location = LOCATIONS.find(candidate => candidate.id === locationId);
   if (!location) return false;
   if (locationId === 'blackthorn_security') {
-    return hasFormalBlackthornRoute(state) || hasVerifiedBlackthornReferral(state);
+    return hasFormalNightwatchRoute(state) || hasVerifiedBlackthornReferral(state);
   }
   if (locationId === 'black_market' && state.tradeFair?.invitation) return true;
   if (location.public) return true;

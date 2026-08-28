@@ -390,13 +390,30 @@ export interface CheckAttemptRecord {
 export interface DockSequence9ActionDef {
   id: string;
   pathwayId: string;
+  locationId: string;
   label: string;
   description: string;
   hours: number;
   energyCost: number;
   nightOnly?: boolean;
+  openFrom?: number;
+  openTo?: number;
+  requiredClueIds?: readonly string[];
+  requiredNpcId?: string;
   clueId: string;
   result: string;
+}
+
+export interface DockCaseDispositionDef {
+  id: 'public_report' | 'workers_warning' | 'official_handoff';
+  clueId: string;
+  locationId: string;
+  label: string;
+  description: string;
+  openFrom: number;
+  openTo: number;
+  requiredNpcId?: string;
+  requiresFormalLocationAccess?: boolean;
 }
 
 export interface CaseJournalFact {
@@ -413,13 +430,20 @@ export interface CaseJournalLocation {
 export interface CaseJournalEntry {
   id: 'clocktower' | 'dock_manifest';
   title: string;
-  stage: 'rumor' | 'investigating' | 'witnessed' | 'pathway_inquiry' | 'concluded';
+  stage: 'rumor' | 'investigating' | 'witnessed' | 'pathway_inquiry' | 'resolution_ready' | 'concluded';
   statusLabel: string;
   facts: CaseJournalFact[];
   unlockedLocations: CaseJournalLocation[];
   currentQuestion: string;
   directions: string[];
   milestone?: string;
+  chapterReport?: {
+    pathwayLabel: string;
+    evidenceCount: number;
+    evidenceSources: string[];
+    dispositionLabel: string;
+    unknowns: string;
+  };
 }
 
 export type DivinationMethod = 'cards' | 'dream';

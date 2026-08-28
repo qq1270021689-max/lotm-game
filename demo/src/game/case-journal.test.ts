@@ -69,7 +69,7 @@ describe('派生案件簿', () => {
     expect(JSON.stringify(entry)).not.toMatch(/clocktower_repair_orders|分数|加成|成功率/);
   });
 
-  it('码头路径记录和结案线索驱动阶段与里程碑', () => {
+  it('码头路径记录、待处置与处置完成严格分阶段', () => {
     const state = newGame('结案记录者', 'clerk', []);
     state.intel.push('dock_missing');
     acquireClue(state, 'dock_seq9_hunter_tracks', 'location', 'dock_seq9_hunter');
@@ -79,9 +79,34 @@ describe('派生案件簿', () => {
 
     acquireClue(state, 'dock_seq9_conclusion', 'location', 'dock_seq9_resolution_hunter');
     entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'dock_manifest')!;
+    expect(entry.stage).toBe('resolution_ready');
+    expect(entry.milestone).toBeUndefined();
+    expect(entry.statusLabel).toMatch(/等待/);
+
+    acquireClue(state, 'dock_disposition_public_report', 'location', 'docks');
+    entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'dock_manifest')!;
     expect(entry.stage).toBe('concluded');
     expect(entry.milestone).toBe('廷根第一章·案件样板完成');
-    expect(entry.directions).toHaveLength(2);
+    expect(entry.chapterReport).toMatchObject({ dispositionLabel: '递交公开港务报告', unknowns: expect.stringMatching(/仍未查明/) });
+    expect(entry.chapterReport?.evidenceCount).toBeGreaterThan(0);
+    expect(JSON.stringify(entry.chapterReport)).not.toMatch(/secret|difficulty|score|bonus|组织成员|幕后者是/i);
+  });
+
+  it('仅有猎犬转介不提示官方移交，正式值夜者接触后才显示方向', () => {
+    const state = newGame('转介边界测试者', 'clerk', []);
+    state.intel.push('dock_missing');
+    acquireClue(state, 'dock_seq9_conclusion', 'location', 'dock_seq9_synthesis_seer');
+    acquireClue(state, 'blackthorn_referral');
+    state.organizationRoutes.nightwatch.history.push({
+      day: state.day, step: 'hound_security_referral', outcome: 'passed', evidenceId: 'blackthorn_referral',
+    });
+    let entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'dock_manifest')!;
+    expect(entry.stage).toBe('resolution_ready');
+    expect(entry.directions.join('\n')).not.toMatch(/安保|官方移交|黑荆棘/);
+
+    state.organizationRoutes.nightwatch.status = 'contacted';
+    entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'dock_manifest')!;
+    expect(entry.directions.join('\n')).toMatch(/正式接触.*安保人员/);
   });
 
   it('App 使用稳定案件簿入口和纯 selector', () => {

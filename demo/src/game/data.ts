@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockSequence9ActionDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockCaseDispositionDef, DockSequence9ActionDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -158,6 +158,10 @@ export const CLUE_DEFS: readonly {
     sourceKind: 'public_records', sourceId: 'river_sea_shipping_board', sourceLabel: '河与海教堂公开河运告示栏',
   },
   {
+    id: 'dock_scale_transfer_omen', caseId: 'dock_manifest', title: '硬质薄片指向的转运与退路',
+    sourceKind: 'event', sourceId: 'divination:dock_scale_evidence', sourceLabel: '对沾水硬质薄片的占卜记录',
+  },
+  {
     id: 'dock_seq9_seer_omen', caseId: 'dock_manifest', title: '潮痕与失踪时刻的重复预兆',
     sourceKind: 'location', sourceId: 'dock_seq9_seer', sourceLabel: '东区码头的象征预兆记录',
   },
@@ -178,8 +182,40 @@ export const CLUE_DEFS: readonly {
     sourceKind: 'location', sourceId: 'dock_seq9_apprentice', sourceLabel: '东区码头的通路勘察记录',
   },
   {
-    id: 'dock_seq9_conclusion', caseId: 'dock_manifest', title: '码头失踪案可靠结论',
-    sourceKind: 'location', sourceId: 'dock_seq9_resolution', sourceLabel: '东区码头的综合调查结论',
+    id: 'dock_seq9_seer_manifest_omen', caseId: 'dock_manifest', title: '仓单日期与预兆的交叉记录',
+    sourceKind: 'location', sourceId: 'dock_seq9_seer_manifest', sourceLabel: '东区码头账房的仓单核验',
+  },
+  {
+    id: 'dock_seq9_spectator_ledger_evasion', caseId: 'dock_manifest', title: '账房答复中的一致回避',
+    sourceKind: 'location', sourceId: 'dock_seq9_spectator_ledger', sourceLabel: '东区码头账房的问询记录',
+  },
+  {
+    id: 'dock_seq9_hunter_transfer_marks', caseId: 'dock_manifest', title: '运河转运点的重复痕迹',
+    sourceKind: 'location', sourceId: 'dock_seq9_hunter_transfer', sourceLabel: '运河仓库外围的追踪记录',
+  },
+  {
+    id: 'dock_seq9_sleepless_shift_recollection', caseId: 'dock_manifest', title: '麦克复述的夜班交接片段',
+    sourceKind: 'npc', sourceId: 'mike', sourceLabel: '醉水手酒馆老板麦克的回忆',
+  },
+  {
+    id: 'dock_seq9_apprentice_transfer_geometry', caseId: 'dock_manifest', title: '运河仓区的转运几何关系',
+    sourceKind: 'location', sourceId: 'dock_seq9_apprentice_canal', sourceLabel: '运河仓库外围的通路测绘',
+  },
+  {
+    id: 'dock_seq9_conclusion', caseId: 'dock_manifest', title: '综合调查完成、等待处置',
+    sourceKind: 'location', sourceId: 'dock_seq9_synthesis', sourceLabel: '码头失踪案的交叉核验记录',
+  },
+  {
+    id: 'dock_disposition_public_report', caseId: 'dock_manifest', title: '向港务公开窗口递交报告',
+    sourceKind: 'location', sourceId: 'dock_public_report', sourceLabel: '东区码头港务公开窗口',
+  },
+  {
+    id: 'dock_disposition_workers_warning', caseId: 'dock_manifest', title: '通过麦克提醒夜班工人',
+    sourceKind: 'npc', sourceId: 'mike', sourceLabel: '醉水手酒馆的工人互助口信',
+  },
+  {
+    id: 'dock_disposition_official_handoff', caseId: 'dock_manifest', title: '向正式接触的安保人员移交记录',
+    sourceKind: 'location', sourceId: 'blackthorn_security', sourceLabel: '黑荆棘安保公司的正式接收回条',
   },
   {
     id: 'tingen_factory_repairs', caseId: 'tingen_industry', title: '城郊机械事故与修理公告',
@@ -208,6 +244,37 @@ const dockSequence9Check = (
     { kind: 'clue', id: 'dock_ledger_notation', value: 4, publicLabel: '仓单编号知识' },
     { kind: 'clue', id: 'dock_marked_manifest', value: 4, publicLabel: '异常仓单记录' },
     { kind: 'clue', id: 'river_sea_missing_notices', value: 3, publicLabel: '河运失踪告示' },
+  ],
+  receiptPolicy: {
+    blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+    passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'clue:dock_seq9_conclusion'] },
+  },
+});
+
+const dockSequence9SynthesisCheck = (
+  pathwayId: string,
+  stat: StatKey,
+  skill: SkillKey,
+  firstClueId: string,
+  secondClueId: string,
+  statLabel: string,
+  skillLabel: string,
+): CheckDef => ({
+  id: `dock_seq9_synthesis_${pathwayId}`, version: 1, domain: 'exploration',
+  target: { kind: 'case', id: `dock_manifest_synthesis_${pathwayId}` }, difficulty: 48,
+  requirements: [{ kind: 'clue', id: firstClueId }, { kind: 'clue', id: secondClueId }],
+  contributions: [
+    { kind: 'stat', id: stat, multiplier: 1, publicLabel: statLabel },
+    { kind: 'skill', id: skill, multiplier: 4, publicLabel: skillLabel },
+    { kind: 'clue', id: firstClueId, value: 10, publicLabel: '本途径现场记录' },
+    { kind: 'clue', id: secondClueId, value: 10, publicLabel: '本途径交叉记录' },
+    { kind: 'clue', id: 'dock_missing_reports', value: 4, publicLabel: '公开失踪登记' },
+    { kind: 'clue', id: 'dock_manifest_discrepancy', value: 6, publicLabel: '货运记录旁证' },
+    { kind: 'clue', id: 'dock_crate_trace', value: 4, publicLabel: '码头现场记录' },
+    { kind: 'clue', id: 'dock_ledger_notation', value: 4, publicLabel: '仓单编号知识' },
+    { kind: 'clue', id: 'dock_marked_manifest', value: 4, publicLabel: '异常仓单记录' },
+    { kind: 'clue', id: 'river_sea_missing_notices', value: 3, publicLabel: '河运失踪告示' },
+    { kind: 'clue', id: 'dock_scale_transfer_omen', value: 6, publicLabel: '薄片转运预兆' },
   ],
   receiptPolicy: {
     blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
@@ -255,33 +322,84 @@ export const EXPLORATION_CHECKS: readonly CheckDef[] = [
   dockSequence9Check('hunter', 'phy', 'investigate', 'dock_seq9_hunter_tracks', '追踪耐力', '调查经验'),
   dockSequence9Check('sleepless', 'mnd', 'investigate', 'dock_seq9_sleepless_watch', '夜间专注', '调查经验'),
   dockSequence9Check('apprentice', 'spi', 'sneak', 'dock_seq9_apprentice_passage', '空间感知', '潜行经验'),
+  dockSequence9SynthesisCheck('seer', 'spi', 'occult', 'dock_seq9_seer_omen', 'dock_seq9_seer_manifest_omen', '灵性直觉', '神秘学常识'),
+  dockSequence9SynthesisCheck('spectator', 'mnd', 'speech', 'dock_seq9_spectator_testimony', 'dock_seq9_spectator_ledger_evasion', '细节观察', '交谈经验'),
+  dockSequence9SynthesisCheck('hunter', 'phy', 'investigate', 'dock_seq9_hunter_tracks', 'dock_seq9_hunter_transfer_marks', '追踪耐力', '调查经验'),
+  dockSequence9SynthesisCheck('sleepless', 'mnd', 'investigate', 'dock_seq9_sleepless_watch', 'dock_seq9_sleepless_shift_recollection', '夜间专注', '调查经验'),
+  dockSequence9SynthesisCheck('apprentice', 'spi', 'sneak', 'dock_seq9_apprentice_passage', 'dock_seq9_apprentice_transfer_geometry', '空间感知', '潜行经验'),
 ];
 
 export const DOCK_SEQUENCE9_ACTIONS: readonly DockSequence9ActionDef[] = [
   {
-    id: 'dock_seq9_seer', pathwayId: 'seer', label: '以预兆定位潮痕',
+    id: 'dock_seq9_seer', pathwayId: 'seer', locationId: 'docks', label: '以预兆定位潮痕',
     description: '只对已知失踪时间与码头现场作象征整理，不扫描未知目标。', hours: 2, energyCost: 10,
     clueId: 'dock_seq9_seer_omen', result: '你把失踪时刻、潮位和反复出现的象征并列记录。预兆没有说出答案，却稳定指向同一段货栈交接时刻。',
   },
   {
-    id: 'dock_seq9_spectator', pathwayId: 'spectator', label: '静观证词矛盾',
+    id: 'dock_seq9_seer_manifest', pathwayId: 'seer', locationId: 'docks', label: '核对仓单日期的预兆',
+    description: '在账房开放时段把已知象征与仓单日期逐项交叉，不追问未知幕后。', hours: 2, energyCost: 10,
+    openFrom: 9, openTo: 17, requiredClueIds: ['dock_seq9_seer_omen'],
+    clueId: 'dock_seq9_seer_manifest_omen', result: '几处日期与潮位象征稳定重合，说明固定交接空档曾被反复利用；预兆仍没有给出幕后者的名字。',
+  },
+  {
+    id: 'dock_seq9_spectator', pathwayId: 'spectator', locationId: 'docks', label: '静观证词矛盾',
     description: '观察公开受访者的停顿与回避，只整理可交叉核验的证词。', hours: 2, energyCost: 10,
     clueId: 'dock_seq9_spectator_testimony', result: '你没有猜测任何人的秘密，只标出几名搬运工在同一处货栈和同一段时间上出现的共同回避。',
   },
   {
-    id: 'dock_seq9_hunter', pathwayId: 'hunter', label: '追踪退潮痕迹',
+    id: 'dock_seq9_spectator_ledger', pathwayId: 'spectator', locationId: 'docks', label: '观察账房答复',
+    description: '在账房开放时段复述已知问题，记录不同人员对同一交接空档的共同回避。', hours: 2, energyCost: 10,
+    openFrom: 9, openTo: 17, requiredClueIds: ['dock_seq9_spectator_testimony'],
+    clueId: 'dock_seq9_spectator_ledger_evasion', result: '账房人员各自使用不同说法，却都避开同一段交接时间。你只记录可复核的回避，没有把猜测写成供词。',
+  },
+  {
+    id: 'dock_seq9_hunter', pathwayId: 'hunter', locationId: 'docks', label: '追踪退潮痕迹',
     description: '沿公开仓区追踪拖痕与脚印，不制造猎物或额外掉落。', hours: 2, energyCost: 10,
     clueId: 'dock_seq9_hunter_tracks', result: '你沿退潮泥地重走数遍，确认几组拖行痕迹会绕开值守视线，又在同一片仓区附近汇合。',
   },
   {
-    id: 'dock_seq9_sleepless', pathwayId: 'sleepless', label: '守望夜班交接',
+    id: 'dock_seq9_hunter_transfer', pathwayId: 'hunter', locationId: 'canal', label: '追索转运痕迹',
+    description: '沿已经查明的回路前往运河仓区，只比对重复出现的拖痕与落脚点。', hours: 2, energyCost: 10,
+    requiredClueIds: ['dock_seq9_hunter_tracks'],
+    clueId: 'dock_seq9_hunter_transfer_marks', result: '码头的拖行回路在运河仓区找到对应落点；痕迹证明有人沿固定路线转运，却没有留下足以指认幕后者的身份特征。',
+  },
+  {
+    id: 'dock_seq9_sleepless', pathwayId: 'sleepless', locationId: 'docks', label: '守望夜班交接',
     description: '在夜间保持清醒，记录交接空档中的声音和灯火变化。', hours: 2, energyCost: 10, nightOnly: true,
     clueId: 'dock_seq9_sleepless_watch', result: '你熬过最安静的交接空档，记下远处灯火熄灭、拖拽声出现与巡夜脚步错开的固定次序。',
   },
   {
-    id: 'dock_seq9_apprentice', pathwayId: 'apprentice', label: '勘察货栈通路',
+    id: 'dock_seq9_sleepless_tavern', pathwayId: 'sleepless', locationId: 'tavern', label: '请麦克复述夜班片段',
+    description: '在晚间酒馆里，请已经结识的麦克回忆夜班交接中重复出现的空档。', hours: 2, energyCost: 8,
+    openFrom: 18, openTo: 26, requiredClueIds: ['dock_seq9_sleepless_watch'], requiredNpcId: 'mike',
+    clueId: 'dock_seq9_sleepless_shift_recollection', result: '麦克把几段看似零散的回忆按班次重新排好：同一条口信总会让工人在固定时刻离开岗哨，但他也不知道是谁在安排。',
+  },
+  {
+    id: 'dock_seq9_apprentice', pathwayId: 'apprentice', locationId: 'docks', label: '勘察货栈通路',
     description: '测量公开通路、门窗和视线死角，不穿越封锁或解锁未知地点。', hours: 2, energyCost: 10,
     clueId: 'dock_seq9_apprentice_passage', result: '你逐段核对货栈之间的通路，发现一条看似绕远的搬运路线实际上总能避开两个公开岗哨。',
+  },
+  {
+    id: 'dock_seq9_apprentice_canal', pathwayId: 'apprentice', locationId: 'canal', label: '测绘转运几何',
+    description: '沿已经查明的通路关系测量运河仓区外围，不穿越封锁或未知门扉。', hours: 2, energyCost: 10,
+    requiredClueIds: ['dock_seq9_apprentice_passage'],
+    clueId: 'dock_seq9_apprentice_transfer_geometry', result: '两处仓区的门、坡道与视线死角构成一条稳定转运几何；路线可以被复核，却无法说明幕后者属于哪个组织。',
+  },
+];
+
+export const DOCK_CASE_DISPOSITIONS: readonly DockCaseDispositionDef[] = [
+  {
+    id: 'public_report', clueId: 'dock_disposition_public_report', locationId: 'docks', label: '递交公开港务报告',
+    description: '只提交可公开核验的人员、班次与转运路线，保留原始证物。', openFrom: 9, openTo: 17,
+  },
+  {
+    id: 'workers_warning', clueId: 'dock_disposition_workers_warning', locationId: 'tavern', label: '提醒夜班工人避开空档',
+    description: '通过已经结识的麦克传递具体避险提醒，不渲染未知威胁。', openFrom: 16, openTo: 26, requiredNpcId: 'mike',
+  },
+  {
+    id: 'official_handoff', clueId: 'dock_disposition_official_handoff', locationId: 'blackthorn_security', label: '正式移交调查记录',
+    description: '向已经建立正式接触的安保人员移交副本，原始证物仍由你保管。', openFrom: 9, openTo: 17,
+    requiresFormalLocationAccess: true,
   },
 ];
 
@@ -644,7 +762,7 @@ export const ITEMS: ItemDef[] = [
       sanityCost: 2, revealsOccult: true,
     },
     divination: {
-      title: '沾水的硬质薄片', difficulty: 35, pressure: 'low',
+      title: '沾水的硬质薄片', difficulty: 35, pressure: 'low', clueId: 'dock_scale_transfer_omen',
       successText: {
         cards: '牌面停在“货箱”“断裂的绳结”与“退路”之间：线索指向旧仓区的转运过程，而不是薄片本身的名称。先查货运备份，再决定是否靠近。',
         dream: '梦里，薄片沿积水逆流滑回一排看不清编号的旧仓门。你醒来时记住的是方向与撤离路线，仍无法看清留下它的东西。',
@@ -786,7 +904,7 @@ export const LOCATIONS: LocationDef[] = [
   { id: 'municipal_library', name: '市政图书馆', region: '城区', desc: '面向公众开放的市政图书馆，可查询城市目录、旧报索引和常用办事手册。', hours: 2, danger: 7, actions: ['explore'] },
   { id: 'hound_tavern', name: '猎犬酒馆', region: '城区', desc: '一间客人来去频繁的普通酒馆，常有人在这里谈论工作、球赛与城区新闻。', hours: 2, danger: 11, actions: ['explore'] },
   { id: 'dragon_bar', name: '恶龙酒吧', region: '城区', desc: '灯光昏暗、设有拳台的热闹酒吧，公开区域以酒水和比赛招徕客人。', hours: 2, danger: 14, actions: ['explore'] },
-  { id: 'docks', name: '东区码头', region: '城区', desc: '货箱、缆绳与雾气。失踪案的传闻都从这里开始。', hours: 2, danger: 20, actions: ['explore', 'salvage'] },
+  { id: 'docks', name: '东区码头', region: '城区', desc: '货箱、缆绳与雾气挤在河岸边，搬运工和账房人员按班次维持着繁忙秩序。', hours: 2, danger: 20, actions: ['explore', 'salvage'] },
   { id: 'canal', name: '运河仓库', region: '城区', desc: '成排的货仓，锁着的门比开着的多。走私者的中转站。', hours: 2, danger: 25, actions: ['explore', 'salvage'] },
   { id: 'black_market', name: '黑市后巷', region: '城区', desc: '只在深夜张开的灰色集市。规矩：不问来路，不问去处。', hours: 2, danger: 30, nightOnly: true, actions: ['explore', 'shop'] },
   // —— 城郊：出城半日，雾野与废墟 ——

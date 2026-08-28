@@ -499,6 +499,13 @@ export default function App() {
               </div>
               {entry.unlockedLocations.length > 0 && <p className="text-stone-500">已查明去向：{entry.unlockedLocations.map(location => location.name).join('、')}</p>}
               <p className="text-stone-400">当前问题：{entry.currentQuestion}</p>
+              {entry.chapterReport && <div data-dock-chapter-report className="rounded border border-emerald-300/20 p-2 text-stone-500 space-y-1">
+                <p className="text-emerald-100/85">章节报告</p>
+                <p>当前途径：{entry.chapterReport.pathwayLabel}</p>
+                <p>证据：{entry.chapterReport.evidenceCount}项 · {entry.chapterReport.evidenceSources.join('、') || '无可核验来源'}</p>
+                <p>处置：{entry.chapterReport.dispositionLabel}</p>
+                <p>尚未知晓：{entry.chapterReport.unknowns}</p>
+              </div>}
               <div>
                 <p className="text-stone-300 mb-1">可行动方向</p>
                 {entry.directions.map((direction, index) => <p key={`${entry.id}:${index}`} className="text-stone-500">{index + 1}. {direction}</p>)}
@@ -597,7 +604,7 @@ export default function App() {
                     })}
                 </div>;
               })()}
-              {loc.id === 'docks' && !beyonder && state.leads.iron_blood_token.stage === 'unknown' && <div className="rounded border border-sky-300/25 p-3 text-xs space-y-2">
+              {loc.id === 'docks' && dockCaseKnown && !beyonder && state.leads.iron_blood_token.stage === 'unknown' && <div className="rounded border border-sky-300/25 p-3 text-xs space-y-2">
                 <div>
                   <p className="text-sky-100/90">码头失踪案</p>
                   <p className="text-stone-500 mt-1">现场见闻只能提供方向。公开登记、货运备份与旧仓单必须逐层核对，办公窗口仅在白天开放。</p>
@@ -621,15 +628,15 @@ export default function App() {
                   {step.label}<small className="block text-stone-500 mt-0.5">{step.issue ?? '在当前地点继续核对'}</small>
                 </button>)}
               </div>}
-              {loc.id === 'docks' && dockCaseKnown && state.sequence === 9 && E.getDockSequence9Actions(state).length > 0 && <div data-dock-sequence9-case className="rounded border border-violet-300/25 p-3 text-xs space-y-2">
+              {dockCaseKnown && state.sequence === 9 && !E.hasClue(state, 'dock_seq9_conclusion')
+                && (loc.id === 'docks' || E.getDockSequence9Actions(state).some(action => action.locationId === loc.id))
+                && <div data-dock-sequence9-case className="rounded border border-violet-300/25 p-3 text-xs space-y-2">
                 <div>
                   <p className="text-violet-100/90">码头失踪案 · 序列9调查</p>
                   <p className="text-stone-500 mt-1">你的途径能提供一种不同的现场观察方法，但仍需与公开记录交叉核验。</p>
                 </div>
-                {E.hasClue(state, 'dock_seq9_conclusion')
-                  ? <p className="text-emerald-200/80">✦ 廷根第一章·案件样板完成。案件结论已收入案件簿。</p>
-                  : <>
-                    {E.getDockSequence9Actions(state).map(action => {
+                <>
+                    {E.getDockSequence9Actions(state).filter(action => action.locationId === loc.id).map(action => {
                       const issue = E.dockSequence9PathActionIssue(state, action.id);
                       return <button key={action.id} disabled={!!issue} title={issue ?? ''}
                         className="block w-full rounded border border-violet-300/25 p-2 text-left text-violet-100/85 disabled:opacity-45"
@@ -637,7 +644,7 @@ export default function App() {
                         {action.label}<small className="block text-stone-500 mt-0.5">{issue ?? action.description}</small>
                       </button>;
                     })}
-                    {(() => {
+                    {loc.id === 'docks' && (() => {
                       const issue = E.resolveDockSequence9CaseIssue(state);
                       return <button disabled={!!issue} title={issue ?? ''}
                         className="block w-full rounded border border-emerald-300/25 p-2 text-left text-emerald-100/85 disabled:opacity-45"
@@ -645,7 +652,21 @@ export default function App() {
                         综合追查并形成结论<small className="block text-stone-500 mt-0.5">{issue ?? '整合本途径记录与已知事实'}</small>
                       </button>;
                     })()}
-                  </>}
+                  </>
+              </div>}
+              {E.getDockCaseDispositions(state).length > 0 && <div data-dock-case-dispositions className="rounded border border-emerald-300/25 p-3 text-xs space-y-2">
+                <div>
+                  <p className="text-emerald-100/90">码头失踪案 · 处置记录</p>
+                  <p className="text-stone-500 mt-1">综合调查已经完成。选择此处真实可用的渠道后，其他处置将关闭。</p>
+                </div>
+                {E.getDockCaseDispositions(state).map(disposition => {
+                  const issue = E.dockCaseDispositionIssue(state, disposition.id);
+                  return <button key={disposition.id} disabled={!!issue} title={issue ?? ''}
+                    className="block w-full rounded border border-emerald-300/25 p-2 text-left text-emerald-100/85 disabled:opacity-45"
+                    onClick={() => runAction(s => E.performDockCaseDisposition(s, disposition.id))}>
+                    {disposition.label}<small className="block text-stone-500 mt-0.5">{issue ?? disposition.description}</small>
+                  </button>;
+                })}
               </div>}
               {E.getTingenLandmarkActions(state).length > 0 && <div className="rounded border border-emerald-300/20 p-3 text-xs space-y-2">
                 <p className="text-emerald-100/90">此地的公开活动</p>

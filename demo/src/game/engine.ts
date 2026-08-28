@@ -1,15 +1,15 @@
 import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, DockSequence9ActionDef, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { evaluateCheck, sanitizeCheckAttemptRecord, toPublicCheckResult } from './checks';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
-import { hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
+import { hasFormalNightwatchRoute, hasVerifiedBlackthornReferral, isLocationUnlocked, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
 export const CURRENT_SCHEMA_VERSION = 21;
 export type { ActionResult } from './types';
-export { getVisibleLocations, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
+export { getVisibleLocations, hasFormalNightwatchRoute, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
 function blankPathwayLead(): PathwayLead {
   return { history: [], routeStep: 'none', commitment: false };
@@ -3081,15 +3081,23 @@ function legalDockSequence9Pathway(s: GameState): string | null {
     ? s.pathwayId : null;
 }
 
+function isWithinWindow(hour: number, openFrom: number, openTo: number): boolean {
+  const normalized = openTo > 24 && hour < openFrom ? hour + 24 : hour;
+  return normalized >= openFrom && normalized < openTo;
+}
+
 export function getDockSequence9Actions(s: GameState): DockSequence9ActionDef[] {
   const pathwayId = legalDockSequence9Pathway(s);
-  return pathwayId ? DOCK_SEQUENCE9_ACTIONS.filter(action => action.pathwayId === pathwayId) : [];
+  if (!pathwayId || !s.intel.includes('dock_missing') || hasClue(s, 'dock_seq9_conclusion')) return [];
+  return DOCK_SEQUENCE9_ACTIONS.filter(action => action.pathwayId === pathwayId
+    && isLocationUnlocked(s, action.locationId)
+    && (action.requiredClueIds ?? []).every(clueId => hasClue(s, clueId))
+    && (!action.requiredNpcId || isMet(s, action.requiredNpcId)));
 }
 
 function dockSequence9BaseIssue(s: GameState): string | null {
   if (!legalDockSequence9Pathway(s)) return '只有五条已知途径的合法序列9能够开展这项调查。';
   if (!s.intel.includes('dock_missing')) return '你还不知道码头失踪案的可靠传闻，无法确定调查目标。';
-  if (s.currentLocation?.locationId !== 'docks') return '需要亲自抵达东区码头，才能开展本途径调查。';
   return null;
 }
 
@@ -3098,9 +3106,17 @@ export function dockSequence9PathActionIssue(s: GameState, actionId: string): st
   if (base) return base;
   const action = DOCK_SEQUENCE9_ACTIONS.find(candidate => candidate.id === actionId);
   if (!action || action.pathwayId !== s.pathwayId) return '这不是你当前途径能够使用的调查方式。';
+  if (!isLocationUnlocked(s, action.locationId)) return '这项调查所需的去向尚未查明。';
+  if (s.currentLocation?.locationId !== action.locationId) return '需要亲自抵达与这条记录对应的地点。';
   if (hasClue(s, action.clueId)) return '本途径的码头现场记录已经完成。';
-  if (hasClue(s, 'dock_seq9_conclusion')) return '这起案件已经形成可靠结论，无需重复调查。';
+  if (hasClue(s, 'dock_seq9_conclusion')) return '综合调查已经完成，请先决定如何处置记录。';
+  if (!(action.requiredClueIds ?? []).every(clueId => hasClue(s, clueId))) return '请先完成本途径的前一项调查记录。';
+  if (action.requiredNpcId && !isMet(s, action.requiredNpcId)) return '需要先与当地知情人正式结识。';
   if (action.nightOnly && !isNight(s.hour)) return '这项守望只能在夜间进行。';
+  if (action.openFrom !== undefined && action.openTo !== undefined && !isWithinWindow(s.hour, action.openFrom, action.openTo)) {
+    const end = action.openTo > 24 ? action.openTo - 24 : action.openTo;
+    return `这项调查只能在${action.openFrom}:00–${end}:00进行。`;
+  }
   if (s.stats.energy < energyCost(s, action.energyCost)) return '你当前太过疲惫，无法保持足够谨慎。';
   return null;
 }
@@ -3119,30 +3135,31 @@ export function performDockSequence9PathAction(s: GameState, actionId: string): 
 
 function dockSequence9ResolutionCheckId(s: GameState): string | null {
   const pathwayId = legalDockSequence9Pathway(s);
-  return pathwayId ? `dock_seq9_resolution_${pathwayId}` : null;
+  return pathwayId ? `dock_seq9_synthesis_${pathwayId}` : null;
 }
 
 export function resolveDockSequence9CaseIssue(s: GameState): string | null {
   const base = dockSequence9BaseIssue(s);
   if (base) return base;
-  if (hasClue(s, 'dock_seq9_conclusion')) return '这起案件已经形成可靠结论。';
-  const action = getDockSequence9Actions(s)[0];
-  if (!action || !hasClue(s, action.clueId)) return '请先完成当前途径对应的码头现场调查。';
+  if (s.currentLocation?.locationId !== 'docks') return '需要回到东区码头，才能完成最后的交叉核验。';
+  if (hasClue(s, 'dock_seq9_conclusion')) return '综合调查已经完成，正在等待你的处置。';
+  const actions = DOCK_SEQUENCE9_ACTIONS.filter(action => action.pathwayId === s.pathwayId);
+  if (actions.length !== 2 || actions.some(action => !hasClue(s, action.clueId))) return '请先完成当前途径的两项调查记录。';
   if (s.stats.energy < energyCost(s, 12)) return '你当前太过疲惫，无法完成最后的交叉核验。';
   const checkId = dockSequence9ResolutionCheckId(s);
   if (!checkId) return '当前途径无法建立可靠的结案检定。';
   const internal = evaluateExplorationCheckInternal(s, checkId);
   if (!internal.eligible) return internal.reason === 'missing_requirement'
-    ? '请先完成当前途径对应的码头现场调查。' : '这项综合调查暂时无法继续。';
+    ? '请先完成当前途径的两项调查记录。' : '这项综合调查暂时无法继续。';
   return repeatedBlockedExplorationIssue(s, internal);
 }
 
 const DOCK_SEQUENCE9_CONCLUSIONS: Record<string, string> = {
-  seer: '反复出现的象征终于与公开时间线重合：它不能说明幕后是什么，却指出失踪并非彼此无关的偶发事件。',
-  spectator: '证词中的共同回避与货运记录互相印证：有人长期利用交接空档掩盖人员去向，但现阶段仍不能指认具体身份。',
-  hunter: '拖行回路与失踪人员最后出现的位置闭合成一条稳定路线：这些人曾被有计划地带离公开岗哨范围。',
-  sleepless: '连续守望记录证明异常动静总出现在同一段交接空档：失踪与夜班秩序中的固定缺口有关。',
-  apprentice: '通路测绘与货物流向彼此吻合：表面绕远的路线实际上被反复用于避开公开视线。',
+  seer: '象征与仓单日期互相印证：有人反复利用固定交接空档和同一条转运路线，但现有事实仍不能指认幕后身份。',
+  spectator: '证词与账房回避互相印证：有人反复利用固定交接空档和同一条转运路线，但现有事实仍不能指认幕后身份。',
+  hunter: '两处痕迹闭合成稳定回路：有人反复利用固定交接空档和同一条转运路线，但现有事实仍不能指认幕后身份。',
+  sleepless: '夜班记录与麦克的回忆互相印证：有人反复利用固定交接空档和同一条转运路线，但现有事实仍不能指认幕后身份。',
+  apprentice: '两处通路测绘互相吻合：有人反复利用固定交接空档和同一条转运路线，但现有事实仍不能指认幕后身份。',
 };
 
 export function resolveDockSequence9Case(s: GameState): ActionResult {
@@ -3165,9 +3182,9 @@ export function resolveDockSequence9Case(s: GameState): ActionResult {
     return { ok: true, outcome: 'blocked' };
   }
   const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 12) }]);
-  const acquired = acquireClue(s, 'dock_seq9_conclusion', 'location', `dock_seq9_resolution_${s.pathwayId}`);
+  const acquired = acquireClue(s, 'dock_seq9_conclusion', 'location', `dock_seq9_synthesis_${s.pathwayId}`);
   addLog(s, DOCK_SEQUENCE9_CONCLUSIONS[s.pathwayId!] ?? '你完成了最后的交叉核验，留下了一份可复核的调查结论。', 'event');
-  addLog(s, '✦ 码头失踪案已形成可靠结论。廷根第一章·案件样板完成；你仍可继续当前人生与其他路线。', 'system');
+  addLog(s, '✦ 综合调查已经完成。记录只证明固定交接空档与转运路线曾被利用；请选择一个你实际能够抵达的渠道处置。', 'system');
   const receipt: CheckReceipt = { hoursElapsed: 2, effects: [
     receiptEntry('energy', applied[0]), hoursReceipt(2),
     { id: 'clue:dock_seq9_conclusion', applied: acquired, before: false, after: acquired },
@@ -3176,6 +3193,59 @@ export function resolveDockSequence9Case(s: GameState): ActionResult {
   recordCheckAttempt(s, internal, request.context, receipt, startedAt);
   advanceHours(s, 2);
   return { ok: true, outcome: 'passed' };
+}
+
+const DOCK_DISPOSITION_CLUE_IDS = DOCK_CASE_DISPOSITIONS.map(disposition => disposition.clueId);
+
+export function dockCaseDispositionClue(s: GameState): string | null {
+  return DOCK_DISPOSITION_CLUE_IDS.find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+/** 只返回玩家当前地点真实可见的处置，避免以禁用按钮泄露隐藏渠道。 */
+export function getDockCaseDispositions(s: GameState) {
+  if (!hasClue(s, 'dock_seq9_conclusion') || dockCaseDispositionClue(s)) return [];
+  return DOCK_CASE_DISPOSITIONS.filter(disposition => s.currentLocation?.locationId === disposition.locationId
+    && isLocationUnlocked(s, disposition.locationId)
+    && (!disposition.requiredNpcId || isMet(s, disposition.requiredNpcId))
+    && (!disposition.requiresFormalLocationAccess || hasFormalNightwatchRoute(s)));
+}
+
+export function dockCaseDispositionIssue(s: GameState, dispositionId: string): string | null {
+  if (!hasClue(s, 'dock_seq9_conclusion')) return '需要先完成码头失踪案的综合调查。';
+  if (dockCaseDispositionClue(s)) return '这份调查记录已经完成处置，不能再选择另一个互斥渠道。';
+  const disposition = DOCK_CASE_DISPOSITIONS.find(candidate => candidate.id === dispositionId);
+  if (!disposition) return '当前没有可执行的案件处置。';
+  if (!isLocationUnlocked(s, disposition.locationId) || s.currentLocation?.locationId !== disposition.locationId) {
+    return '当前没有可执行的案件处置。';
+  }
+  if (disposition.requiredNpcId && !isMet(s, disposition.requiredNpcId)) return '需要先与当地知情人正式结识。';
+  if (disposition.requiresFormalLocationAccess && !hasFormalNightwatchRoute(s)) return '当前没有可执行的案件处置。';
+  if (!isWithinWindow(s.hour, disposition.openFrom, disposition.openTo)) {
+    const end = disposition.openTo > 24 ? disposition.openTo - 24 : disposition.openTo;
+    return `这个渠道只在${disposition.openFrom}:00–${end}:00受理。`;
+  }
+  if (s.stats.energy < energyCost(s, 4)) return '你当前太过疲惫，无法妥善整理并说明记录。';
+  return null;
+}
+
+export function performDockCaseDisposition(s: GameState, dispositionId: string): ActionResult {
+  const issue = dockCaseDispositionIssue(s, dispositionId);
+  if (issue) return { ok: false, msg: issue };
+  const disposition = DOCK_CASE_DISPOSITIONS.find(candidate => candidate.id === dispositionId)!;
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 4) }]);
+  const acquired = acquireClue(s, disposition.clueId, disposition.id === 'workers_warning' ? 'npc' : 'location',
+    disposition.id === 'workers_warning' ? 'mike' : disposition.locationId);
+  if (!acquired) return { ok: false, msg: '这份调查记录已经完成处置。' };
+  if (disposition.id === 'workers_warning') applyEffects(s, [{ k: 'favor', id: 'mike', v: 3 }]);
+  const result = disposition.id === 'public_report'
+    ? '你向港务公开窗口递交了人员、班次与转运路线的可核验副本，原始证物仍留在自己手中。'
+    : disposition.id === 'workers_warning'
+      ? '麦克答应把具体的交接空档和避险路线转告夜班工人。他没有夸大威胁，也没有追问你无法回答的幕后身份。'
+      : '正式接触的安保人员接收了调查副本并出具回条；你没有交出或失去任何原始证物。';
+  addLog(s, result, 'event');
+  addLog(s, '✦ 码头失踪案已完成阶段处置。廷根第一章·案件样板完成；幕后身份仍然未知。', 'system');
+  advanceHours(s, 1);
+  return { ok: true };
 }
 
 /** 主动调查一个固定异常，不依赖随机事件池；玩家也可以永远不触碰它。 */
