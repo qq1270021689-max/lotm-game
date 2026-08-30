@@ -1,4 +1,4 @@
-import { CLUE_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, LOCATIONS, PATHWAYS } from './data';
+import { CLUE_DEFS, DEEP_INVESTIGATION_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, LOCATIONS, PATHWAYS } from './data';
 import { hasFormalNightwatchRoute, isLocationUnlocked } from './location-access';
 import type { CaseJournalEntry, GameState } from './types';
 
@@ -59,6 +59,15 @@ function dockCase(state: GameState): CaseJournalEntry | null {
   const stage = concluded ? 'concluded' : resolutionReady ? 'resolution_ready' : pathwayFact ? 'pathway_inquiry' : secularFact ? 'investigating' : 'rumor';
   const directions: string[] = [];
   const atDocks = state.currentLocation?.locationId === 'docks';
+  const confirmedDirections = DEEP_INVESTIGATION_DEFS
+    .filter(def => def.caseId === 'dock_manifest' && !!state.deepInvestigations?.[def.id])
+    .sort((left, right) => {
+      const a = state.deepInvestigations[left.id];
+      const b = state.deepInvestigations[right.id];
+      return (a.confirmedDay * 24 + a.confirmedHour) - (b.confirmedDay * 24 + b.confirmedHour);
+    })
+    .map(def => def.nextStepText);
+  if (!concluded && !resolutionReady) directions.push(...confirmedDirections.slice(-1));
   if (concluded) {
     directions.push('复核案件簿中的事实来源，保留原始证物与记录。', '继续其他生活、组织或个人路线，不必结束当前人生。');
   } else if (resolutionReady) {

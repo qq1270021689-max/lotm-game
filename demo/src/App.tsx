@@ -271,8 +271,12 @@ export default function App() {
     });
   };
 
-  const runAction = (fn: (s: GameState) => E.ActionResult) => {
+  const runAction = (fn: (s: GameState) => E.ActionResult, allowDuringEncounter = false) => {
     update(s => {
+      if (s.pendingEncounter && !allowDuringEncounter) {
+        E.addLog(s, '无法行动：眼前的跟踪者尚未摆脱，必须先处理这次遭遇。', 'bad');
+        return;
+      }
       const result = fn(s);
       if (!result.ok && result.msg) E.addLog(s, `无法行动：${result.msg}`, 'bad');
     });
@@ -365,6 +369,7 @@ export default function App() {
   }
 
   const ev = E.currentEvent(state);
+  const encounter = E.getPendingEncounterView(state);
   const beyonder = E.isBeyonder(state);
   const promote = E.canPromote(state);
   const job = E.currentJob(state);
@@ -471,7 +476,7 @@ export default function App() {
 
           {inventoryOpen && <InventoryPanel
             state={state}
-            interactive={E.isAtHome(state) && !ev}
+            interactive={E.isAtHome(state) && !ev && !encounter}
             onAction={runAction}
             onClose={() => setInventoryOpen(false)}
           />}
@@ -494,9 +499,26 @@ export default function App() {
               <div>
                 <p className="text-stone-300 mb-1">已知事实</p>
                 {entry.facts.length
-                  ? entry.facts.map(fact => <p key={fact.clueId} className="text-stone-500">· {fact.title} <span className="text-stone-600">— {fact.sourceLabel}</span></p>)
+                  ? entry.facts.map(fact => {
+                    const investigation = E.getDeepInvestigationView(state, fact.clueId);
+                    return <div key={fact.clueId} className="mb-1.5">
+                      <p className="text-stone-500">· {fact.title} <span className="text-stone-600">— {fact.sourceLabel}</span></p>
+                      {investigation && <div className="ml-3 mt-1 rounded border border-sky-300/15 p-2 space-y-1">
+                        <p className="text-stone-500">{investigation.description}</p>
+                        {investigation.completed
+                          ? <p className="text-emerald-200/75">已确认下一步：{investigation.nextStepText}</p>
+                          : <button disabled={!!investigation.issue} title={investigation.issue ?? ''}
+                            className="text-sky-200/80 disabled:text-stone-600 disabled:cursor-not-allowed"
+                            onClick={() => runAction(s => E.performDeepInvestigation(s, investigation.id))}>
+                            {investigation.label} · {investigation.hours}h
+                            {investigation.issue && <small className="block text-stone-600 mt-0.5">{investigation.issue}</small>}
+                          </button>}
+                      </div>}
+                    </div>;
+                  })
                   : <p className="text-stone-600">尚无可以独立核验的书面或现场记录。</p>}
               </div>
+              {entry.id === 'dock_manifest' && E.dockThreatSignal(state) && <p className="text-amber-200/70">异样征兆：{E.dockThreatSignal(state)}</p>}
               {entry.unlockedLocations.length > 0 && <p className="text-stone-500">已查明去向：{entry.unlockedLocations.map(location => location.name).join('、')}</p>}
               <p className="text-stone-400">当前问题：{entry.currentQuestion}</p>
               {entry.chapterReport && <div data-dock-chapter-report className="rounded border border-emerald-300/20 p-2 text-stone-500 space-y-1">
@@ -513,7 +535,21 @@ export default function App() {
             </article>)}
           </section>}
 
-          {ev ? (
+          {encounter ? (
+            <div data-case-encounter className="panel border-red-300/45 space-y-3">
+              <div>
+                <p className="text-[11px] text-red-200/60">突发遭遇</p>
+                <h3 className="text-red-100/90 text-lg">{encounter.title}</h3>
+              </div>
+              <p className="text-stone-300 leading-7">{encounter.text}</p>
+              <p className="text-xs text-stone-500">你记下的退路、随身工具以及平日练出的本领，现在都可能成为脱身的依仗。</p>
+              <button className="block w-full rounded border border-red-300/35 p-3 text-left text-red-100/90 hover:bg-red-300/5"
+                onClick={() => runAction(encounter.phase === 'combat' ? E.resolveEncounterCombat : E.attemptEncounterEscape, true)}>
+                {encounter.actionLabel}
+                <small className="block text-stone-500 mt-1">{encounter.phase === 'combat' ? '防御性冲突 · 失败也不会直接死亡或丢失唯一线索' : '逃脱检定 · 失败后进入防御战'}</small>
+              </button>
+            </div>
+          ) : ev ? (
             <div className="panel border-amber-200/40">
               <h3 className="text-amber-100/90 mb-2">▶ {ev.title}</h3>
               <div className="space-y-2">
@@ -1254,7 +1290,12 @@ export default function App() {
 
         {/* 右栏：委托板 + NPC 与交易 */}
         <aside className="space-y-3">
-          {state.atWork ? (
+          {encounter ? (
+            <section className="panel border-red-300/35 text-center py-6">
+              <h3 className="text-sm text-red-100/90">眼前的遭遇必须先处理</h3>
+              <p className="text-xs text-stone-500 mt-2 leading-5">委托、人脉、交易和组织事务暂时无法进行。</p>
+            </section>
+          ) : state.atWork ? (
             <section className="panel border-sky-300/30 text-center py-6">
               <h3 className="text-sm text-sky-200/90">工作期间不可处理外部事务</h3>
               <p className="text-xs text-stone-500 mt-2 leading-5">委托、人脉、交易与宿敌事务将在下班离开后恢复。</p>

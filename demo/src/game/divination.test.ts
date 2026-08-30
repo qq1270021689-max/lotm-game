@@ -183,7 +183,7 @@ describe('v14迁移', () => {
     delete (ordinary as Partial<GameState>).divinationInsights;
     delete (ordinary as Partial<GameState>).divinationAttempts;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
-    expect(loadGame()).toMatchObject({ schemaVersion: 21, divinationTraining: { cards: false, dream: false }, divinationAttempts: [], divinationInsights: [] });
+    expect(loadGame()).toMatchObject({ schemaVersion: 22, divinationTraining: { cards: false, dream: false }, divinationAttempts: [], divinationInsights: [] });
 
     const seer = fresh() as typeof ordinary;
     seer.schemaVersion = 13; seer.pathwayId = 'seer'; seer.sequence = 8;

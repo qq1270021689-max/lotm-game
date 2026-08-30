@@ -249,6 +249,57 @@ export interface ClueRecord {
   acquiredHour: number;
 }
 
+/** 对已取得线索完成的一次确定性深入调查；线索本身仍只记录取得来源。 */
+export interface DeepInvestigationRecord {
+  investigationId: string;
+  clueId: string;
+  confirmedDay: number;
+  confirmedHour: number;
+  nextStepId: string;
+}
+
+export interface DeepInvestigationDef {
+  id: string;
+  clueId: string;
+  caseId: string;
+  checkId: string;
+  label: string;
+  description: string;
+  locationId: string;
+  openFrom?: number;
+  openTo?: number;
+  passEnergyCost: number;
+  blockedEnergyCost: number;
+  passHours: number;
+  blockedHours: number;
+  nextStepId: string;
+  nextStepText: string;
+  blockedText: string;
+  threatId?: string;
+  attentionOnAttempt?: number;
+}
+
+/** 案件专属威胁。数值与内部身份不得直接交给 UI。 */
+export interface CaseThreatState {
+  threatId: string;
+  attention: number;
+  status: 'active' | 'resolved';
+  encounterCount: number;
+  noticedSourceIds: string[];
+  shownSignalStages: number[];
+}
+
+export interface PendingEncounter {
+  encounterId: string;
+  threatId: string;
+  phase: 'escape_choice' | 'combat';
+  sourceKind: 'deep_investigation' | 'divination';
+  sourceId: string;
+  startedDay: number;
+  startedHour: number;
+  narrativeVariant: number;
+}
+
 /** 数据驱动的确定性探索检定。 */
 export interface ExplorationCheckDef {
   id: string;
@@ -909,6 +960,9 @@ export interface GameState {
   landmarkIntroductions: LandmarkIntroductionRecord[];
   landmarkEncounters: LandmarkEncounterRecord[];
   clues: ClueRecord[];
+  deepInvestigations: Record<string, DeepInvestigationRecord>;
+  caseThreats: Record<string, CaseThreatState>;
+  pendingEncounter: PendingEncounter | null;
   explorationAttempts: ExplorationAttempt[];
   checkAttempts: CheckAttemptRecord[];
   divinationTraining: DivinationTraining;

@@ -1,5 +1,5 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, DockSequence9ActionDef, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, ORGANIZATION_QUALIFICATION_TASKS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CaseThreatState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DeepInvestigationDef, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, DockSequence9ActionDef, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DEEP_INVESTIGATION_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, ORGANIZATION_QUALIFICATION_TASKS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { evaluateCheck, sanitizeCheckAttemptRecord, toPublicCheckResult } from './checks';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
@@ -7,7 +7,7 @@ import { hasFormalNightwatchRoute, hasVerifiedBlackthornReferral, isLocationUnlo
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 21;
+export const CURRENT_SCHEMA_VERSION = 22;
 export type { ActionResult } from './types';
 export { getVisibleLocations, hasFormalNightwatchRoute, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
 
@@ -132,6 +132,7 @@ function explorationCheckRequest(s: GameState, checkId: string, startedAt = { da
     stats: {}, skills: {}, clueIds: [], toolIds: [], abilityIds: [], preparationIds: [],
   };
   if (def) {
+    context.locationId = s.currentLocation?.locationId;
     for (const term of def.contributions) {
       if (term.kind === 'stat') context.stats[term.id] = s.stats[term.id];
       else if (term.kind === 'skill') context.skills[term.id] = s.skills[term.id] ?? 0;
@@ -141,6 +142,11 @@ function explorationCheckRequest(s: GameState, checkId: string, startedAt = { da
       ...def.contributions.filter(term => term.kind === 'clue').map(term => term.id),
     ]);
     context.clueIds = s.clues.map(clue => clue.id).filter(id => relevantClues.has(id));
+    const relevantTools = new Set([
+      ...def.requirements.filter(requirement => requirement.kind === 'tool').map(requirement => requirement.id),
+      ...def.contributions.filter(term => term.kind === 'tool').map(term => term.id),
+    ]);
+    context.toolIds = Object.entries(s.items).filter(([id, amount]) => amount > 0 && relevantTools.has(id)).map(([id]) => id);
   }
   return { checkId, definitionVersion: def?.version, context, startedAt };
 }
@@ -217,6 +223,238 @@ function repeatedBlockedExplorationIssue(s: GameState, internal: CheckInternalRe
   return repeated?.outcome === 'blocked'
     ? '现有调查条件与上次没有实质变化；请先补充线索、工具或调查经验。'
     : null;
+}
+
+const DOCK_THREAT_ID = 'dock_manifest_cleaner';
+const DOCK_ENCOUNTER_ID = 'encounter_dock_manifest_cleaner';
+
+function caseThreat(s: GameState, threatId: string): CaseThreatState {
+  s.caseThreats ??= {};
+  return s.caseThreats[threatId] ??= {
+    threatId, attention: 0, status: 'active', encounterCount: 0,
+    noticedSourceIds: [], shownSignalStages: [],
+  };
+}
+
+function raiseCaseThreat(
+  s: GameState,
+  threatId: string,
+  sourceKind: 'deep_investigation' | 'divination',
+  sourceId: string,
+  amount: number,
+) {
+  if (amount <= 0) return;
+  const threat = caseThreat(s, threatId);
+  if (threat.status === 'resolved' || threat.noticedSourceIds.includes(sourceId)) return;
+  threat.noticedSourceIds.push(sourceId);
+  threat.attention = clamp(threat.attention + amount);
+
+  const signals: readonly [number, string][] = [
+    [25, '你离开记录室时，街角那顶灰帽似乎已经出现过不止一次。你无法确认这是否只是巧合。'],
+    [50, '你刚查看过的记录被人重新翻动过，几页纸的位置与先前不同。有人似乎比你更在意这些痕迹。'],
+  ];
+  for (const [stage, text] of signals) {
+    if (threat.attention >= stage && !threat.shownSignalStages.includes(stage)) {
+      threat.shownSignalStages.push(stage);
+      addLog(s, text, 'event');
+    }
+  }
+  if (threat.attention < 75 || threat.encounterCount > 0 || s.pendingEncounter) return;
+  threat.encounterCount = 1;
+  threat.shownSignalStages.push(75);
+  s.pendingEncounter = {
+    encounterId: DOCK_ENCOUNTER_ID,
+    threatId,
+    phase: 'escape_choice',
+    sourceKind,
+    sourceId,
+    startedDay: s.day,
+    startedHour: s.hour,
+    narrativeVariant: (s.day + s.hour + s.eventCounter) % 3,
+  };
+  addLog(s, '回程的窄巷里，一串脚步不再掩饰。那个戴灰帽的陌生人堵住了通向灯火的方向。', 'bad');
+}
+
+export function activeEncounterIssue(s: GameState): string | null {
+  return s.pendingEncounter ? '眼前的跟踪者尚未摆脱，必须先处理这次遭遇。' : null;
+}
+
+export function dockThreatSignal(s: GameState): string | null {
+  const threat = s.caseThreats?.[DOCK_THREAT_ID];
+  if (!threat || threat.status === 'resolved') return null;
+  if (threat.attention >= 50) return '有人正在主动翻动或清理你查过的记录。';
+  if (threat.attention >= 25) return '你偶尔会在调查地点附近看到相似的灰帽身影。';
+  return null;
+}
+
+function deepInvestigationDef(investigationId: string): DeepInvestigationDef | null {
+  return DEEP_INVESTIGATION_DEFS.find(def => def.id === investigationId) ?? null;
+}
+
+export function getDeepInvestigationView(s: GameState, clueId: string) {
+  const def = DEEP_INVESTIGATION_DEFS.find(candidate => candidate.clueId === clueId);
+  if (!def || !hasClue(s, clueId)) return null;
+  const completed = !!s.deepInvestigations?.[def.id];
+  return {
+    id: def.id,
+    clueId: def.clueId,
+    label: def.label,
+    description: def.description,
+    hours: def.passHours,
+    completed,
+    nextStepText: completed ? def.nextStepText : undefined,
+    issue: completed ? null : deepInvestigationIssue(s, def.id),
+  };
+}
+
+export function deepInvestigationIssue(s: GameState, investigationId: string): string | null {
+  const def = deepInvestigationDef(investigationId);
+  if (!def) return '这条线索没有可继续核验的调查方向。';
+  if (s.pendingEncounter) return activeEncounterIssue(s);
+  if (s.deepInvestigations?.[def.id]) return '这条线索的下一步已经确认。';
+  if (!hasClue(s, def.clueId)) return '调查笔记中没有这条可核验线索。';
+  if (dockCaseDispositionClue(s)) return '这份案件已经完成阶段处置；如需继续追查，应等待新的可靠线索。';
+  if (s.atWork) return '工作期间不能离岗深入调查。';
+  if (s.currentLocation?.locationId !== def.locationId) return '需要回到取得相关记录的码头，才能继续核验。';
+  if (def.openFrom !== undefined && def.openTo !== undefined && !isWithinWindow(s.hour, def.openFrom, def.openTo)) {
+    return `相关记录只在${def.openFrom}:00至${def.openTo}:00之间开放。`;
+  }
+  const internal = evaluateExplorationCheckInternal(s, def.checkId);
+  if (!internal.eligible && internal.reason !== 'insufficient') return '当前条件无法支持这次深入调查。';
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return repeatedIssue;
+  if (s.stats.energy <= energyCost(s, def.passEnergyCost)) return '你现在太疲惫，无法完成这轮细致核验。';
+  return null;
+}
+
+export function performDeepInvestigation(s: GameState, investigationId: string): ActionResult {
+  const issue = deepInvestigationIssue(s, investigationId);
+  if (issue) return { ok: false, msg: issue };
+  const def = deepInvestigationDef(investigationId)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, def.checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这次深入调查。' };
+
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? def.passHours : def.blockedHours;
+  const cost = passed ? def.passEnergyCost : def.blockedEnergyCost;
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    s.deepInvestigations ??= {};
+    s.deepInvestigations[def.id] = {
+      investigationId: def.id, clueId: def.clueId,
+      confirmedDay: startedAt.day, confirmedHour: startedAt.hour, nextStepId: def.nextStepId,
+    };
+    receipt.effects.push({ id: `investigation:${def.id}`, applied: true, before: false, after: true });
+    addLog(s, `深入调查：${def.nextStepText}`, 'good');
+  } else {
+    addLog(s, `深入调查：${def.blockedText}`, 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (def.threatId && def.attentionOnAttempt) {
+    raiseCaseThreat(s, def.threatId, 'deep_investigation', def.id, def.attentionOnAttempt);
+  }
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function getPendingEncounterView(s: GameState) {
+  const encounter = s.pendingEncounter;
+  if (!encounter || encounter.encounterId !== DOCK_ENCOUNTER_ID) return null;
+  if (encounter.phase === 'combat') {
+    return {
+      phase: encounter.phase,
+      title: '退路被截断',
+      text: '第一次脱身没有成功。灰帽人逼近时始终避开灯火，你只能先挡住这次袭击，再寻找离开的机会。',
+      actionLabel: '抵挡并寻找脱身机会',
+    };
+  }
+  const texts = [
+    '灰帽人从旧仓方向跟了出来。他没有表明身份，只在你转向灯火时挡住了路。',
+    '橱窗倒影里，那顶灰帽第三次出现在同一个距离。前方巷口也有人停下了脚步。',
+    '身后的脚步忽然加快。对方显然不打算再装作偶然同路。',
+  ];
+  return {
+    phase: encounter.phase,
+    title: '有人跟了上来',
+    text: texts[encounter.narrativeVariant % texts.length],
+    actionLabel: '利用已知路线设法甩脱',
+  };
+}
+
+export function attemptEncounterEscape(s: GameState): ActionResult {
+  const encounter = s.pendingEncounter;
+  if (!encounter || encounter.encounterId !== DOCK_ENCOUNTER_ID || encounter.phase !== 'escape_choice') {
+    return { ok: false, msg: '目前没有可以进行的逃脱检定。' };
+  }
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'dock_manifest_cleaner_escape', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前遭遇状态无法进行逃脱检定。' };
+  const passed = internal.outcome === 'passed';
+  // 逃脱失败后仍需立刻进入防御战；保留最低行动能力，避免通用昏倒结算插入两阶段遭遇中间。
+  const escapeEnergyCost = Math.min(energyCost(s, passed ? 8 : 12), Math.max(0, s.stats.energy - 1));
+  const escapeSanCost = passed ? 0 : Math.min(2, Math.max(0, s.stats.san - 1));
+  const effects = applyEffects(s, passed
+    ? [{ k: 'energy', v: -escapeEnergyCost }]
+    : [{ k: 'energy', v: -escapeEnergyCost }, { k: 'san', v: -escapeSanCost }]);
+  const receipt: CheckReceipt = {
+    hoursElapsed: 1,
+    effects: effects.map((entry, index) => receiptEntry(index === 0 ? 'energy' : 'san', entry)).concat(hoursReceipt(1)),
+  };
+  const threat = caseThreat(s, encounter.threatId);
+  if (passed) {
+    threat.attention = Math.min(threat.attention, 60);
+    s.pendingEncounter = null;
+    s.currentLocation = null;
+    addLog(s, '你借先前记下的货箱间隙和人流转向甩开了跟踪者。对方没有追进灯火最亮的街口。', 'good');
+  } else {
+    encounter.phase = 'combat';
+    addLog(s, '你试图借巷道脱身，却在转角被提前截住。逃跑的机会已经过去，只能先挡住对方。', 'bad');
+  }
+  receipt.effects.push({ id: passed ? 'encounter:escaped' : 'encounter:combat', applied: true });
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, 1);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function resolveEncounterCombat(s: GameState): ActionResult {
+  const encounter = s.pendingEncounter;
+  if (!encounter || encounter.encounterId !== DOCK_ENCOUNTER_ID || encounter.phase !== 'combat') {
+    return { ok: false, msg: '目前没有需要结算的防御战。' };
+  }
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'dock_manifest_cleaner_combat', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前遭遇状态无法结算。' };
+  const passed = internal.outcome === 'passed';
+  const combatSanCost = Math.min(passed ? 3 : 8, Math.max(0, s.stats.san - 1));
+  const effects = applyEffects(s, passed
+    ? [{ k: 'energy', v: -25 }, { k: 'san', v: -combatSanCost }]
+    : [{ k: 'energy', v: -35 }, { k: 'san', v: -combatSanCost }]);
+  const receipt: CheckReceipt = {
+    hoursElapsed: 1,
+    effects: [receiptEntry('energy', effects[0]), receiptEntry('san', effects[1]), hoursReceipt(1)],
+  };
+  const threat = caseThreat(s, encounter.threatId);
+  if (passed) {
+    threat.status = 'resolved';
+    addLog(s, '你没有追击，只在对方失去平衡时冲向街灯。灰帽人放弃继续纠缠，这次清理行动被迫中止。', 'good');
+    receipt.effects.push({ id: 'threat:resolved', applied: true, before: 'active', after: 'resolved' });
+  } else {
+    threat.attention = Math.min(threat.attention, 50);
+    s.flags.dock_encounter_wounded = true;
+    addLog(s, '你带着伤撑到巡夜人的灯光附近。灰帽人没有冒险追来；你保住了调查笔记，却必须回去休养。', 'bad');
+    receipt.effects.push({ id: 'encounter:survived', applied: true });
+  }
+  s.pendingEncounter = null;
+  s.currentLocation = null;
+  s.atWork = false;
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, 1);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
 }
 
 function receiptEntry(id: string, receipt: AppliedEffectReceipt) {
@@ -398,6 +636,8 @@ export function spiritVisionInspectionIssue(s: GameState, itemId: string): strin
 }
 
 export function inspectItemWithSpiritVision(s: GameState, itemId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = spiritVisionInspectionIssue(s, itemId);
   if (issue) return { ok: false, msg: issue };
   const item = findItem(itemId)!;
@@ -531,6 +771,8 @@ export function learnCardDivinationIssue(s: GameState): string | null {
 }
 
 export function learnCardDivination(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = learnCardDivinationIssue(s);
   if (issue) return { ok: false, msg: issue };
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, 8) }]);
@@ -605,6 +847,8 @@ export function evaluateDivination(s: GameState, targetKind: DivinationTargetKin
 }
 
 export function performDivination(s: GameState, targetKind: DivinationTargetKind, targetId: string, method: DivinationMethod, provider: DivinationProvider): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const target = divinationTarget(s, targetKind, targetId);
   if (!target) return { ok: false, msg: genericDivinationTargetIssue };
   const issue = providerIssue(s, provider, method, target);
@@ -640,6 +884,12 @@ export function performDivination(s: GameState, targetKind: DivinationTargetKind
     if (item?.category === 'occult') itemKnowledgeState(s, targetId).identifiedAsOccult = true;
   }
   s.divinationInsights.push(insight);
+  if (provider === 'self' && targetKind === 'item' && targetId === 'dock_scale_evidence') {
+    const attention = result.outcome === 'hint' ? 15
+      : result.outcome === 'obscured' ? 25
+        : result.outcome === 'backlash' ? 35 : 0;
+    raiseCaseThreat(s, DOCK_THREAT_ID, 'divination', `divination:self:${targetId}`, attention);
+  }
   addLog(s, `占卜记录：${text}`, result.outcome === 'backlash' ? 'bad' : result.outcome === 'inconclusive' || result.outcome === 'obscured' ? 'info' : 'good');
   return { ok: true, outcome: result.outcome === 'omen' || result.outcome === 'hint' ? 'passed' : 'blocked' };
 }
@@ -716,6 +966,9 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     landmarkIntroductions: [],
     landmarkEncounters: [],
     clues: [],
+    deepInvestigations: {},
+    caseThreats: {},
+    pendingEncounter: null,
     explorationAttempts: [],
     checkAttempts: [],
     divinationTraining: { cards: false, dream: false, media: [], teachers: [] },
@@ -1525,6 +1778,8 @@ export function currentEvent(s: GameState): GameEvent | null {
 
 // ============ 委托 ============
 export function acceptCommission(s: GameState, id: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能外出接取委托。' };
   if (s.activeCommission) return { ok: false, msg: '一次只能接一个委托。' };
   const c = s.board.find(x => x.id === id);
@@ -1573,6 +1828,8 @@ export function takeJob(s: GameState, jobId: string): ActionResult {
 
 /** 上班通勤：只有抵达后才进入工作场景。 */
 export function commuteToWork(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.currentLocation) return { ok: false, msg: '你还在外出的地点，需先返回住处。' };
   const job = currentJob(s);
   if (!job) return { ok: false, msg: '你目前失业，需要先选择一份工作。' };
@@ -1595,6 +1852,8 @@ export function commuteToWork(s: GameState): ActionResult {
 
 /** 到岗后完成本职工作；收入仍受出身和精打细算天赋影响。 */
 export function doWork(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const job = currentJob(s);
   if (!job) return { ok: false, msg: '你目前失业，需要先选择一份工作。' };
   if (!s.atWork) return { ok: false, msg: `你还没到岗，请先通勤前往${job.location}。` };
@@ -1876,6 +2135,8 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
 }
 
 export function travelToLocation(s: GameState, locationId: string, mode: TravelMode, companionId?: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const accessIssue = locationAccessIssue(s, locationId);
   if (accessIssue) return { ok: false, msg: accessIssue };
   if (!isAtHome(s)) return { ok: false, msg: s.atWork ? '需先下班回家再出发。' : '你已经身处另一个地点，需先离开才能改道。' };
@@ -1907,6 +2168,8 @@ export function travelToLocation(s: GameState, locationId: string, mode: TravelM
 }
 
 export function leaveCurrentLocation(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const stay = s.currentLocation;
   if (!stay) return { ok: false, msg: '你目前不在外出的地点。' };
   const location = LOCATIONS.find(candidate => candidate.id === stay.locationId);
@@ -2054,6 +2317,8 @@ function performAtLocationActionInternal(
 }
 
 export function performAtLocationAction(s: GameState, actionId: LocationActionId, randomSource: () => number = Math.random): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   return performAtLocationActionInternal(s, actionId, 1, randomSource);
 }
 
@@ -2110,6 +2375,8 @@ export function landmarkActionIssue(s: GameState, actionId: string): string | nu
 }
 
 export function performTingenLandmarkAction(s: GameState, actionId: string, randomSource: () => number = Math.random): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = landmarkActionIssue(s, actionId);
   if (issue) return { ok: false, msg: issue };
   const def = TINGEN_LANDMARK_ACTIONS.find(candidate => candidate.id === actionId)!;
@@ -2204,6 +2471,8 @@ export function getBookSourceOffers(s: GameState): { bookId: string; sourceId: s
 }
 
 export function acquireBook(s: GameState, bookId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = acquireBookIssue(s, bookId);
   if (issue) return { ok: false, msg: issue };
   const source = BOOK_SOURCE_DEFS.find(candidate => candidate.bookId === bookId)!;
@@ -2259,6 +2528,7 @@ function applyBookReward(s: GameState, reward: BookReward) {
 }
 
 export function completeBook(s: GameState, bookId: string): boolean {
+  if (s.pendingEncounter) return false;
   const book = BOOK_DEFS.find(candidate => candidate.id === bookId);
   const state = s.books[bookId];
   if (!book || !state?.acquired || state.completed || state.readHours < book.totalHours) return false;
@@ -2269,6 +2539,8 @@ export function completeBook(s: GameState, bookId: string): boolean {
 }
 
 export function readBookSession(s: GameState, bookId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.currentLocation) return { ok: false, msg: '需要先回到住处再安静阅读。' };
   const issue = readingIssue(s, bookId);
   if (issue) return { ok: false, msg: issue };
@@ -2293,6 +2565,8 @@ export function readBookSession(s: GameState, bookId: string): ActionResult {
 
 /** 攀谈：在对方当前所在的公开场合搭话。陌生人会触发「结交事件」，初识则慢慢加深印象。 */
 export function doChat(s: GameState, npcId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，不能外出攀谈。' };
   const npc = findAnyNPC(s, npcId);
   if (!npc) return { ok: false, msg: '找不到这个人。' };
@@ -2327,6 +2601,8 @@ export function doChat(s: GameState, npcId: string): ActionResult {
 }
 
 export function doSocial(s: GameState, npcId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，不能外出拜访。' };
   const npc = findAnyNPC(s, npcId);
   if (!npc) return { ok: false, msg: '找不到这个人。' };
@@ -2420,6 +2696,8 @@ export function doTavern(s: GameState): ActionResult {
 }
 
 export function doNap(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.currentLocation) return { ok: false, msg: '你还在外出的地点，需先返回住处。' };
   if (s.atWork) return { ok: false, msg: '工作地点不是睡觉的地方。' };
   applyEffects(s, [{ k: 'energy', v: 12 }]);
@@ -2429,6 +2707,8 @@ export function doNap(s: GameState): ActionResult {
 }
 
 export function doMeal(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，需先下班离开。' };
   if (s.pence < 4) return { ok: false, msg: '连顿饭钱都付不起了。' };
   applyEffects(s, [{ k: 'money', v: -4 }, { k: 'energy', v: 20 }, { k: 'san', v: 2 }]);
@@ -2438,6 +2718,8 @@ export function doMeal(s: GameState): ActionResult {
 }
 
 export function doSleep(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.currentLocation) return { ok: false, msg: '你还在外出的地点，需先返回住处。' };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，需先下班离开。' };
   const hours = s.hour < 7 ? 7 - s.hour : 24 - s.hour + 7;
@@ -2698,6 +2980,8 @@ export function organizationQualificationIssue(s: GameState, organizationId: Org
 }
 
 export function completeOrganizationQualification(s: GameState, organizationId: OrganizationId): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = organizationQualificationIssue(s, organizationId);
   if (issue) return { ok: false, msg: issue };
   const task = organizationQualificationTask(organizationId)!;
@@ -3276,6 +3560,8 @@ export function getDockCaseDispositions(s: GameState) {
 }
 
 export function dockCaseDispositionIssue(s: GameState, dispositionId: string): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
   if (!hasClue(s, 'dock_seq9_conclusion')) return '需要先完成码头失踪案的综合调查。';
   if (dockCaseDispositionClue(s)) return '这份调查记录已经完成处置，不能再选择另一个互斥渠道。';
   const disposition = DOCK_CASE_DISPOSITIONS.find(candidate => candidate.id === dispositionId);
@@ -3302,6 +3588,8 @@ export function performDockCaseDisposition(s: GameState, dispositionId: string):
     disposition.id === 'workers_warning' ? 'mike' : disposition.locationId);
   if (!acquired) return { ok: false, msg: '这份调查记录已经完成处置。' };
   if (disposition.id === 'workers_warning') applyEffects(s, [{ k: 'favor', id: 'mike', v: 3 }]);
+  const threat = s.caseThreats?.[DOCK_THREAT_ID];
+  if (threat) threat.status = 'resolved';
   const result = disposition.id === 'public_report'
     ? '你向港务公开窗口递交了人员、班次与转运路线的可核验副本，原始证物仍留在自己手中。'
     : disposition.id === 'workers_warning'
@@ -3562,6 +3850,8 @@ export function tradeFairInvitationIssue(s: GameState, sourceId: string): string
 }
 
 export function requestTradeFairInvitation(s: GameState, sourceId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = tradeFairInvitationIssue(s, sourceId);
   if (issue) return { ok: false, msg: issue };
   const sourceKind = sourceId === 'victor' ? 'npc' : 'organization';
@@ -3619,6 +3909,8 @@ export function tradeFairProductIssue(s: GameState, productId: string): string |
 }
 
 export function buyTradeFairProduct(s: GameState, productId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const issue = tradeFairProductIssue(s, productId);
   if (issue) return { ok: false, msg: issue };
   const product = TRADE_FAIR_PRODUCTS.find(candidate => candidate.id === productId)!;
@@ -3669,6 +3961,8 @@ function characteristicVerifiedForPathway(s: GameState, pathwayId: string): bool
 }
 
 export function appraiseCharacteristicAtTradeFair(s: GameState, itemId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const access = tradeFairAccessIssue(s);
   if (access) return { ok: false, msg: access };
   const item = findItem(itemId);
@@ -3746,6 +4040,8 @@ function extractCharacteristicFromConfirmedDeath(s: GameState, sourceId: string)
 }
 
 export function buyItem(s: GameState, itemId: string, price: number, sellerId?: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能外出交易。' };
   if (itemId === 'occult_notes') return { ok: false, msg: '神秘学札记已改为固定书目，只能从可信书源取得。' };
   const authorizedSource = Object.values(s.materialSources).find(source => source.itemId === itemId
@@ -3794,6 +4090,8 @@ export function getShopInventory(s: GameState, shopId: string): { itemId: string
 }
 
 export function buyFromShop(s: GameState, shopId: string, itemId: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   const shop = SHOP_DEFS.find(candidate => candidate.id === shopId);
   if (!shop || s.currentLocation?.locationId !== shop.locationId) return { ok: false, msg: '需要亲自到对应店铺才能购买。' };
   if (!shopOpenAt(shopId, s.hour)) return { ok: false, msg: '店铺现在没有营业。' };
@@ -3808,6 +4106,8 @@ export function buyFromShop(s: GameState, shopId: string, itemId: string): Actio
 }
 
 export function buyFormula(s: GameState, formulaId: string, price: number, sellerId?: string): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能外出交易。' };
   if (!isBeyonder(s)) return { ok: false, msg: '普通顾客看不到魔药配方货架；必须先获得具体渠道与担保。' };
   if (formulaId.endsWith('8')) return { ok: false, msg: '序列8配方不在通用商店出售，只能由所属组织审核后定向提供。' };
@@ -4534,6 +4834,9 @@ export function loadGame(): GameState | null {
       landmarkIntroductions?: LandmarkIntroductionRecord[];
       landmarkEncounters?: LandmarkEncounterRecord[];
       clues?: GameState['clues'];
+      deepInvestigations?: GameState['deepInvestigations'];
+      caseThreats?: GameState['caseThreats'];
+      pendingEncounter?: GameState['pendingEncounter'];
       explorationAttempts?: GameState['explorationAttempts'];
       checkAttempts?: GameState['checkAttempts'];
       divinationTraining?: GameState['divinationTraining'];
@@ -4598,6 +4901,62 @@ export function loadGame(): GameState | null {
         return true;
       })
       .slice(-200);
+    if (loadedVersion < 22) {
+      s.deepInvestigations = {};
+      s.caseThreats = {};
+      s.pendingEncounter = null;
+    } else {
+      const rawDeepInvestigations = s.deepInvestigations && typeof s.deepInvestigations === 'object'
+        ? s.deepInvestigations : {};
+      s.deepInvestigations = {};
+      for (const [id, record] of Object.entries(rawDeepInvestigations)) {
+        const def = DEEP_INVESTIGATION_DEFS.find(candidate => candidate.id === id);
+        if (!def || !record || record.investigationId !== id || record.clueId !== def.clueId
+          || record.nextStepId !== def.nextStepId || !hasClue(s, def.clueId)
+          || !Number.isInteger(record.confirmedDay) || record.confirmedDay < 1 || record.confirmedDay > s.day
+          || !Number.isInteger(record.confirmedHour) || record.confirmedHour < 0 || record.confirmedHour > 23) continue;
+        s.deepInvestigations[id] = {
+          investigationId: id, clueId: def.clueId, nextStepId: def.nextStepId,
+          confirmedDay: record.confirmedDay, confirmedHour: record.confirmedHour,
+        };
+      }
+
+      const rawThreat = s.caseThreats && typeof s.caseThreats === 'object'
+        ? s.caseThreats[DOCK_THREAT_ID] : undefined;
+      s.caseThreats = {};
+      if (rawThreat && rawThreat.threatId === DOCK_THREAT_ID && Number.isFinite(rawThreat.attention)
+        && ['active', 'resolved'].includes(rawThreat.status) && Number.isInteger(rawThreat.encounterCount)
+        && rawThreat.encounterCount >= 0 && rawThreat.encounterCount <= 1) {
+        const validSources = new Set([
+          ...DEEP_INVESTIGATION_DEFS.map(def => def.id),
+          'divination:self:dock_scale_evidence',
+        ]);
+        s.caseThreats[DOCK_THREAT_ID] = {
+          threatId: DOCK_THREAT_ID,
+          attention: clamp(Math.floor(rawThreat.attention)),
+          status: rawThreat.status,
+          encounterCount: rawThreat.encounterCount,
+          noticedSourceIds: Array.isArray(rawThreat.noticedSourceIds)
+            ? [...new Set(rawThreat.noticedSourceIds.filter(id => validSources.has(id)))] : [],
+          shownSignalStages: Array.isArray(rawThreat.shownSignalStages)
+            ? [...new Set(rawThreat.shownSignalStages.filter(stage => [25, 50, 75].includes(stage)))] : [],
+        };
+      }
+      const pending = s.pendingEncounter;
+      const threat = s.caseThreats[DOCK_THREAT_ID];
+      const validPendingSource = pending?.sourceKind === 'deep_investigation'
+        ? DEEP_INVESTIGATION_DEFS.some(def => def.id === pending.sourceId)
+        : pending?.sourceKind === 'divination' && pending.sourceId === 'divination:self:dock_scale_evidence';
+      if (!pending || pending.encounterId !== DOCK_ENCOUNTER_ID || pending.threatId !== DOCK_THREAT_ID
+        || !['escape_choice', 'combat'].includes(pending.phase) || !validPendingSource
+        || !Number.isInteger(pending.startedDay) || pending.startedDay < 1 || pending.startedDay > s.day
+        || !Number.isInteger(pending.startedHour) || pending.startedHour < 0 || pending.startedHour > 23
+        || !Number.isInteger(pending.narrativeVariant) || pending.narrativeVariant < 0 || pending.narrativeVariant > 2
+        || !threat || threat.status !== 'active' || threat.encounterCount !== 1
+        || !threat.noticedSourceIds.includes(pending.sourceId) || dockCaseDispositionClue(s)) {
+        s.pendingEncounter = null;
+      }
+    }
     s.relations = s.relations && typeof s.relations === 'object' ? s.relations : {};
     if (loadedVersion < 18) {
       s.locationRelations = {};

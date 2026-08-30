@@ -1,4 +1,4 @@
-import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockCaseDispositionDef, DockSequence9ActionDef, OrganizationQualificationTaskDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey } from './types';
+import type { Pathway, ItemDef, NPCDef, GameEvent, EventBlueprint, Origin, Talent, LocationDef, StatKey, JobDef, ClueSourceKind, CheckDef, BookDef, BookSourceDef, DockCaseDispositionDef, DockSequence9ActionDef, OrganizationQualificationTaskDef, SalvageDef, ShopDef, TingenLandmarkActionDef, LandmarkEncounterDef, TradeFairProductDef, BeyonderDeathSourceDef, Sequence9ExplorationAbilityDef, SkillKey, DeepInvestigationDef } from './types';
 
 // ============ 出身 ============
 export const ORIGINS: Origin[] = [
@@ -294,6 +294,39 @@ const dockSequence9SynthesisCheck = (
   },
 });
 
+export const DEEP_INVESTIGATION_DEFS: readonly DeepInvestigationDef[] = [
+  {
+    id: 'deep_dock_missing_reports', clueId: 'dock_missing_reports', caseId: 'dock_manifest',
+    checkId: 'deep_check_dock_missing_reports', label: '深入核对失踪登记',
+    description: '把失踪时间、班次和仓区逐项交叉，确认登记之间是否存在共同规律。',
+    locationId: 'docks', openFrom: 9, openTo: 17, passEnergyCost: 8, blockedEnergyCost: 4,
+    passHours: 2, blockedHours: 1, nextStepId: 'dock_next_compare_cargo_records',
+    nextStepText: '失踪者集中在相邻班次和同一仓区。下一步应核对同期货运备份，确认他们是否经手过同一批货物。',
+    blockedText: '现有登记还不足以形成可靠规律。可以寻找另一份公开失踪告示，或先提升调查经验。',
+    threatId: 'dock_manifest_cleaner', attentionOnAttempt: 10,
+  },
+  {
+    id: 'deep_dock_manifest_discrepancy', clueId: 'dock_manifest_discrepancy', caseId: 'dock_manifest',
+    checkId: 'deep_check_dock_manifest_discrepancy', label: '深入追查货运缺口',
+    description: '按船名、库位和经手人重排货运备份，寻找被人为拆散的转运顺序。',
+    locationId: 'docks', openFrom: 9, openTo: 17, passEnergyCost: 10, blockedEnergyCost: 5,
+    passHours: 2, blockedHours: 1, nextStepId: 'dock_next_trace_marked_manifest',
+    nextStepText: '缺口集中在同一批次的旧仓单。下一步应按库位变更顺序追查原件，而不是继续猜测失踪原因。',
+    blockedText: '你确认记录有问题，却无法还原修改顺序。港务编号知识或另一份仓单旁证会有帮助。',
+    threatId: 'dock_manifest_cleaner', attentionOnAttempt: 20,
+  },
+  {
+    id: 'deep_dock_crate_trace', clueId: 'dock_crate_trace', caseId: 'dock_manifest',
+    checkId: 'deep_check_dock_crate_trace', label: '深入复核货箱现场',
+    description: '重新整理货箱位置、拖痕、水迹与退路，只确认能够由现场记录支持的方向。',
+    locationId: 'docks', passEnergyCost: 12, blockedEnergyCost: 5,
+    passHours: 2, blockedHours: 1, nextStepId: 'dock_next_crosscheck_crate_trace',
+    nextStepText: '拖痕和水迹与正常卸货路线不符。下一步应把现场记录与失踪登记、货运缺口交叉核对；若持有薄片，可在安全环境下另行检视或占卜。',
+    blockedText: '外围记录只能证明现场异常，尚不能指出具体去向。可以补充公开登记、货运旁证或本途径的现场记录。',
+    threatId: 'dock_manifest_cleaner', attentionOnAttempt: 45,
+  },
+];
+
 export const ORGANIZATION_QUALIFICATION_TASKS: readonly OrganizationQualificationTaskDef[] = [
   {
     organizationId: 'secret_order', checkId: 'org_qualification_secret_order_provenance',
@@ -373,6 +406,88 @@ export const EXPLORATION_CHECKS: readonly CheckDef[] = [
     receiptPolicy: {
       blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
       passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'clue:dock_marked_manifest', 'lead:iron_blood_token', 'route:iron_and_blood'] },
+    },
+  },
+  {
+    id: 'deep_check_dock_missing_reports', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'deep:dock_missing_reports' }, difficulty: 30,
+    requirements: [{ kind: 'clue', id: 'dock_missing_reports' }, { kind: 'location', id: 'docks' }],
+    contributions: [
+      { kind: 'stat', id: 'mnd', multiplier: 1, publicLabel: '档案推理' },
+      { kind: 'skill', id: 'investigate', multiplier: 4, publicLabel: '调查经验' },
+      { kind: 'clue', id: 'dock_missing_reports', value: 4, publicLabel: '失踪登记' },
+      { kind: 'clue', id: 'river_sea_missing_notices', value: 6, publicLabel: '另一份公开告示' },
+      { kind: 'clue', id: 'dock_ledger_notation', value: 4, publicLabel: '港务编号知识' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours', 'threat:dock_manifest_cleaner'] },
+      passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'investigation:deep_dock_missing_reports', 'threat:dock_manifest_cleaner'] },
+    },
+  },
+  {
+    id: 'deep_check_dock_manifest_discrepancy', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'deep:dock_manifest_discrepancy' }, difficulty: 36,
+    requirements: [{ kind: 'clue', id: 'dock_manifest_discrepancy' }, { kind: 'location', id: 'docks' }],
+    contributions: [
+      { kind: 'stat', id: 'mnd', multiplier: 1, publicLabel: '货运推理' },
+      { kind: 'skill', id: 'investigate', multiplier: 4, publicLabel: '调查经验' },
+      { kind: 'clue', id: 'dock_manifest_discrepancy', value: 8, publicLabel: '货运记录缺口' },
+      { kind: 'clue', id: 'dock_missing_reports', value: 4, publicLabel: '失踪登记' },
+      { kind: 'clue', id: 'dock_ledger_notation', value: 6, publicLabel: '港务编号知识' },
+      { kind: 'clue', id: 'dock_marked_manifest', value: 6, publicLabel: '异常仓单记录' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours', 'threat:dock_manifest_cleaner'] },
+      passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'investigation:deep_dock_manifest_discrepancy', 'threat:dock_manifest_cleaner'] },
+    },
+  },
+  {
+    id: 'deep_check_dock_crate_trace', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'deep:dock_crate_trace' }, difficulty: 34,
+    requirements: [{ kind: 'clue', id: 'dock_crate_trace' }, { kind: 'location', id: 'docks' }],
+    contributions: [
+      { kind: 'stat', id: 'mnd', multiplier: 1, publicLabel: '现场推理' },
+      { kind: 'skill', id: 'investigate', multiplier: 4, publicLabel: '调查经验' },
+      { kind: 'clue', id: 'dock_crate_trace', value: 8, publicLabel: '货箱外围记录' },
+      { kind: 'clue', id: 'dock_missing_reports', value: 4, publicLabel: '失踪登记' },
+      { kind: 'clue', id: 'dock_manifest_discrepancy', value: 4, publicLabel: '货运记录缺口' },
+      { kind: 'clue', id: 'dock_scale_transfer_omen', value: 6, publicLabel: '薄片转运预兆' },
+      { kind: 'clue', id: 'dock_seq9_hunter_tracks', value: 4, publicLabel: '痕迹追踪记录' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours', 'threat:dock_manifest_cleaner'] },
+      passed: { hoursElapsed: 2, effectIds: ['energy', 'hours', 'investigation:deep_dock_crate_trace', 'threat:dock_manifest_cleaner'] },
+    },
+  },
+  {
+    id: 'dock_manifest_cleaner_escape', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'encounter:dock_manifest_cleaner' }, difficulty: 34,
+    requirements: [],
+    contributions: [
+      { kind: 'stat', id: 'phy', multiplier: 1, publicLabel: '行动能力' },
+      { kind: 'skill', id: 'sneak', multiplier: 4, publicLabel: '潜行经验' },
+      { kind: 'clue', id: 'dock_crate_trace', value: 6, publicLabel: '事先记录的退路' },
+      { kind: 'clue', id: 'dock_seq9_apprentice_passage', value: 8, publicLabel: '通路勘察记录' },
+      { kind: 'clue', id: 'dock_seq9_hunter_transfer_marks', value: 6, publicLabel: '转运路线痕迹' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'san', 'hours', 'encounter:combat'] },
+      passed: { hoursElapsed: 1, effectIds: ['energy', 'hours', 'encounter:escaped'] },
+    },
+  },
+  {
+    id: 'dock_manifest_cleaner_combat', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'encounter:dock_manifest_cleaner_combat' }, difficulty: 42,
+    requirements: [],
+    contributions: [
+      { kind: 'stat', id: 'phy', multiplier: 1, publicLabel: '体能' },
+      { kind: 'skill', id: 'combat', multiplier: 4, publicLabel: '格斗经验' },
+      { kind: 'tool', id: 'revolver', value: 15, publicLabel: '随身武器' },
+      { kind: 'clue', id: 'dock_crate_trace', value: 4, publicLabel: '熟悉现场退路' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'san', 'hours', 'encounter:survived'] },
+      passed: { hoursElapsed: 1, effectIds: ['energy', 'san', 'hours', 'threat:resolved'] },
     },
   },
   dockSequence9Check('seer', 'spi', 'occult', 'dock_seq9_seer_omen', '灵性直觉', '神秘学常识'),

@@ -208,7 +208,7 @@ describe('v17迁移、往返与UI规则入口', () => {
     delete (ordinary as Partial<GameState>).itemKnowledge;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
     const loadedOrdinary = loadGame()!;
-    expect(loadedOrdinary.schemaVersion).toBe(21);
+    expect(loadedOrdinary.schemaVersion).toBe(22);
     expect(loadedOrdinary.knowledge).not.toContain('spirit_vision');
     expect(loadedOrdinary.itemKnowledge).toEqual({});
 
@@ -385,10 +385,10 @@ describe('v17迁移、往返与UI规则入口', () => {
 
   it('物品栏渲染位于工作、地点与居家分支之外，外出时只关闭交互', () => {
     const commonInventory = appSource.indexOf('{inventoryOpen && <InventoryPanel');
-    const sceneBranches = appSource.indexOf('{ev ? (');
+    const sceneBranches = appSource.indexOf('{encounter ? (');
     expect(commonInventory).toBeGreaterThan(0);
     expect(commonInventory).toBeLessThan(sceneBranches);
-    expect(appSource).toContain('interactive={E.isAtHome(state) && !ev}');
+    expect(appSource).toContain('interactive={E.isAtHome(state) && !ev && !encounter}');
     expect(appSource).toContain('你可以随时查看随身记录');
   });
 
