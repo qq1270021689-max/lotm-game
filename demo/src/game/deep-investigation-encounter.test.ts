@@ -21,6 +21,7 @@ import {
   loadGame,
   newGame,
   performDeepInvestigation,
+  performDockCombatExchange,
   performDivination,
   performTingenLandmarkAction,
   readBookSession,
@@ -35,6 +36,12 @@ class MemoryStorage {
   setItem(key: string, value: string) { this.data.set(key, String(value)); }
   removeItem(key: string) { this.data.delete(key); }
   clear() { this.data.clear(); }
+}
+
+function finishDockExchange(state: GameState) {
+  while (state.pendingEncounter?.combatRound && !state.pendingEncounter.combatRound.finisherReady) {
+    expect(performDockCombatExchange(state, 'guard').ok).toBe(true);
+  }
 }
 
 const storage = new MemoryStorage();
@@ -198,7 +205,8 @@ describe('案件警觉与遭遇', () => {
       expect(action(s), label).toMatchObject({ ok: false, msg: expect.stringContaining('必须先处理') });
       expect(JSON.stringify(s), label).toBe(before);
     }
-    expect(appSource).toContain('if (s.pendingEncounter && !allowDuringEncounter)');
+    expect(appSource).toContain('const encounterIssue = E.activeEncounterIssue(s);');
+    expect(appSource).toContain('if (encounterIssue && !allowDuringEncounter)');
     expect(appSource).toContain('委托、人脉、交易和组织事务暂时无法进行。');
   });
 
@@ -212,14 +220,17 @@ describe('案件警觉与遭遇', () => {
 
     const before = { pence: s.pence, items: structuredClone(s.items), skills: structuredClone(s.skills) };
     s.skills.combat = 0;
+    finishDockExchange(s);
     expect(resolveEncounterCombat(s)).toMatchObject({ ok: true, outcome: 'blocked' });
     expect(s.pendingEncounter).toBeNull();
     expect(s.gameOver).toBeNull();
-    expect(s.pence).toBe(before.pence);
+    expect(s.pence).toBe(Math.max(0, before.pence - 36));
+    expect(s.combatVitals.hp).toBe(1);
     expect(s.items).toEqual(before.items);
     expect(s.skills).toEqual(before.skills);
     expect(s.flags.dock_encounter_wounded).toBe(true);
-    expect(s.clues).toHaveLength(3);
+    expect(s.clues.map(clue => clue.id)).toContain('dock_gray_hat_scene_lost');
+    expect(s.clues.map(clue => clue.id)).not.toContain('dock_gray_hat_dropped_token');
   });
 
   it('低精力逃脱失败仍直接进入战斗，不会在两阶段之间昏倒跳时', () => {
@@ -239,6 +250,7 @@ describe('案件警觉与遭遇', () => {
     expect(attemptEncounterEscape(s).outcome).toBe('blocked');
     s.stats.phy = 50;
     const beforePence = s.pence;
+    finishDockExchange(s);
     expect(resolveEncounterCombat(s)).toMatchObject({ ok: true, outcome: 'passed' });
     expect(s.caseThreats.dock_manifest_cleaner.status).toBe('resolved');
     expect(s.nemesis).toBeNull();
@@ -254,6 +266,7 @@ describe('案件警觉与遭遇', () => {
     s.stats.san = 1;
     expect(attemptEncounterEscape(s).outcome).toBe('blocked');
     s.stats.phy = phy;
+    finishDockExchange(s);
     expect(resolveEncounterCombat(s)).toMatchObject({ ok: true, outcome });
     expect(s.stats.san).toBe(1);
     expect(s.gameOver).toBeNull();
@@ -277,10 +290,10 @@ describe('v22存档边界', () => {
     old.pendingEncounter = {
       encounterId: 'encounter_dock_manifest_cleaner', threatId: 'dock_manifest_cleaner', phase: 'combat',
       sourceKind: 'deep_investigation', sourceId: 'deep_dock_crate_trace',
-      startedDay: 1, startedHour: 10, narrativeVariant: 0,
+      startedDay: 1, startedHour: 10, narrativeVariant: 0, preparations: [],
     };
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(old));
-    expect(loadGame()).toMatchObject({ schemaVersion: 22, deepInvestigations: {}, caseThreats: {}, pendingEncounter: null });
+    expect(loadGame()).toMatchObject({ schemaVersion: 32, deepInvestigations: {}, caseThreats: {}, pendingEncounter: null });
   });
 
   it('合法遭遇可往返，伪造来源会在读取时清除', () => {

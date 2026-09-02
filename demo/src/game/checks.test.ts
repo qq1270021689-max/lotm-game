@@ -150,7 +150,7 @@ describe('v21 检定审计存档', () => {
     legacy.schemaVersion = 20;
     legacy.checkAttempts = [{ attemptId: 'forged' } as GameState['checkAttempts'][number]];
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(legacy));
-    expect(loadGame()).toMatchObject({ schemaVersion: 22, checkAttempts: [] });
+    expect(loadGame()).toMatchObject({ schemaVersion: 32, checkAttempts: [] });
 
     const s = clockReady();
     traceClocktowerAnomaly(s);

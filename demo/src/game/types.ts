@@ -9,6 +9,91 @@ export interface PlayerStats {
   energy: number;   // 精力 0-100
 }
 
+/** v25仅保存会随行动消耗的当前值；上限与战斗数值始终由角色状态派生。 */
+export interface CombatVitals {
+  hp: number;
+  spirit: number;
+}
+
+export interface CombatProfile {
+  maxHp: number;
+  maxSpirit: number;
+  physicalAttack: number;
+  spiritualAttack: number;
+  physicalDefense: number;
+  spiritualDefense: number;
+  critical: number;
+  dodge: number;
+  injuryPenalty: 0 | 4 | 8;
+}
+
+export type WoundLevel = 'unhurt' | 'light' | 'severe' | 'critical';
+export type CombatApproach = 'physical' | 'spiritual';
+export type CombatRoundAction = CombatApproach | 'guard';
+
+/** 遭遇中的短促交锋。只保存玩家已经亲历的信息，不保存或公开敌方精确数值。 */
+export interface CombatRoundState {
+  version: 1;
+  round: number;
+  advantage: number;
+  initiated: boolean;
+  finisherReady: boolean;
+  lastAction: CombatRoundAction | null;
+  criticalUsed: boolean;
+  usedTechniqueIds: string[];
+}
+
+export type CombatItemSlot = 'weapon' | 'armor' | 'focus' | 'consumable';
+
+export interface CombatLoadout {
+  weaponId: string | null;
+  armorId: string | null;
+  focusId: string | null;
+}
+
+export interface CombatTechniqueEffect {
+  baseAction: CombatRoundAction;
+  scoreBonus: number;
+  advantageBonus: number;
+  incomingReduction: number;
+  spiritCost: number;
+}
+
+export interface Sequence9CombatSkillDef extends CombatTechniqueEffect {
+  id: string;
+  pathwayId: string;
+  label: string;
+  description: string;
+  nightScoreBonus?: number;
+}
+
+export interface ItemCombatDef {
+  slot: CombatItemSlot;
+  profileBonus?: Partial<Pick<CombatProfile, 'physicalAttack' | 'spiritualAttack' | 'physicalDefense' | 'spiritualDefense' | 'critical' | 'dodge'>>;
+  technique?: CombatTechniqueEffect & { label: string; description: string; consume: boolean };
+}
+export type WoundActionKind = 'explore' | 'salvage' | 'deep_investigation' | 'active_hunt' | 'active_combat' | 'work' | 'shop';
+export type CriticalActivity = 'active_progress' | 'encounter_escape' | 'forced_defense' | 'leave' | 'rest' | 'emergency_aid' | 'clinic_travel' | 'clinic_treatment';
+export type DockCombatPreparationId = 'mapped_retreat' | 'prepared_ambush' | 'spiritual_guard';
+
+export interface DockCombatPreparationDef {
+  id: DockCombatPreparationId;
+  checkId: string;
+  label: string;
+  description: string;
+  benefitText: string;
+  energyCost: number;
+}
+
+/** 刚完成的一次当面拜访；时间推进或使用一次后即失效。 */
+export interface NpcVisitSession {
+  npcId: string;
+  startedDay: number;
+  startedHour: number;
+  day: number;
+  hour: number;
+}
+
 export interface Pathway {
   id: string;
   name: string;          // 途径名
@@ -40,11 +125,34 @@ export interface Origin {
   initialJobId?: string;            // 初始职业
 }
 
+export type OpeningScenarioId = 'ordinary_morning' | 'strange_notebook';
+
+/** 与出身分离的开局事件；描述只允许包含角色当下能够确认的表层信息。 */
+export interface OpeningScenarioDef {
+  id: OpeningScenarioId;
+  name: string;
+  desc: string;
+}
+
+export interface StrangeNotebookState {
+  status: 'absent' | 'held' | 'missing' | 'surrendered';
+  influenceStage: 0 | 1 | 2 | 3 | 4;
+  acquiredAbsoluteHour: number;
+  nextManifestationAbsoluteHour: number;
+  returnAbsoluteHour?: number;
+  odditiesRecorded: boolean;
+  handedOffLocationId?: 'st_selena_church' | 'blackthorn_security';
+  handedOffDay?: number;
+  handedOffHour?: number;
+}
+
 /** 可受雇的日常职业 */
 export interface JobDef {
   id: string;
   name: string;
   location: string;
+  /** 对应通缉和地区怀疑度的稳定地点；没有独立地图地点时明确回退到 home。 */
+  locationId: string;
   shiftStart: number;
   shiftEnd: number;
   commuteHours: number;
@@ -102,6 +210,7 @@ export interface ItemDivinationDef {
   pressure: 'low' | 'high';
   antiDivination?: boolean;
   clueId?: string;
+  clueBonuses?: Readonly<Record<string, number>>;
   successText: Record<DivinationMethod, string>;
 }
 
@@ -117,6 +226,7 @@ export interface ItemDef {
   spiritVision?: ItemSpiritVisionDef;
   divination?: ItemDivinationDef;
   seq9Product?: { kind: 'potion' | 'characteristic' | 'auxiliary'; pathwayId: string };
+  combat?: ItemCombatDef;
   price: number; // 便士
 }
 
@@ -156,6 +266,9 @@ export interface ConfirmedBeyonderDeathRecord {
   characteristicItemId: string;
   confirmedDay: number;
   confirmedHour: number;
+  cause: 'event' | 'hunt';
+  /** 猎杀死亡必须指向一条通过重算校验的最终检定；事件死亡不使用。 */
+  settlementAttemptId?: string;
 }
 
 export interface BeyonderDeathSourceDef {
@@ -165,7 +278,104 @@ export interface BeyonderDeathSourceDef {
   pathwayId: string;
   sequence: 9;
   characteristicItemId: string;
-  eventId: string;
+  eventId?: string;
+  huntTargetId?: string;
+}
+
+export interface HuntTargetDef {
+  id: string;
+  npcId: string;
+  locationId: string;
+  publicLabel: string;
+  pathwayId: string;
+  sequence: 9;
+  deathSourceId: string;
+  characteristicItemId: string;
+  power: number;
+  avenger: Nemesis;
+}
+
+export type HuntPreparationKey = 'routine' | 'secludedMeeting' | 'escapeRoute' | 'ambush';
+export type HuntPhase = 'investigating' | 'preparing' | 'ready' | 'confronted' | 'combat';
+
+export interface ActiveHunt {
+  targetId: string;
+  phase: HuntPhase;
+  identityConfirmed: boolean;
+  preparations: Record<HuntPreparationKey, boolean>;
+  suspicion: number;
+  confrontationCause?: 'alerted' | 'failed_strike';
+  /** 偷袭失败后进入战斗时，保留触发这场战斗的检定回执。 */
+  initiatingAttemptId?: string;
+  combatRound?: CombatRoundState;
+}
+
+export interface MurderRecord {
+  targetId: string;
+  npcId: string;
+  deathSourceId: string;
+  day: number;
+  hour: number;
+  infamyGain: number;
+  lawAttentionGain: number;
+  avengerName: string;
+  settlementAttemptId: string;
+  initiatingAttemptId?: string;
+  revengeResolution?: {
+    startedDay: number;
+    startedHour: number;
+    completedDay: number;
+    completedHour: number;
+    nemesisPower: number;
+    attackScore: number;
+    context: { phy: number; combat: number; spirit: number; hadRevolver: boolean; wasHunter: boolean; injuryPenalty?: 0 | 4 | 8 };
+    receipt: { hoursElapsed: 4; energyCost: 35; moneyGain: 80; corruptionGain: 4; sanityCost: 4; combatSkillGain: 0 | 1 };
+  };
+}
+
+export type AreaSuspicionSource =
+  | 'dock_escape_failed'
+  | 'dock_defensive_physical'
+  | 'dock_active_physical'
+  | 'dock_defensive_spiritual'
+  | 'dock_active_spiritual'
+  | 'hunt_death';
+
+/** 地区身份怀疑的权威来源记录；聚合值与通缉名单只由这些记录派生。 */
+export interface AreaSuspicionRecord {
+  id: string;
+  areaId: string;
+  source: AreaSuspicionSource;
+  amount: number;
+  day: number;
+  hour: number;
+  settlementAttemptId: string;
+}
+
+export type IdentityTraceKind = 'witness_description' | 'public_confrontation' | 'death_connection';
+export type IdentityTraceResolutionMethod = 'alibi_correction' | 'scene_misdirection' | 'legal_record_review';
+
+/** 玩家通过调查实际确认的身份痕迹；必须引用一条权威地区怀疑记录与通过的检定。 */
+export interface IdentityTraceDiscovery {
+  sourceRecordId: string;
+  kind: IdentityTraceKind;
+  investigationAttemptId: string;
+}
+
+/** 对具体身份痕迹的处理结果；只减少地区可追查程度，不改写恶名或全局执法关注。 */
+export interface IdentityTraceResolution {
+  sourceRecordId: string;
+  method: IdentityTraceResolutionMethod;
+  amount: number;
+  resolutionAttemptId: string;
+}
+
+/** 普通衣着、妆容与随身文件形成的短期掩饰；不能绕过已经形成的正式通缉。 */
+export interface IdentityCover {
+  preparationAttemptId: string;
+  createdDay: number;
+  createdHour: number;
+  expiresAbsoluteHour: number;
 }
 
 export interface ScheduleEntry {
@@ -258,6 +468,69 @@ export interface DeepInvestigationRecord {
   nextStepId: string;
 }
 
+export type InvestigationHypothesisId =
+  | 'dock_transfer_window'
+  | 'dock_silenced_witnesses'
+  | 'dock_occult_interference';
+
+export type InvestigationMethodId =
+  | 'compare_records'
+  | 'interview_witness'
+  | 'inspect_scene'
+  | 'occult_verify';
+
+export type InvestigationAssessmentOutcome = 'inconclusive' | 'limited' | 'reliable' | 'strong';
+
+/** 调查板只保存玩家主动建立的关联；结论必须能够追溯到统一检定记录。 */
+export interface InvestigationHypothesisAssessment {
+  hypothesisId: InvestigationHypothesisId;
+  methodId: InvestigationMethodId;
+  clueIds: string[];
+  outcome: InvestigationAssessmentOutcome;
+  attemptId: string;
+  day: number;
+  hour: number;
+}
+
+export interface InvestigationWorkspace {
+  caseId: string;
+  selectedClueIds: string[];
+  assessments: InvestigationHypothesisAssessment[];
+}
+
+export type DockWitnessCrisisChoiceId = 'warn_worker' | 'shadow_watcher' | 'request_protection';
+export type DockWitnessFollowupRouteId = 'warned_witness' | 'watched_transfer' | 'missing_witness' | 'protected_witness';
+export type DockGrayHatOperationId = 'observe_exchange' | 'bait_manifest' | 'joint_watch';
+export type DockEncounterAftermathChoiceId = 'trace_retreat' | 'handoff_token' | 'preserve_evidence';
+export type DockOldYardActionId = 'survey_perimeter' | 'question_porters' | 'watch_night_transfer';
+export type DockTransferFollowupId = 'tail_wagon' | 'inspect_crate' | 'request_interception';
+
+export interface InvestigationEvidenceDef {
+  clueId: string;
+  claim: string;
+  sourceQuality: string;
+}
+
+export interface InvestigationHypothesisDef {
+  id: InvestigationHypothesisId;
+  caseId: string;
+  label: string;
+  statement: string;
+  requiredClueIds: readonly string[];
+  methodIds: readonly InvestigationMethodId[];
+  preparationId: string;
+  nextStepByOutcome: Record<InvestigationAssessmentOutcome, string>;
+}
+
+export interface InvestigationMethodDef {
+  id: InvestigationMethodId;
+  label: string;
+  description: string;
+  hours: number;
+  energyCost: number;
+  attentionOnAttempt: number;
+}
+
 export interface DeepInvestigationDef {
   id: string;
   clueId: string;
@@ -293,11 +566,13 @@ export interface PendingEncounter {
   encounterId: string;
   threatId: string;
   phase: 'escape_choice' | 'combat';
-  sourceKind: 'deep_investigation' | 'divination';
+  sourceKind: 'deep_investigation' | 'divination' | 'hypothesis' | 'case_choice';
   sourceId: string;
   startedDay: number;
   startedHour: number;
   narrativeVariant: number;
+  preparations: DockCombatPreparationId[];
+  combatRound?: CombatRoundState;
 }
 
 /** 数据驱动的确定性探索检定。 */
@@ -347,7 +622,8 @@ export type CheckContributionDef =
   | { kind: 'skill'; id: SkillKey; multiplier: number; publicLabel: string }
   | { kind: 'clue'; id: string; value: number; publicLabel: string }
   | { kind: 'tool'; id: string; value: number; publicLabel: string }
-  | { kind: 'ability'; id: string; value: number; publicLabel: string };
+  | { kind: 'ability'; id: string; value: number; publicLabel: string }
+  | { kind: 'preparation'; id: string; value: number; publicLabel: string };
 
 /** 纯检定定义；结算成本和领域推进仍由对应 engine action 掌管。 */
 export interface CheckDef {
@@ -479,9 +755,10 @@ export interface CaseJournalLocation {
 }
 
 export interface CaseJournalEntry {
-  id: 'clocktower' | 'dock_manifest';
+  id: 'clocktower' | 'dock_manifest' | 'elliot_kidnapping' | 'divination_club';
   title: string;
-  stage: 'rumor' | 'investigating' | 'witnessed' | 'pathway_inquiry' | 'resolution_ready' | 'concluded';
+  stage: 'rumor' | 'investigating' | 'witnessed' | 'pathway_inquiry' | 'resolution_ready'
+    | 'commissioned' | 'location_known' | 'presence_confirmed' | 'backup_ready' | 'rescued' | 'concluded';
   statusLabel: string;
   facts: CaseJournalFact[];
   unlockedLocations: CaseJournalLocation[];
@@ -501,6 +778,46 @@ export type DivinationMethod = 'cards' | 'dream';
 export type DivinationProvider = 'self' | 'nelson' | 'evelyn';
 export type DivinationTargetKind = 'location' | 'item';
 export type DivinationOutcome = 'inconclusive' | 'omen' | 'hint' | 'obscured' | 'backlash';
+
+export interface DivinationMethodDef {
+  id: DivinationMethod;
+  baseValue: number;
+  toolBonuses: readonly { itemId: string; value: number; publicLabel: string }[];
+}
+
+export interface DivinationCurrentScoreInput {
+  version: 1;
+  spirituality: number;
+  occultSkill: number;
+  methodBase: number;
+  toolIds: string[];
+  seerDivinationBonus: number;
+  clueIds: string[];
+  lowSanity: boolean;
+  highCorruption: boolean;
+  jammed: boolean;
+}
+
+/**
+ * v23 did not persist the inputs used by the divination formula.  A record with
+ * this shape has already passed the v23 outcome/score audit during migration;
+ * keeping the audited score separate prevents later character changes from
+ * being mistaken for historical inputs on subsequent v24 loads.
+ */
+export interface DivinationLegacyScoreInput {
+  version: 23;
+  provenance: 'validated_v23_attempt';
+  validatedScore: number;
+  targetKind: DivinationTargetKind;
+  targetId: string;
+  method: DivinationMethod;
+  provider: DivinationProvider;
+  outcome: DivinationOutcome;
+  day: number;
+  hour: number;
+}
+
+export type DivinationScoreInput = DivinationCurrentScoreInput | DivinationLegacyScoreInput;
 
 export interface DivinationTraining {
   cards: boolean;
@@ -550,6 +867,8 @@ export interface DivinationAttempt {
   hour: number;
   /** 仅供确定性规则与存档复现；不得在玩家文案中展示。 */
   score: number;
+  /** 新记录保存公式实际读取的输入；旧记录缺失时按 fail-closed 清理。 */
+  scoreInput?: DivinationScoreInput;
 }
 
 export type LanguageProficiency = 'none' | 'reading' | 'fluent';
@@ -873,6 +1192,126 @@ export interface OrganizationQualificationTaskDef {
   passHours: number;
 }
 
+export type NightwatchRoutineActionId = 'archive_rotation' | 'combat_drill' | 'night_patrol';
+
+export interface NightwatchRoutineActionDef {
+  id: NightwatchRoutineActionId;
+  label: string;
+  description: string;
+  hours: number;
+  energyCost: number;
+  openFrom: number;
+  openTo: number;
+  cooldown: 'daily' | 'weekly';
+  pay: number;
+  reputationGain: number;
+  trainingSkill?: SkillKey;
+  trainingPoints?: number;
+}
+
+export interface NightwatchRoutineRecord {
+  actionId: NightwatchRoutineActionId;
+  day: number;
+  cycleKey: string;
+}
+
+export interface NightwatchEarlyLoopState {
+  reputation: number;
+  trainingProgress: Partial<Record<SkillKey, number>>;
+  records: NightwatchRoutineRecord[];
+}
+
+export type DivinationClubCommissionId = 'lost_keepsake' | 'journey_omen' | 'recurring_nightmare';
+
+export interface DivinationClubCommissionDef {
+  id: DivinationClubCommissionId;
+  clientId: 'club_client_lena' | 'club_client_owen' | 'club_client_adele';
+  clientName: string;
+  label: string;
+  description: string;
+  acceptCheckId: string;
+  checkId: string;
+  briefingClueId: string;
+  fieldCheckId: string;
+  fieldLocationId: string;
+  fieldClueId: string;
+  fieldActionLabel: string;
+  fieldNextStepText: string;
+  outcomeClueId: string;
+  actingPrincipleId: 'observe' | 'warn' | 'restraint';
+  acceptEnergyCost: number;
+  acceptHours: number;
+  fieldPassEnergyCost: number;
+  fieldPassHours: number;
+  fieldBlockedEnergyCost: number;
+  fieldBlockedHours: number;
+  reward: number;
+  reputationGain: number;
+  digestionGain: number;
+  passEnergyCost: number;
+  passHours: number;
+  blockedEnergyCost: number;
+  blockedHours: number;
+  nextStepText: string;
+  narrationVariants: readonly string[];
+}
+
+export interface DivinationClubState {
+  joined: boolean;
+  reputation: number;
+  activeCommissionId: DivinationClubCommissionId | null;
+  completedCommissionIds: DivinationClubCommissionId[];
+}
+
+export type ElliotCaseStage = 'unknown' | 'commissioned' | 'location_known' | 'presence_confirmed' | 'backup_ready' | 'rescued' | 'closed';
+export type ElliotLocatorMode = 'divination' | 'records';
+
+export interface ElliotCaseState {
+  stage: ElliotCaseStage;
+  employerId: 'vickroyer' | null;
+  assignedPartnerId: 'leonard' | null;
+  locatorMode: ElliotLocatorMode | null;
+  rewardClaimed: boolean;
+}
+
+export type SeerTrainingNodeId =
+  | 'meditation_control'
+  | 'spirit_vision_focus'
+  | 'dowsing'
+  | 'spirituality_wall'
+  | 'ritual_safety'
+  | 'spirit_channeling'
+  | 'charm_theory';
+
+export type SeerTrainingPracticeRequirement = 'meditation' | 'ritual_safety' | 'spirit_channeling_review';
+
+export interface SeerTrainingNodeDef {
+  id: SeerTrainingNodeId;
+  label: string;
+  description: string;
+  prerequisites: readonly SeerTrainingNodeId[];
+  hours: number;
+  energyCost: number;
+  requiredItemId?: string;
+  requiredPractice?: SeerTrainingPracticeRequirement;
+}
+
+export interface SeerLessonRecord {
+  nodeId: SeerTrainingNodeId;
+  day: number;
+  hour: number;
+}
+
+export interface SeerTrainingState {
+  learnedNodeIds: SeerTrainingNodeId[];
+  lessonRecords: SeerLessonRecord[];
+  meditationPracticeDays: number[];
+  focusPreparation: boolean;
+  ritualPracticeComplete: boolean;
+  spiritChannelingCaseIds: string[];
+  blankCharmPracticeComplete: boolean;
+}
+
 export interface DiaryPageState {
   pageId: string;
   truth: 'authentic' | 'forged';
@@ -937,12 +1376,16 @@ export interface GameState {
   started: boolean;
   playerName: string;
   originId: string;      // 出身
+  openingScenarioId: OpeningScenarioId;
+  strangeNotebook: StrangeNotebookState;
   talents: string[];     // 天赋
   pathwayId: string | null; // null = 普通人
   sequence: number | null;  // null = 普通人
   day: number;
   hour: number;
   stats: PlayerStats;
+  combatVitals: CombatVitals;
+  combatLoadout: CombatLoadout;
   pence: number;
   digestion: number; // 0-100
   exposure: number;  // 暴露度 0-100（非凡者才有意义）
@@ -950,6 +1393,10 @@ export interface GameState {
   canReadRoselleScript: boolean;
   leads: Record<string, StructuredLead>;
   organizationRoutes: Record<OrganizationId, OrganizationRoute>;
+  nightwatchEarlyLoop: NightwatchEarlyLoopState;
+  divinationClub: DivinationClubState;
+  elliotCase: ElliotCaseState;
+  seerTraining: SeerTrainingState;
   diaryPages: Record<string, DiaryPageState>;
   materialSources: Record<string, MaterialSourceState>;
   sequence8Progress: Sequence8Progress | null;
@@ -961,6 +1408,7 @@ export interface GameState {
   landmarkEncounters: LandmarkEncounterRecord[];
   clues: ClueRecord[];
   deepInvestigations: Record<string, DeepInvestigationRecord>;
+  investigationWorkspaces: Record<string, InvestigationWorkspace>;
   caseThreats: Record<string, CaseThreatState>;
   pendingEncounter: PendingEncounter | null;
   explorationAttempts: ExplorationAttempt[];
@@ -978,6 +1426,16 @@ export interface GameState {
   sequence9Preparations: Sequence9PreparationRecord[];
   tradeFair: TradeFairState;
   confirmedBeyonderDeaths: ConfirmedBeyonderDeathRecord[];
+  activeHunt: ActiveHunt | null;
+  murderRecords: MurderRecord[];
+  infamy: number;
+  lawAttention: number;
+  areaSuspicionRecords: AreaSuspicionRecord[];
+  identityTraceDiscoveries: IdentityTraceDiscovery[];
+  identityTraceResolutions: IdentityTraceResolution[];
+  identityCover: IdentityCover | null;
+  areaSuspicion: Record<string, number>;
+  wantedAreas: string[];
   intel: string[];
   knowledge: string[];
   /** v14及更早存档迁移兼容字段；v15运行时固定为0，不再增长或决定奖励。 */
@@ -987,6 +1445,7 @@ export interface GameState {
   skills: Record<SkillKey, number>;  // 技能等级 0-10，检定时 +等级×4
   nemesis: Nemesis | null;           // 宿敌
   relations: Record<string, number>;
+  npcVisitSession: NpcVisitSession | null;
   tags: string[];
   flags: Record<string, number | string | boolean>;
   timers: Timer[];

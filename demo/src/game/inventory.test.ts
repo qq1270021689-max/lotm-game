@@ -208,7 +208,7 @@ describe('v17迁移、往返与UI规则入口', () => {
     delete (ordinary as Partial<GameState>).itemKnowledge;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
     const loadedOrdinary = loadGame()!;
-    expect(loadedOrdinary.schemaVersion).toBe(22);
+    expect(loadedOrdinary.schemaVersion).toBe(32);
     expect(loadedOrdinary.knowledge).not.toContain('spirit_vision');
     expect(loadedOrdinary.itemKnowledge).toEqual({});
 
@@ -311,9 +311,10 @@ describe('v17迁移、往返与UI规则入口', () => {
     legitimate.items.anomaly_evidence = 1;
     legitimate.relations.nelson = 40;
     legitimate.day = 2;
-    legitimate.hour = 10;
+    legitimate.hour = 11;
     legitimate.pence = 100;
     legitimate.stats.energy = 100;
+    legitimate.npcVisitSession = { npcId: 'nelson', startedDay: 2, startedHour: 10, day: 2, hour: 11 };
     expect(performDivination(legitimate, 'item', 'anomaly_evidence', 'cards', 'nelson')).toMatchObject({ ok: true, outcome: 'passed' });
     legitimate.relations.nelson = 0;
     saveGame(legitimate);

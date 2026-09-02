@@ -61,11 +61,11 @@ beforeEach(() => {
 });
 
 describe('廷根地标目录解锁', () => {
-  it('普通新档仍只有两个公共去处，不会一次泄露全部地标', () => {
+  it('普通新档只开放基础公共去处，不会一次泄露全部地标', () => {
     const state = fresh();
-    expect(ids(state)).toEqual(['market', 'tavern']);
+    expect(ids(state)).toEqual(['market', 'north_clinic', 'tavern']);
     expect(ids(state)).not.toEqual(expect.arrayContaining([...LANDMARK_IDS]));
-    expect(getVisibleLocations(state)).toHaveLength(2);
+    expect(getVisibleLocations(state)).toHaveLength(3);
   });
 
   it('城市目录、公共报刊和教会公告严格逐层解锁对应地点', () => {

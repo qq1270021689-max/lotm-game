@@ -109,6 +109,35 @@ describe('派生案件簿', () => {
     expect(entry.directions.join('\n')).toMatch(/正式接触.*安保人员/);
   });
 
+  it('俱乐部委托只展示当前咨询的真实事实，并按外勤和结论分阶段', () => {
+    const state = newGame('俱乐部记录者', 'clerk', []);
+    state.pathwayId = 'seer';
+    state.sequence = 9;
+    state.divinationClub.joined = true;
+    state.divinationClub.activeCommissionId = 'journey_omen';
+    acquireClue(state, 'club_journey_statement', 'npc', 'club_client_owen');
+    acquireClue(state, 'club_lost_keepsake_brief', 'npc', 'club_client_lena');
+
+    let entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'divination_club')!;
+    expect(entry.stage).toBe('commissioned');
+    expect(entry.facts.map(fact => fact.clueId)).toEqual(['club_journey_statement']);
+    expect(entry.unlockedLocations.map(location => location.locationId)).toContain('river_sea_church');
+    expect(entry.directions.join('\n')).toMatch(/河与海教堂|核对河运公告/);
+    expect(JSON.stringify(entry)).not.toMatch(/反复出现的噩梦|幕后者是|地址是/);
+
+    acquireClue(state, 'club_journey_public_notice', 'location', 'river_sea_church');
+    entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'divination_club')!;
+    expect(entry.stage).toBe('resolution_ready');
+    expect(entry.directions.join('\n')).toMatch(/返回占卜家俱乐部|有限结论/);
+
+    acquireClue(state, 'club_journey_omen_outcome', 'npc', 'club_client_owen');
+    state.divinationClub.completedCommissionIds.push('journey_omen');
+    state.divinationClub.activeCommissionId = null;
+    entry = getCaseJournalEntries(state).find(candidate => candidate.id === 'divination_club')!;
+    expect(entry.stage).toBe('concluded');
+    expect(entry.statusLabel).toMatch(/欧文先生.*签收.*结清/);
+  });
+
   it('App 使用稳定案件簿入口和纯 selector', () => {
     expect(appSource).toContain('getCaseJournalEntries(state)');
     expect(appSource).toContain('data-case-journal');

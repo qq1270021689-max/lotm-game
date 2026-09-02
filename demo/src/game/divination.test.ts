@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DIVINATION_METHOD_DEFS, EXPLORATION_CHECKS } from './data';
 import type { GameState } from './types';
 import {
   acquireClue,
@@ -111,6 +112,173 @@ describe('占卜资格、目标与确定性', () => {
     expect(evaluateDivination(bySpirit, 'location', 'old_tower', 'cards', 'self')!.outcome).toBe('obscured');
   });
 
+  it('自行占卜精确组合灵性、神秘学、方法、相关道具与占卜家固定职业值', () => {
+    const folk = teachable();
+    learnCardDivination(folk);
+    unlockTower(folk);
+    folk.stats.spi = 20;
+    folk.skills.occult = 2;
+    const cards = DIVINATION_METHOD_DEFS.find(def => def.id === 'cards')!;
+    const baseline = evaluateDivination(folk, 'location', 'old_tower', 'cards', 'self')!.score;
+    expect(baseline).toBe(20 + 2 * 4 + cards.baseValue + 4 + 4);
+
+    const bySpirit = structuredClone(folk); bySpirit.stats.spi += 1;
+    const bySkill = structuredClone(folk); bySkill.skills.occult += 1;
+    const byTool = structuredClone(folk); byTool.items.ritual_chalk = 1;
+    const unrelated = structuredClone(folk); unrelated.items.blank_charm_paper = 1;
+    expect(evaluateDivination(bySpirit, 'location', 'old_tower', 'cards', 'self')!.score - baseline).toBe(1);
+    expect(evaluateDivination(bySkill, 'location', 'old_tower', 'cards', 'self')!.score - baseline).toBe(4);
+    expect(evaluateDivination(byTool, 'location', 'old_tower', 'cards', 'self')!.score - baseline).toBe(2);
+    expect(evaluateDivination(unrelated, 'location', 'old_tower', 'cards', 'self')!.score).toBe(baseline);
+
+    const sequence9 = structuredClone(folk); sequence9.pathwayId = 'seer'; sequence9.sequence = 9;
+    const sequence8 = structuredClone(sequence9); sequence8.sequence = 8;
+    expect(evaluateDivination(sequence9, 'location', 'old_tower', 'cards', 'self')!.score - baseline).toBe(2);
+    expect(evaluateDivination(sequence8, 'location', 'old_tower', 'cards', 'self')!.score - baseline).toBe(2);
+  });
+
+  it('NPC代占不读取玩家属性、技能、物品或占卜家职业值', () => {
+    const state = fresh();
+    unlockTower(state);
+    state.day = 2; state.hour = 11; state.relations.nelson = 45; state.pence = 100;
+    state.npcVisitSession = { npcId: 'nelson', startedDay: 2, startedHour: 10, day: 2, hour: 11 };
+    const baseline = evaluateDivination(state, 'location', 'old_tower', 'cards', 'nelson')!.score;
+    const changed = structuredClone(state);
+    changed.stats.spi = 100;
+    changed.skills.occult = 10;
+    changed.items.symbol_cards = 1;
+    changed.items.ritual_chalk = 1;
+    changed.pathwayId = 'seer';
+    changed.sequence = 9;
+    expect(evaluateDivination(changed, 'location', 'old_tower', 'cards', 'nelson')!.score).toBe(baseline);
+  });
+
+  it('真正占卜的统一CheckDef均含属性、技能、媒介与恰好+2的占卜家贡献', () => {
+    for (const checkId of [
+      'club_commission_lost_keepsake', 'club_commission_journey_omen',
+      'club_commission_recurring_nightmare', 'elliot_locator_divination',
+    ]) {
+      const check = EXPLORATION_CHECKS.find(def => def.id === checkId)!;
+      expect(check.contributions.some(term => term.kind === 'stat')).toBe(true);
+      expect(check.contributions.some(term => term.kind === 'skill')).toBe(true);
+      expect(check.contributions.some(term => term.kind === 'tool')).toBe(true);
+      expect(check.contributions).toContainEqual(expect.objectContaining({ kind: 'ability', id: 'seer_divination', value: 2 }));
+    }
+    const accept = EXPLORATION_CHECKS.find(def => def.id === 'club_accept_lost_keepsake')!;
+    expect(accept.contributions).not.toContainEqual(expect.objectContaining({ kind: 'ability', id: 'seer_divination', value: 2 }));
+  });
+
+  it('读档按保存的公式输入重算历史占卜，伪造score不能成为权威', () => {
+    const state = teachable();
+    learnCardDivination(state);
+    state.items.anomaly_evidence = 1;
+    state.stats.spi = 50;
+    expect(performDivination(state, 'item', 'anomaly_evidence', 'cards', 'self')).toMatchObject({ ok: true, outcome: 'passed' });
+    const canonicalScore = state.divinationAttempts.at(-1)!.score;
+    state.divinationAttempts.at(-1)!.score = 999;
+    saveGame(state);
+    const loaded = loadGame()!;
+    expect(loaded.divinationAttempts).toHaveLength(1);
+    expect(loaded.divinationAttempts[0].score).toBe(canonicalScore);
+    expect(loaded.divinationAttempts[0].score).not.toBe(999);
+    expect(loaded.divinationInsights).toHaveLength(1);
+    expect(loaded.log.some(entry => /score|分数|检定值|999/.test(entry.text))).toBe(false);
+    saveGame(loaded);
+    expect(loadGame()).toEqual(loaded);
+  });
+
+  it('合法v23成功占卜在当前状态变化后仍保留历史记录、线索与物品辨认，二次读档幂等', () => {
+    const state = teachable();
+    learnCardDivination(state);
+    state.items.cryptic_note = 1;
+    state.stats.spi = 50;
+    expect(performDivination(state, 'item', 'cryptic_note', 'cards', 'self')).toMatchObject({ ok: true, outcome: 'passed' });
+    const historicalScore = state.divinationAttempts[0].score;
+    const historicalDay = state.divinationAttempts[0].day;
+    const historicalHour = state.divinationAttempts[0].hour;
+    state.schemaVersion = 23;
+    delete state.divinationAttempts[0].scoreInput;
+    // These are all legal changes after the historical attempt.  None of them
+    // may be treated as inputs that existed when the attempt was made.
+    state.stats.spi = 1;
+    state.skills.occult = 0;
+    state.items.symbol_cards = 0;
+    state.stats.san = 10;
+    state.stats.cor = 80;
+    state.flags.jammed = 1;
+    acquireClue(state, 'clocktower_repair_orders', 'archive', 'later evidence');
+    saveGame(state);
+    const migrated = loadGame()!;
+    expect(migrated.schemaVersion).toBe(32);
+    expect(migrated.divinationAttempts).toHaveLength(1);
+    expect(migrated.divinationAttempts[0].score).toBe(historicalScore);
+    expect(migrated.divinationAttempts[0].scoreInput).toEqual({
+      version: 23,
+      provenance: 'validated_v23_attempt',
+      validatedScore: historicalScore,
+      targetKind: 'item',
+      targetId: 'cryptic_note',
+      method: 'cards',
+      provider: 'self',
+      outcome: 'hint',
+      day: historicalDay,
+      hour: historicalHour,
+    });
+    expect(migrated.divinationInsights).toHaveLength(1);
+    expect(checkCond(migrated, 'clue:cryptic_note_warning')).toBe(true);
+    expect(migrated.itemKnowledge.cryptic_note).toMatchObject({ identifiedAsOccult: true });
+    saveGame(migrated);
+    expect(loadGame()).toEqual(migrated);
+  });
+
+  it('v23结果与旧分数阈值矛盾时不会因迁移标记而被保留', () => {
+    const state = teachable();
+    learnCardDivination(state);
+    state.items.cryptic_note = 1;
+    state.stats.spi = 50;
+    expect(performDivination(state, 'item', 'cryptic_note', 'cards', 'self')).toMatchObject({ ok: true, outcome: 'passed' });
+    state.schemaVersion = 23;
+    delete state.divinationAttempts[0].scoreInput;
+    state.divinationAttempts[0].outcome = 'backlash';
+    state.divinationInsights[0].outcome = 'backlash';
+    saveGame(state);
+    const loaded = loadGame()!;
+    expect(loaded.divinationAttempts).toEqual([]);
+    expect(loaded.divinationInsights).toEqual([]);
+  });
+
+  it('迁移凭据绑定原始结果，v24中篡改outcome会清除整组历史记录', () => {
+    const state = teachable();
+    learnCardDivination(state);
+    state.items.cryptic_note = 1;
+    state.stats.spi = 50;
+    expect(performDivination(state, 'item', 'cryptic_note', 'cards', 'self')).toMatchObject({ ok: true, outcome: 'passed' });
+    state.schemaVersion = 23;
+    delete state.divinationAttempts[0].scoreInput;
+    saveGame(state);
+    const migrated = loadGame()!;
+    migrated.divinationAttempts[0].outcome = 'backlash';
+    migrated.divinationInsights[0].outcome = 'backlash';
+    saveGame(migrated);
+    const reloaded = loadGame()!;
+    expect(reloaded.divinationAttempts).toEqual([]);
+    expect(reloaded.divinationInsights).toEqual([]);
+  });
+
+  it('v24缺少公式快照的占卜记录按fail-closed清除', () => {
+    const state = teachable();
+    learnCardDivination(state);
+    state.items.anomaly_evidence = 1;
+    state.stats.spi = 50;
+    expect(performDivination(state, 'item', 'anomaly_evidence', 'cards', 'self')).toMatchObject({ ok: true });
+    state.schemaVersion = 24;
+    delete state.divinationAttempts[0].scoreInput;
+    saveGame(state);
+    const loaded = loadGame()!;
+    expect(loaded.divinationAttempts).toEqual([]);
+    expect(loaded.divinationInsights).toEqual([]);
+  });
+
   it('低风险纸牌失败无结果，高压残页失败反噬且合法尝试才付出代价', () => {
     const low = teachable(); learnCardDivination(low); unlockTower(low);
     const lowSan = low.stats.san;
@@ -147,15 +315,19 @@ describe('线索、NPC代占与表面信息', () => {
     expect(s.pathwayId).toBeNull();
   });
 
-  it('尼尔逊受信任、作息和费用约束；伊芙琳只受理已登记的官方范围', () => {
+  it('尼尔逊受会面和费用约束；伊芙琳只受理已登记的官方范围', () => {
     const s = fresh(); unlockTower(s); s.day = 2; s.hour = 10; s.relations.nelson = 45; s.pence = 0;
+    expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'nelson')).toMatch(/拜访交谈/);
+    s.hour = 11;
+    s.npcVisitSession = { npcId: 'nelson', startedDay: 2, startedHour: 10, day: 2, hour: 11 };
     expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'nelson')).toMatch(/付不起/);
     s.pence = 100;
     expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'nelson')).toBeNull();
     s.hour = 21;
-    expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'nelson')).toMatch(/作息/);
+    expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'nelson')).toMatch(/拜访交谈/);
 
     s.hour = 10; s.relations.evelyn = 20;
+    s.npcVisitSession = { npcId: 'evelyn', startedDay: 2, startedHour: 9, day: 2, hour: 10 };
     expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'evelyn')).toMatch(/正式异常记录/);
     s.awareness = 'informed';
     expect(divinationIssue(s, 'location', 'old_tower', 'cards', 'evelyn')).toBeNull();
@@ -183,7 +355,7 @@ describe('v14迁移', () => {
     delete (ordinary as Partial<GameState>).divinationInsights;
     delete (ordinary as Partial<GameState>).divinationAttempts;
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(ordinary));
-    expect(loadGame()).toMatchObject({ schemaVersion: 22, divinationTraining: { cards: false, dream: false }, divinationAttempts: [], divinationInsights: [] });
+    expect(loadGame()).toMatchObject({ schemaVersion: 32, divinationTraining: { cards: false, dream: false }, divinationAttempts: [], divinationInsights: [] });
 
     const seer = fresh() as typeof ordinary;
     seer.schemaVersion = 13; seer.pathwayId = 'seer'; seer.sequence = 8;

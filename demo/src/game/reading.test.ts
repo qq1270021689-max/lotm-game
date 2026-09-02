@@ -212,7 +212,7 @@ describe('v14到v15迁移', () => {
       s.forcedEventQueue = ['study_forbidden'];
     });
     const first = loadGame()!;
-    expect(first.schemaVersion).toBe(22);
+    expect(first.schemaVersion).toBe(32);
     expect(first.items.occult_notes).toBe(0);
     expect(first.books.abridged_occult_notes).toMatchObject({ acquired: true, readHours: 9, completed: false });
     expect(first.pendingEvent).toBeNull();
@@ -235,5 +235,19 @@ describe('v14到v15迁移', () => {
     const loaded = loadGame()!;
     expect(loaded.books.church_festivals_excerpt).toMatchObject({ acquired: true, readHours: 4, completed: true });
     expect(loaded.knowledge.filter(id => id === 'church_liturgy')).toHaveLength(1);
+  });
+
+  it('旧存档中的规则层阅读提示会转换为调查笔记叙事', () => {
+    const s = fresh();
+    s.log.push({
+      day: 2,
+      hour: 9,
+      kind: 'good',
+      text: '你读完《旧手册》并整理了索引。书中能验证的知识已经进入笔记；没有任何内容凭空授予非凡能力。',
+    });
+    saveGame(s);
+    const loaded = loadGame()!;
+    expect(loaded.log.at(-1)?.text).toContain('能相互印证的段落已经逐条抄进调查笔记');
+    expect(loaded.log.at(-1)?.text).not.toContain('凭空授予非凡能力');
   });
 });

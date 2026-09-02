@@ -313,7 +313,7 @@ describe('死亡析出、鉴定与存档清洗', () => {
     forged.tradeFair.purchasedCounts['trade:seer:potion'] = 0;
     forged.confirmedBeyonderDeaths.push({
       sourceId: 'fallen_seer_smuggler', npcId: 'masked_fortune_smuggler', pathwayId: 'seer', sequence: 9,
-      characteristicItemId: 'seer9_characteristic', confirmedDay: 1, confirmedHour: 22,
+      characteristicItemId: 'seer9_characteristic', confirmedDay: 1, confirmedHour: 22, cause: 'event',
     });
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(forged));
     const cleaned = loadGame()!;

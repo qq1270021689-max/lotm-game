@@ -274,7 +274,7 @@ describe('v18 存档迁移与清洗', () => {
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(old));
 
     const loaded = loadGame()!;
-    expect(loaded).toMatchObject({ schemaVersion: 22, locationRelations: {}, landmarkIntroductions: [], landmarkEncounters: [] });
+    expect(loaded).toMatchObject({ schemaVersion: 32, locationRelations: {}, landmarkIntroductions: [], landmarkEncounters: [] });
     expect(loaded.relations.azik).toBeUndefined();
     expect(allNPCs(loaded).some(npc => npc.id === 'azik')).toBe(false);
   });

@@ -8,19 +8,26 @@ const LOCATION_INTEL: Partial<Record<string, readonly string[]>> = {
 
 const LOCATION_CLUES: Partial<Record<string, readonly string[]>> = {
   docks: ['dock_missing_reports', 'dock_manifest_discrepancy', 'dock_marked_manifest', 'river_sea_missing_notices'],
-  canal: ['dock_manifest_discrepancy', 'dock_seq9_hunter_tracks', 'dock_seq9_apprentice_passage'],
+  canal: [
+    'dock_manifest_discrepancy', 'dock_watcher_route',
+    'dock_witness_statement', 'dock_witness_fragment', 'dock_transfer_watch_record', 'dock_transfer_decoy',
+    'dock_witness_locker_token', 'dock_witness_last_errand', 'dock_sealed_statement_excerpt', 'dock_official_case_summary',
+    'dock_seq9_hunter_tracks', 'dock_seq9_apprentice_passage',
+  ],
+  old_loading_yard: ['dock_gray_hat_retreat_route'],
+  riverside_coal_yard: ['dock_wagon_coal_yard_route', 'dock_tar_seal_coal_omen'],
   old_tower: ['clocktower_public_complaints', 'clocktower_repair_orders'],
   manor: ['manor_address'],
   factory: ['tingen_factory_repairs'],
   st_selena_church: ['tingen_city_directory'],
-  dewill_library: ['tingen_city_directory'],
+  dewill_library: ['tingen_city_directory', 'club_nightmare_statement'],
   municipal_library: ['tingen_city_directory'],
   hoy_university: ['tingen_honest_paper'],
   divination_club: ['tingen_honest_paper'],
   hound_tavern: ['tingen_honest_paper'],
   dragon_bar: ['tingen_honest_paper'],
   st_number_church: ['tingen_church_directory'],
-  river_sea_church: ['tingen_church_directory'],
+  river_sea_church: ['tingen_church_directory', 'club_journey_statement'],
 };
 
 export function isMaterialRouteValid(state: GameState, sourceId: string): boolean {

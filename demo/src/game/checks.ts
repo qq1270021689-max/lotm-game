@@ -48,7 +48,7 @@ function definitionInput(def: CheckDef, context: CheckContext) {
     abilityIds,
     companionId: def.contributions.some(term => term.kind === 'ability' && term.id.startsWith('companion:'))
       ? context.companionId ?? null : null,
-    preparationIds: uniqueSorted(context.preparationIds.filter(id => def.contributions.some(term => term.id === id))),
+    preparationIds: uniqueSorted(context.preparationIds.filter(id => def.contributions.some(term => term.kind === 'preparation' && term.id === id))),
   };
 }
 
@@ -74,6 +74,8 @@ function canonicalCheckContext(def: CheckDef, raw: CheckContext): CheckContext |
     ...def.requirements.filter(term => term.kind === 'ability').map(term => term.id),
     ...def.contributions.filter(term => term.kind === 'ability').map(term => term.id),
   ]);
+  const relevantPreparations = new Set(def.contributions
+    .filter(term => term.kind === 'preparation').map(term => term.id));
   return {
     target: { ...def.target },
     locationId: def.requirements.some(term => term.kind === 'location') ? raw.locationId : undefined,
@@ -83,7 +85,7 @@ function canonicalCheckContext(def: CheckDef, raw: CheckContext): CheckContext |
     toolIds: uniqueSorted(raw.toolIds.filter(id => relevantTools.has(id))),
     abilityIds: uniqueSorted(raw.abilityIds.filter(id => relevantAbilities.has(id))),
     companionId: undefined,
-    preparationIds: [],
+    preparationIds: uniqueSorted(raw.preparationIds.filter(id => relevantPreparations.has(id))),
   };
 }
 
@@ -140,6 +142,7 @@ export function evaluateCheck(definitions: readonly CheckDef[], request: CheckRe
       case 'clue': value = canonicalContext.clueIds.includes(term.id) ? term.value : 0; break;
       case 'tool': value = canonicalContext.toolIds.includes(term.id) ? term.value : 0; break;
       case 'ability': value = canonicalContext.abilityIds.includes(term.id) ? term.value : 0; break;
+      case 'preparation': value = canonicalContext.preparationIds.includes(term.id) ? term.value : 0; break;
       default: value = null;
     }
     if (value === null || !finite(value)) {

@@ -1,5 +1,5 @@
-import type { ActionResult, AppliedEffectReceipt, BookReward, BookState, CaseThreatState, CheckAttemptRecord, CheckContext, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, Commission, DeepInvestigationDef, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationTargetKind, DockSequence9ActionDef, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, StructuredLead, DiaryPageState, MaterialSourceState, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef } from './types';
-import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DEEP_INVESTIGATION_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, JOBS, ORGANIZATION_QUALIFICATION_TASKS, SALVAGE_DEFS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
+import type { ActionResult, ActiveHunt, AppliedEffectReceipt, AreaSuspicionRecord, AreaSuspicionSource, BookReward, BookState, CaseThreatState, CheckAttemptRecord, CheckContext, CheckDef, CheckInternalResult, CheckReceipt, ClueRecord, ClueSourceKind, CombatApproach, CombatProfile, CombatRoundAction, CombatRoundState, CombatTechniqueEffect, Commission, CriticalActivity, DeepInvestigationDef, DivinationAttempt, DivinationCredential, DivinationInsight, DivinationMethod, DivinationOutcome, DivinationProvider, DivinationScoreInput, DivinationTargetKind, DockCombatPreparationId, DockEncounterAftermathChoiceId, DockGrayHatOperationId, DockOldYardActionId, DockSequence9ActionDef, DockTransferFollowupId, DockWitnessCrisisChoiceId, DockWitnessFollowupRouteId, EventBlueprint, EventInstance, EventInstanceContext, ExplorationAttempt, ExplorationCheckResult, GameState, Effect, GameEvent, HuntPreparationKey, HuntTargetDef, IdentityCover, IdentityTraceDiscovery, IdentityTraceKind, IdentityTraceResolution, IdentityTraceResolutionMethod, ItemCategory, ItemKnowledgeState, LandmarkEncounterRecord, LandmarkIntroductionRecord, LocationActionId, LogEntry, GenNPC, SkillKey, PathwayLead, PreparationMode, OrganizationId, OrganizationRoute, OpeningScenarioId, StructuredLead, DiaryPageState, MaterialSourceState, MurderRecord, Sequence8Progress, Sequence9ExplorationAbilityDef, Sequence9ExplorationAbilityId, Sequence9PreparationRecord, Timer, TravelMode, TingenLandmarkActionDef, TradeFairState, TradeFairProductDef, NightwatchRoutineActionId, DivinationClubCommissionId, ElliotLocatorMode, SeerTrainingNodeId, WoundActionKind, WoundLevel, InvestigationAssessmentOutcome, InvestigationHypothesisId, InvestigationMethodId, InvestigationWorkspace } from './types';
+import { BOOK_DEFS, BOOK_SOURCE_DEFS, CLUE_DEFS, DEEP_INVESTIGATION_DEFS, DIVINATION_METHOD_DEFS, DOCK_CASE_DISPOSITIONS, DOCK_COMBAT_PREPARATIONS, DOCK_SEQUENCE9_ACTIONS, EVENTS, EXPLORATION_CHECKS, INVESTIGATION_EVIDENCE_DEFS, INVESTIGATION_HYPOTHESIS_DEFS, INVESTIGATION_METHOD_DEFS, investigationHypothesisCheckId, RANDOM_TEXT_EVENTS, NPCS, PATHWAYS, ORIGINS, OPENING_SCENARIOS, JOBS, ORGANIZATION_QUALIFICATION_TASKS, NIGHTWATCH_ROUTINE_ACTIONS, DIVINATION_CLUB_COMMISSIONS, SEER_TRAINING_NODES, SALVAGE_DEFS, SEQUENCE9_COMBAT_SKILLS, SEQUENCE9_EXPLORATION_ABILITIES, SHOP_DEFS, TINGEN_LANDMARK_ACTIONS, TINGEN_LANDMARK_ENCOUNTERS, TRADE_FAIR_PRODUCTS, BEYONDER_DEATH_SOURCES, HUNT_TARGET_DEFS, ITEMS, INTEL_NAMES, SKILL_NAMES, KNOWLEDGE_NAMES, LOCATIONS, ORGANIZATIONS, ORGANIZATION_LEAD_DEFS, ROSELLE_DIARY_PAGE_DEFS, MATERIAL_SOURCE_DEFS, SEQUENCE8_ACTING_DEFS, SEQUENCE8_RITUAL_DEFS, findEvent, findItem, findPathway, findJob, formulaName, npcAvailable, npcLocation, npcScheduleOwnerDay, weekdayOf, companionSpec, COMPANION_MIN_FAVOR, STAT_NAMES } from './data';
 import { evaluateCheck, sanitizeCheckAttemptRecord, toPublicCheckResult } from './checks';
 import { generateNPC, generateCoworker, generateCommission, spawnNemesis } from './gen';
 import type { NPCDef, JobDef } from './types';
@@ -7,9 +7,623 @@ import { hasFormalNightwatchRoute, hasVerifiedBlackthornReferral, isLocationUnlo
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 const rnd = (n: number) => Math.floor(Math.random() * n);
-export const CURRENT_SCHEMA_VERSION = 22;
+export const CURRENT_SCHEMA_VERSION = 32;
 export type { ActionResult } from './types';
 export { getVisibleLocations, hasFormalNightwatchRoute, hasVerifiedBlackthornReferral, isLocationUnlocked, isMaterialRouteValid, locationAccessIssue, redactLockedLocationText } from './location-access';
+
+const COMBAT_PATHWAY_BONUSES: Record<string, Partial<Omit<CombatProfile, 'injuryPenalty'>>> = {
+  seer: { maxSpirit: 10, spiritualAttack: 4, spiritualDefense: 4, critical: 6, dodge: 6 },
+  spectator: { maxSpirit: 12, spiritualAttack: 10, spiritualDefense: 8, dodge: 2 },
+  hunter: { maxHp: 20, physicalAttack: 10, physicalDefense: 5, critical: 10 },
+  sleepless: { maxHp: 10, maxSpirit: 8, physicalDefense: 4, spiritualDefense: 6 },
+  apprentice: { maxSpirit: 10, spiritualAttack: 4, spiritualDefense: 4, dodge: 10, critical: 4 },
+};
+
+function equippedCombatItems(s: GameState) {
+  const loadout = s.combatLoadout ?? { weaponId: null, armorId: null, focusId: null };
+  return ([loadout.weaponId, loadout.armorId, loadout.focusId] as const).flatMap(itemId => {
+    const item = itemId ? findItem(itemId) : undefined;
+    if (!item?.combat?.profileBonus || (s.items?.[item.id] ?? 0) <= 0) return [];
+    if (item.combat.slot === 'focus' && !hasInheritedSequence9Ability(s)) return [];
+    if (item.id === 'revolver' && (s.items?.revolver_ammo ?? 0) <= 0) return [];
+    return [item];
+  });
+}
+
+function combatItemProfileBonus(s: GameState) {
+  const result: Partial<CombatProfile> = {};
+  for (const item of equippedCombatItems(s)) {
+    for (const [key, value] of Object.entries(item.combat!.profileBonus!)) {
+      const profileKey = key as keyof CombatProfile;
+      result[profileKey] = ((result[profileKey] as number | undefined) ?? 0) + (value ?? 0) as never;
+    }
+  }
+  return result;
+}
+
+export function getCombatEquipmentView(s: GameState) {
+  const activeIds = new Set(equippedCombatItems(s).map(item => item.id));
+  const loadout = s.combatLoadout ?? { weaponId: null, armorId: null, focusId: null };
+  return ([loadout.weaponId, loadout.armorId, loadout.focusId] as const).flatMap(itemId => {
+    const item = itemId ? findItem(itemId) : undefined;
+    if (!item?.combat?.profileBonus || (s.items?.[item.id] ?? 0) <= 0) return [];
+    return [{
+      id: item.id, name: item.name, slot: item.combat.slot, active: activeIds.has(item.id),
+      status: item.id === 'revolver' && (s.items.revolver_ammo ?? 0) <= 0 ? '没有弹药，当前只能作为普通负重携带。'
+        : item.combat.slot === 'focus' && !hasInheritedSequence9Ability(s) ? '尚未成为非凡者，无法稳定发挥灵性媒介。' : null,
+    }];
+  });
+}
+
+const LOADOUT_KEYS = { weapon: 'weaponId', armor: 'armorId', focus: 'focusId' } as const;
+
+function strongestOwnedCombatItem(s: GameState, slot: 'weapon' | 'armor' | 'focus') {
+  return ITEMS.filter(item => item.combat?.slot === slot && item.combat.profileBonus && (s.items?.[item.id] ?? 0) > 0
+    && (slot !== 'focus' || hasInheritedSequence9Ability(s)))
+    .sort((a, b) => Object.values(b.combat!.profileBonus!).reduce((sum, value) => sum + (value ?? 0), 0)
+      - Object.values(a.combat!.profileBonus!).reduce((sum, value) => sum + (value ?? 0), 0))[0]?.id ?? null;
+}
+
+function sanitizedCombatLoadout(s: GameState, raw: unknown, migrateAutomatic: boolean) {
+  if (migrateAutomatic) return {
+    weaponId: strongestOwnedCombatItem(s, 'weapon'), armorId: strongestOwnedCombatItem(s, 'armor'),
+    focusId: strongestOwnedCombatItem(s, 'focus'),
+  };
+  const value = raw && typeof raw === 'object' ? raw as Partial<GameState['combatLoadout']> : {};
+  const valid = (itemId: unknown, slot: 'weapon' | 'armor' | 'focus') => {
+    if (itemId === null) return null;
+    const item = typeof itemId === 'string' ? findItem(itemId) : undefined;
+    return item?.combat?.slot === slot && item.combat.profileBonus && (s.items?.[item.id] ?? 0) > 0
+      && (slot !== 'focus' || hasInheritedSequence9Ability(s)) ? item.id : null;
+  };
+  return { weaponId: valid(value.weaponId, 'weapon'), armorId: valid(value.armorId, 'armor'), focusId: valid(value.focusId, 'focus') };
+}
+
+export function combatItemEquipStatus(s: GameState, itemId: string) {
+  const item = findItem(itemId);
+  if (!item?.combat?.profileBonus || item.combat.slot === 'consumable') return null;
+  const key = LOADOUT_KEYS[item.combat.slot];
+  return { slot: item.combat.slot, equipped: s.combatLoadout?.[key] === itemId };
+}
+
+export function equipCombatItem(s: GameState, itemId: string): ActionResult {
+  const item = findItem(itemId);
+  if (!item?.combat?.profileBonus || item.combat.slot === 'consumable') return { ok: false, msg: '这件物品不能装备到战斗栏。' };
+  if ((s.items[itemId] ?? 0) <= 0) return { ok: false, msg: '你并未持有这件装备。' };
+  if (s.pendingEncounter || s.activeHunt?.phase === 'combat') return { ok: false, msg: '冲突已经开始，不能临时更换装备。' };
+  if (s.atWork || s.currentLocation) return { ok: false, msg: '需要回到住处整理随身装备。' };
+  if (item.combat.slot === 'focus' && !hasInheritedSequence9Ability(s)) return { ok: false, msg: '普通人无法稳定装备灵性媒介。' };
+  s.combatLoadout ??= { weaponId: null, armorId: null, focusId: null };
+  s.combatLoadout[LOADOUT_KEYS[item.combat.slot]] = itemId;
+  addLog(s, `你把${item.name}放进了随身战斗装备栏。`, 'info');
+  return { ok: true };
+}
+
+export function unequipCombatSlot(s: GameState, slot: 'weapon' | 'armor' | 'focus'): ActionResult {
+  if (s.pendingEncounter || s.activeHunt?.phase === 'combat') return { ok: false, msg: '冲突已经开始，不能临时更换装备。' };
+  if (s.atWork || s.currentLocation) return { ok: false, msg: '需要回到住处整理随身装备。' };
+  s.combatLoadout ??= { weaponId: null, armorId: null, focusId: null };
+  s.combatLoadout[LOADOUT_KEYS[slot]] = null;
+  return { ok: true };
+}
+
+function equippedRevolverReady(s: GameState) {
+  return s.combatLoadout?.weaponId === 'revolver' && (s.items.revolver ?? 0) > 0 && (s.items.revolver_ammo ?? 0) > 0;
+}
+
+function consumeRevolverRound(s: GameState) {
+  if (!equippedRevolverReady(s)) return false;
+  s.items.revolver_ammo = Math.max(0, (s.items.revolver_ammo ?? 0) - 1);
+  addLog(s, `你开了一枪；左轮弹药还剩${s.items.revolver_ammo}发。`, 'info');
+  return true;
+}
+
+export function getCombatProfile(s: GameState): CombatProfile {
+  const pathwayBonus = s.pathwayId && hasInheritedSequence9Ability(s, s.pathwayId)
+    ? COMBAT_PATHWAY_BONUSES[s.pathwayId] ?? {} : {};
+  const itemBonus = combatItemProfileBonus(s);
+  const maxHp = 40 + s.stats.phy * 2 + (pathwayBonus.maxHp ?? 0);
+  const maxSpirit = 20 + s.stats.spi * 2 + Math.floor(s.stats.mnd / 2) + (pathwayBonus.maxSpirit ?? 0);
+  const currentHp = Number.isFinite(s.combatVitals?.hp) ? s.combatVitals.hp : maxHp;
+  const hpRatio = maxHp > 0 ? currentHp / maxHp : 0;
+  const injuryPenalty: 0 | 4 | 8 = hpRatio <= 0.25 ? 8 : hpRatio <= 0.5 ? 4 : 0;
+  const nightDodge = s.pathwayId === 'sleepless' && hasInheritedSequence9Ability(s, 'sleepless')
+    && (s.hour >= 18 || s.hour < 6) ? 6 : 0;
+  return {
+    maxHp,
+    maxSpirit,
+    physicalAttack: Math.max(0, 8 + Math.floor(s.stats.phy / 2) + (s.skills.combat ?? 0) * 3
+      + (itemBonus.physicalAttack ?? 0) + (pathwayBonus.physicalAttack ?? 0) - injuryPenalty),
+    spiritualAttack: Math.max(0, 6 + Math.floor(s.stats.spi * 0.8) + (s.skills.occult ?? 0) * 3
+      + (itemBonus.spiritualAttack ?? 0) + (pathwayBonus.spiritualAttack ?? 0)),
+    physicalDefense: Math.max(0, 5 + Math.floor(s.stats.phy / 3) + (s.skills.combat ?? 0)
+      + (itemBonus.physicalDefense ?? 0) + (pathwayBonus.physicalDefense ?? 0) - injuryPenalty),
+    spiritualDefense: Math.max(0, 5 + Math.floor(s.stats.mnd / 3) + Math.floor(s.stats.spi / 4)
+      + (s.skills.occult ?? 0) + (itemBonus.spiritualDefense ?? 0) + (pathwayBonus.spiritualDefense ?? 0)),
+    critical: Math.max(0, 5 + (s.skills.combat ?? 0) * 3 + Math.floor(s.stats.mnd / 10)
+      + (itemBonus.critical ?? 0) + (pathwayBonus.critical ?? 0)),
+    dodge: Math.max(0, 5 + (s.skills.sneak ?? 0) * 3 + Math.floor((s.stats.phy + s.stats.mnd) / 8)
+      + (itemBonus.dodge ?? 0) + (pathwayBonus.dodge ?? 0) + nightDodge - injuryPenalty),
+    injuryPenalty,
+  };
+}
+
+export function getWoundStatus(s: GameState): { level: WoundLevel; label: string; description: string } {
+  const profile = getCombatProfile(s);
+  const ratio = profile.maxHp > 0 ? s.combatVitals.hp / profile.maxHp : 0;
+  if (ratio <= 0.25) return { level: 'critical', label: '濒危', description: '你只能勉强维持行动，不能主动迎向战斗。' };
+  if (ratio <= 0.5) return { level: 'severe', label: '重伤', description: '伤势明显拖累物理攻击、防御与闪避。' };
+  if (ratio < 1) return { level: 'light', label: '轻伤', description: '伤口仍在影响状态；继续受创可能迅速恶化。' };
+  return { level: 'unhurt', label: '无明显伤势', description: '目前没有影响行动的外伤。' };
+}
+
+const SEVERE_BLOCKED_ACTIONS = new Set<WoundActionKind>([
+  'explore', 'salvage', 'deep_investigation', 'active_hunt', 'active_combat',
+]);
+
+const CRITICAL_ALLOWED_ACTIVITIES = new Set<CriticalActivity>([
+  'encounter_escape', 'forced_defense', 'leave', 'rest', 'emergency_aid', 'clinic_travel', 'clinic_treatment',
+]);
+
+/** 濒危状态的统一行动白名单。纯查询不调用此函数；所有主动推进默认传 active_progress。 */
+export function criticalActivityIssue(s: GameState, activity: CriticalActivity = 'active_progress'): string | null {
+  if (getWoundStatus(s).level !== 'critical' || CRITICAL_ALLOWED_ACTIVITIES.has(activity)) return null;
+  return '你已处于濒危状态，只能处理眼前袭击、撤离、休息、求助或乘车前往北区诊所。';
+}
+
+/** 所有剧烈行动共用的伤势门禁；公开 API 必须在任何资源扣除前调用。 */
+export function woundActionIssue(s: GameState, action: WoundActionKind): string | null {
+  const wound = getWoundStatus(s);
+  if (wound.level === 'critical') return criticalActivityIssue(s);
+  if (wound.level === 'severe' && SEVERE_BLOCKED_ACTIONS.has(action)) {
+    return '重伤正在拖累你的行动；先接受治疗，不能继续进行这类剧烈活动。';
+  }
+  return null;
+}
+
+const CLINIC_TREATMENT_PLANS = {
+  light: { fee: 20, hours: 2, healing: 18, label: '轻伤清创与换药' },
+  severe: { fee: 45, hours: 4, healing: 30, label: '重伤处置与留观' },
+  critical: { fee: 80, hours: 6, healing: 40, label: '濒危急救与长时留观' },
+} as const;
+
+export function getClinicTreatmentPlan(s: GameState) {
+  const level = getWoundStatus(s).level;
+  return level === 'unhurt' ? null : { level, ...CLINIC_TREATMENT_PLANS[level] };
+}
+
+export function homeBandageIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  if (currentEvent(s)) return '先处理眼前正在发生的事情。';
+  if (s.atWork || s.currentLocation) return '需要回到住处，在干净环境中处理伤口。';
+  if (getWoundStatus(s).level !== 'light') return '家庭包扎只适合轻伤；更严重的伤势必须去诊所。';
+  if ((s.items.medical_dressing ?? 0) <= 0) return '缺少一份消毒绷带与敷料。';
+  return null;
+}
+
+export function applyHomeBandage(s: GameState): ActionResult {
+  const issue = homeBandageIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const beforeHp = s.combatVitals.hp;
+  s.items.medical_dressing--;
+  s.combatVitals.hp += 8;
+  clampCombatVitals(s);
+  advanceHours(s, 1);
+  addLog(s, `你用一份消毒敷料重新包扎伤口，恢复了${s.combatVitals.hp - beforeHp}点生命。`, 'good');
+  return { ok: true };
+}
+
+export function emergencyAidIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  if (currentEvent(s)) return '先处理眼前正在发生的事情。';
+  if (s.atWork || s.currentLocation) return '需要先回到住处，才能请邻居联系慈善救护。';
+  if (getWoundStatus(s).level !== 'critical') return '慈善救护优先接应已经无法自行就医的濒危伤者。';
+  return null;
+}
+
+/** 防止濒危且身无分文时永久锁死；只稳定到重伤，后续仍需工作筹钱并接受正规治疗。 */
+export function requestEmergencyAid(s: GameState): ActionResult {
+  const issue = emergencyAidIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const profile = getCombatProfile(s);
+  const stabilizedHp = Math.max(s.combatVitals.hp + 1, Math.floor(profile.maxHp * 0.25) + 1);
+  const beforeHp = s.combatVitals.hp;
+  s.combatVitals.hp = Math.min(profile.maxHp, stabilizedHp);
+  advanceHours(s, 6);
+  addLog(s, `邻居替你叫来慈善救护。经过六小时止血与固定，你恢复了${s.combatVitals.hp - beforeHp}点生命，但仍属重伤；后续治疗费用仍需自行筹措。`, 'good');
+  return { ok: true };
+}
+
+export function clinicTreatmentIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  if (currentEvent(s)) return '先处理眼前正在发生的事情。';
+  if (s.atWork) return '工作期间无法接受完整治疗。';
+  if (s.currentLocation?.locationId !== 'north_clinic') return '需要亲自前往北区诊所。';
+  const plan = getClinicTreatmentPlan(s);
+  if (!plan) return '目前没有需要诊所处理的外伤。';
+  if (!actionFitsWindow(s.hour, plan.hours, 8, 18)) return '诊所无法在今日门诊结束前完成这档处置。';
+  if (s.pence < plan.fee) return '现有钱款不足以支付这档治疗费用。';
+  return null;
+}
+
+export function receiveClinicTreatment(s: GameState): ActionResult {
+  const issue = clinicTreatmentIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const plan = getClinicTreatmentPlan(s)!;
+  const beforeHp = s.combatVitals.hp;
+  s.pence -= plan.fee;
+  s.combatVitals.hp += plan.healing;
+  clampCombatVitals(s);
+  advanceHours(s, plan.hours);
+  addLog(s, `北区诊所完成了${plan.label}。你支付${fmtMoney(plan.fee)}，恢复了${s.combatVitals.hp - beforeHp}点生命；后续仍需休养。`, 'good');
+  return { ok: true };
+}
+
+export function clampCombatVitals(s: GameState) {
+  const profile = getCombatProfile(s);
+  const rawHp = Number.isFinite(s.combatVitals?.hp) ? Math.floor(s.combatVitals.hp) : profile.maxHp;
+  const rawSpirit = Number.isFinite(s.combatVitals?.spirit) ? Math.floor(s.combatVitals.spirit) : profile.maxSpirit;
+  s.combatVitals = {
+    hp: Math.max(0, Math.min(profile.maxHp, rawHp)),
+    spirit: Math.max(0, Math.min(profile.maxSpirit, rawSpirit)),
+  };
+}
+
+export function applyCombatImpact(s: GameState, physicalPower: number, spiritualPower = 0, accuracy = 40) {
+  const profile = getCombatProfile(s);
+  const dodgeReduction = profile.dodge >= accuracy ? 6 : profile.dodge >= accuracy - 8 ? 3 : 0;
+  const hpDamage = physicalPower > 0
+    ? Math.max(1, Math.floor(physicalPower) - Math.floor(profile.physicalDefense / 2) - dodgeReduction) : 0;
+  const spiritDamage = spiritualPower > 0
+    ? Math.max(1, Math.floor(spiritualPower) - Math.floor(profile.spiritualDefense / 2)) : 0;
+  s.combatVitals.hp = Math.max(0, s.combatVitals.hp - hpDamage);
+  s.combatVitals.spirit = Math.max(0, s.combatVitals.spirit - spiritDamage);
+  return { hpDamage, spiritDamage, dodgeReduction };
+}
+
+function rescueFromFatalInjury(s: GameState, sceneText: string) {
+  if (s.combatVitals.hp > 0) return false;
+  s.combatVitals.hp = 1;
+  const treatmentCost = Math.min(36, Math.max(0, s.pence));
+  s.pence -= treatmentCost;
+  s.pendingEncounter = null;
+  s.currentLocation = null;
+  s.atWork = false;
+  addLog(s, `${sceneText}你在救援与简单救治后保住了性命，医药与车费共花去${fmtMoney(treatmentCost)}。`, 'bad');
+  return true;
+}
+
+const validAreaId = (areaId: string) => areaId === 'home' || LOCATIONS.some(location => location.id === areaId);
+
+const IDENTITY_TRACE_RULES: Record<IdentityTraceKind, {
+  sources: readonly AreaSuspicionSource[];
+  investigationCheckId: string;
+  resolutionCheckId: string;
+  method: IdentityTraceResolutionMethod;
+  reduction: number;
+  fee: number;
+  blockedFee: number;
+  investigationLabel: string;
+  knownLabel: string;
+  nextStepText: string;
+  resolutionLabel: string;
+}> = {
+  witness_description: {
+    sources: ['dock_escape_failed'], investigationCheckId: 'identity_investigate_witness',
+    resolutionCheckId: 'identity_resolve_witness', method: 'alibi_correction', reduction: 25, fee: 12, blockedFee: 6,
+    investigationLabel: '侧面核对目击描述', knownLabel: '有人记住了你匆忙离开的轮廓',
+    nextStepText: '整理当日行程与工作凭据，让中间人纠正把你和冲突者混为一人的描述。',
+    resolutionLabel: '提交行程凭据并修正描述',
+  },
+  public_confrontation: {
+    sources: ['dock_defensive_physical', 'dock_active_physical', 'dock_defensive_spiritual', 'dock_active_spiritual'],
+    investigationCheckId: 'identity_investigate_confrontation', resolutionCheckId: 'identity_resolve_confrontation',
+    method: 'scene_misdirection', reduction: 35, fee: 30, blockedFee: 15,
+    investigationLabel: '复盘公开冲突留下的痕迹', knownLabel: '冲突现场留下了可以相互印证的衣着与行动描述',
+    nextStepText: '准备一套不同衣着，并通过可靠中间人处理仍在流传的错误特征。',
+    resolutionLabel: '安排中间人处理现场描述',
+  },
+  death_connection: {
+    sources: ['hunt_death'], investigationCheckId: 'identity_investigate_death',
+    resolutionCheckId: 'identity_resolve_death', method: 'legal_record_review', reduction: 10, fee: 60, blockedFee: 24,
+    investigationLabel: '核对死者最后的交易与会面记录', knownLabel: '地下交易记录把你与死者最后一次单独接触联系起来',
+    nextStepText: '请熟悉灰色交易的事务代理核对登记。即使记录得到处理，恶名与全局执法关注也不会消失。',
+    resolutionLabel: '委托事务代理复核交易登记',
+  },
+};
+
+function identityTraceKind(source: AreaSuspicionSource): IdentityTraceKind {
+  if (source === 'dock_escape_failed') return 'witness_description';
+  if (source === 'hunt_death') return 'death_connection';
+  return 'public_confrontation';
+}
+
+function identityTraceRule(source: AreaSuspicionSource) {
+  return IDENTITY_TRACE_RULES[identityTraceKind(source)];
+}
+
+function rebuildAreaSuspicion(s: GameState) {
+  const base: Record<string, number> = {};
+  const lastIncident: Record<string, number> = {};
+  for (const record of s.areaSuspicionRecords ?? []) {
+    if (!validAreaId(record.areaId)) continue;
+    base[record.areaId] = (base[record.areaId] ?? 0) + record.amount;
+    lastIncident[record.areaId] = Math.max(lastIncident[record.areaId] ?? 0, (record.day - 1) * 24 + record.hour);
+  }
+  const relief: Record<string, number> = {};
+  for (const resolution of s.identityTraceResolutions ?? []) {
+    const source = s.areaSuspicionRecords?.find(record => record.id === resolution.sourceRecordId);
+    if (!source) continue;
+    relief[source.areaId] = (relief[source.areaId] ?? 0) + resolution.amount;
+  }
+  const aggregate: Record<string, number> = {};
+  for (const [areaId, rawBase] of Object.entries(base)) {
+    const remainingAfterActions = Math.max(0, rawBase - (relief[areaId] ?? 0));
+    let value = remainingAfterActions;
+    if (value < 100) {
+      const quietHours = Math.max(0, absoluteHour(s) - (lastIncident[areaId] ?? absoluteHour(s)) - 72);
+      value = Math.max(0, value - Math.floor(quietHours / 24) * 5);
+    }
+    if (value > 0) aggregate[areaId] = Math.min(100, value);
+  }
+  s.areaSuspicion = aggregate;
+  s.wantedAreas = Object.entries(aggregate).filter(([, value]) => value >= 100).map(([areaId]) => areaId).sort();
+}
+
+export function getIdentityCoverStatus(s: GameState) {
+  const active = !!s.identityCover && s.identityCover.expiresAbsoluteHour > absoluteHour(s);
+  return {
+    active,
+    remainingHours: active ? s.identityCover!.expiresAbsoluteHour - absoluteHour(s) : 0,
+    label: active ? '普通伪装仍可使用' : '没有正在使用的身份掩饰',
+  };
+}
+
+function isPublicIdentityCheckpoint(locationId: string) {
+  const location = LOCATIONS.find(candidate => candidate.id === locationId);
+  return !!location && (location.public === true
+    || (location.region === '城区' && !['black_market', 'canal', 'forston_hideout'].includes(locationId)));
+}
+
+export function getIdentityExposureEntries(s: GameState) {
+  const areaIds = [...new Set((s.areaSuspicionRecords ?? []).map(record => record.areaId))];
+  return areaIds.map(areaId => {
+    const status = getAreaSuspicionStatus(s, areaId);
+    const traces = s.areaSuspicionRecords.filter(record => record.areaId === areaId).map(record => {
+      const kind = identityTraceKind(record.source);
+      const rule = IDENTITY_TRACE_RULES[kind];
+      const discovered = s.identityTraceDiscoveries?.some(entry => entry.sourceRecordId === record.id) ?? false;
+      const resolved = s.identityTraceResolutions?.some(entry => entry.sourceRecordId === record.id) ?? false;
+      return {
+        sourceRecordId: record.id,
+        kind,
+        discovered,
+        resolved,
+        label: discovered ? rule.knownLabel : '尚未查明具体来源的可追查痕迹',
+        nextStepText: discovered ? (resolved ? '这条痕迹已经完成一次有效处理。' : rule.nextStepText) : '先从公开记录、目击者口风和自己的行动时间线中核对。',
+        investigationLabel: rule.investigationLabel,
+        resolutionLabel: rule.resolutionLabel,
+      };
+    });
+    return { ...status, traces };
+  });
+}
+
+function identityActionBaseIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (currentEvent(s)) return '先处理眼前正在发生的事情。';
+  if (!isAtHome(s)) return s.atWork ? '需要先下班回到住处整理身份记录。' : '需要先回到住处，才能安全核对身份痕迹。';
+  return null;
+}
+
+function nextUndiscoveredIdentityTrace(s: GameState, areaId: string) {
+  return (s.areaSuspicionRecords ?? []).find(record => record.areaId === areaId
+    && !s.identityTraceDiscoveries?.some(entry => entry.sourceRecordId === record.id));
+}
+
+function nextUnresolvedIdentityTrace(s: GameState, areaId: string) {
+  return (s.areaSuspicionRecords ?? []).find(record => record.areaId === areaId
+    && s.identityTraceDiscoveries?.some(entry => entry.sourceRecordId === record.id)
+    && !s.identityTraceResolutions?.some(entry => entry.sourceRecordId === record.id));
+}
+
+export function identityTraceInvestigationIssue(s: GameState, areaId: string): string | null {
+  const baseIssue = identityActionBaseIssue(s);
+  if (baseIssue) return baseIssue;
+  if (!validAreaId(areaId)) return '这不是能够核验的地区。';
+  const trace = nextUndiscoveredIdentityTrace(s, areaId);
+  if (!trace) return '当前没有尚未查明来源的身份痕迹。';
+  const rule = identityTraceRule(trace.source);
+  const internal = evaluateExplorationCheckInternal(s, rule.investigationCheckId);
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return repeatedIssue;
+  if (s.stats.energy < energyCost(s, internal.outcome === 'passed' ? 10 : 6)) return '精力不足以完成这轮核对。';
+  return null;
+}
+
+export function investigateIdentityTrace(s: GameState, areaId: string): ActionResult {
+  const issue = identityTraceInvestigationIssue(s, areaId);
+  if (issue) return { ok: false, msg: issue };
+  const trace = nextUndiscoveredIdentityTrace(s, areaId)!;
+  const rule = identityTraceRule(trace.source);
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, rule.investigationCheckId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  const effects = applyEffects(s, [{ k: 'energy', v: -energyCost(s, passed ? 10 : 6) }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', effects[0]), hoursReceipt(hours)] };
+  if (passed) receipt.effects.push({ id: 'identity:trace', applied: true, before: false, after: true });
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (passed) {
+    s.identityTraceDiscoveries.push({
+      sourceRecordId: trace.id, kind: identityTraceKind(trace.source), investigationAttemptId: attempt.attemptId,
+    });
+    addLog(s, `你把公开记录、目击者口风和自己的时间线逐项对照，确认了【${rule.knownLabel}】。下一步：${rule.nextStepText}`, 'system');
+  } else {
+    addLog(s, '现有记录无法说明是谁、在什么环节把你的特征联系起来。继续重复询问只会让人记住你，需要先提升调查或交谈能力。', 'info');
+  }
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function identityTraceResolutionIssue(s: GameState, areaId: string): string | null {
+  const baseIssue = identityActionBaseIssue(s);
+  if (baseIssue) return baseIssue;
+  const trace = nextUnresolvedIdentityTrace(s, areaId);
+  if (!trace) return '需要先查明一条尚未处理的具体身份痕迹。';
+  const rule = identityTraceRule(trace.source);
+  if (s.pence < rule.fee) return '现有钱款不足以支付凭据、跑腿和事务代理费用。';
+  if (identityTraceKind(trace.source) === 'public_confrontation' && (s.items.plain_disguise_kit ?? 0) <= 0) {
+    return '需要一份普通伪装用品，才能替换仍在流传的衣着特征。';
+  }
+  const internal = evaluateExplorationCheckInternal(s, rule.resolutionCheckId);
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return repeatedIssue;
+  if (s.stats.energy < energyCost(s, internal.outcome === 'passed' ? 12 : 8)) return '精力不足以完成这轮处理。';
+  return null;
+}
+
+export function resolveIdentityTrace(s: GameState, areaId: string): ActionResult {
+  const issue = identityTraceResolutionIssue(s, areaId);
+  if (issue) return { ok: false, msg: issue };
+  const trace = nextUnresolvedIdentityTrace(s, areaId)!;
+  const kind = identityTraceKind(trace.source);
+  const rule = IDENTITY_TRACE_RULES[kind];
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, rule.resolutionCheckId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? (kind === 'witness_description' ? 2 : kind === 'public_confrontation' ? 3 : 4)
+    : kind === 'witness_description' ? 1 : 2;
+  const fee = passed ? rule.fee : rule.blockedFee;
+  const requestedEffects: Effect[] = [
+    { k: 'energy', v: -energyCost(s, passed ? 12 : 8) },
+    { k: 'money', v: -fee },
+    ...(kind === 'public_confrontation' ? [{ k: 'item' as const, id: 'plain_disguise_kit', v: -1 }] : []),
+  ];
+  const applied = applyEffects(s, requestedEffects);
+  const receiptEffects = [receiptEntry('energy', applied[0]), receiptEntry('money', applied[1])];
+  if (kind === 'public_confrontation') receiptEffects.push(receiptEntry('item:plain_disguise_kit', applied[2]));
+  receiptEffects.push(hoursReceipt(hours));
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: receiptEffects };
+  if (passed) receipt.effects.push({ id: 'identity:resolved', applied: true, before: false, after: true });
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (passed) {
+    s.identityTraceResolutions.push({
+      sourceRecordId: trace.id, method: rule.method, amount: rule.reduction, resolutionAttemptId: attempt.attemptId,
+    });
+    rebuildAreaSuspicion(s);
+    const status = getAreaSuspicionStatus(s, areaId);
+    addLog(s, `针对【${rule.knownLabel}】的处理形成了可核验结果。它不改写已经发生的事，但当地现有记录不再像之前那样容易闭合。当前情况：${status.label}。`, 'good');
+  } else {
+    addLog(s, '事务处理没有形成可信闭环。跑腿与材料已经花掉，但对方不愿凭现有说法改动记录；需要先改善相关能力。', 'info');
+  }
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function identityCoverIssue(s: GameState): string | null {
+  const baseIssue = identityActionBaseIssue(s);
+  if (baseIssue) return baseIssue;
+  if (getIdentityCoverStatus(s).active) return '现有伪装仍能使用，不必立刻重新准备。';
+  if ((s.items.plain_disguise_kit ?? 0) <= 0) return '缺少一份普通伪装用品。';
+  const internal = evaluateExplorationCheckInternal(s, 'identity_prepare_cover');
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return repeatedIssue;
+  if (s.stats.energy < energyCost(s, internal.outcome === 'passed' ? 8 : 5)) return '精力不足以完成细节准备。';
+  return null;
+}
+
+export function prepareIdentityCover(s: GameState): ActionResult {
+  const issue = identityCoverIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'identity_prepare_cover', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  const applied = applyEffects(s, [
+    { k: 'energy', v: -energyCost(s, passed ? 8 : 5) },
+    { k: 'item', id: 'plain_disguise_kit', v: -1 },
+  ]);
+  const receipt: CheckReceipt = {
+    hoursElapsed: hours,
+    effects: [receiptEntry('energy', applied[0]), receiptEntry('item:plain_disguise_kit', applied[1]), hoursReceipt(hours)],
+  };
+  if (passed) receipt.effects.push({ id: 'identity:cover', applied: true, before: false, after: true });
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (passed) {
+    s.identityCover = {
+      preparationAttemptId: attempt.attemptId, createdDay: startedAt.day, createdHour: startedAt.hour,
+      expiresAbsoluteHour: (startedAt.day - 1) * 24 + startedAt.hour + hours + 24,
+    };
+    addLog(s, '你改变了头发、眼镜、领巾与说话习惯，并为可能的盘问准备了一套普通身份说辞。它只能应付一般辨认，不能推翻正式通缉。', 'good');
+  } else {
+    addLog(s, '镜中的变化彼此矛盾，说辞也经不起追问。你丢掉已经用坏的材料，没有带着这套破绽出门。', 'info');
+  }
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function getAreaSuspicionStatus(s: GameState, requestedAreaId?: string) {
+  const currentAreaId = s.currentLocation?.locationId ?? (s.atWork ? findJob(s.jobId)?.locationId ?? 'home' : 'home');
+  const areaId = requestedAreaId && validAreaId(requestedAreaId) ? requestedAreaId : currentAreaId;
+  const value = Math.max(0, Math.min(100, Math.floor(s.areaSuspicion?.[areaId] ?? 0)));
+  const wanted = value >= 100 && (s.wantedAreas ?? []).includes(areaId);
+  const label = wanted ? '已被通缉' : value >= 70 ? '身份正在被追查' : value >= 40 ? '多次引起注意' : value > 0 ? '留下可辨认印象' : '无人特别留意';
+  return {
+    areaId,
+    areaName: areaId === 'home' ? '住处周边' : LOCATIONS.find(location => location.id === areaId)!.name,
+    value,
+    label,
+    wanted,
+  };
+}
+
+function recordAreaSuspicion(
+  s: GameState,
+  areaId: string,
+  source: AreaSuspicionSource,
+  amount: number,
+  attempt: CheckAttemptRecord,
+) {
+  if (!validAreaId(areaId) || amount <= 0) return;
+  s.areaSuspicionRecords ??= [];
+  const id = `${source}:${attempt.attemptId}`;
+  if (s.areaSuspicionRecords.some(record => record.id === id || record.settlementAttemptId === attempt.attemptId)) return;
+  s.areaSuspicionRecords.push({
+    id, areaId, source, amount, day: attempt.startedDay, hour: attempt.startedHour,
+    settlementAttemptId: attempt.attemptId,
+  });
+  rebuildAreaSuspicion(s);
+  const status = getAreaSuspicionStatus(s, areaId);
+  addLog(s, status.wanted
+    ? `你在【${status.areaName}】留下的目击与追查记录已经闭合，当地开始公开通缉你的身份。`
+    : `你在【${status.areaName}】留下了新的可追查痕迹。当前情况：${status.label}。`, 'bad');
+}
+
+function dockAreaSuspicionAmount(source: Exclude<AreaSuspicionSource, 'hunt_death'>, preparations: readonly DockCombatPreparationId[]) {
+  const base: Record<Exclude<AreaSuspicionSource, 'hunt_death'>, number> = {
+    dock_escape_failed: 40,
+    dock_defensive_physical: 65,
+    dock_active_physical: 75,
+    dock_defensive_spiritual: 75,
+    dock_active_spiritual: 100,
+  };
+  let amount = base[source];
+  if (preparations.includes('mapped_retreat')) amount -= 10;
+  if (source === 'dock_active_physical' && preparations.includes('prepared_ambush')) amount -= 10;
+  if ((source === 'dock_defensive_spiritual' || source === 'dock_active_spiritual')
+    && preparations.includes('spiritual_guard')) amount -= 10;
+  return Math.max(20, amount);
+}
 
 function blankPathwayLead(): PathwayLead {
   return { history: [], routeStep: 'none', commitment: false };
@@ -39,6 +653,25 @@ export function createOrganizationRoutes(): GameState['organizationRoutes'] {
   return Object.fromEntries(ORGANIZATIONS.map(org => [org.id, {
     organizationId: org.id, status: 'unknown', routeStep: 'none', history: [],
   }])) as unknown as GameState['organizationRoutes'];
+}
+
+export function createNightwatchEarlyLoopState(): GameState['nightwatchEarlyLoop'] {
+  return { reputation: 0, trainingProgress: {}, records: [] };
+}
+
+export function createDivinationClubState(): GameState['divinationClub'] {
+  return { joined: false, reputation: 0, activeCommissionId: null, completedCommissionIds: [] };
+}
+
+export function createElliotCaseState(): GameState['elliotCase'] {
+  return { stage: 'unknown', employerId: null, assignedPartnerId: null, locatorMode: null, rewardClaimed: false };
+}
+
+export function createSeerTrainingState(): GameState['seerTraining'] {
+  return {
+    learnedNodeIds: [], lessonRecords: [], meditationPracticeDays: [], focusPreparation: false,
+    ritualPracticeComplete: false, spiritChannelingCaseIds: [], blankCharmPracticeComplete: false,
+  };
 }
 
 export function createDiaryPages(): Record<string, DiaryPageState> {
@@ -85,9 +718,25 @@ export const hasTalent = (s: GameState, id: string) => s.talents.includes(id);
 const metLandmarkNPCs = (s: GameState): NPCDef[] => TINGEN_LANDMARK_ENCOUNTERS
   .filter(def => (s.landmarkEncounters ?? []).some(record => record.encounterId === def.id && record.met))
   .map(def => def.npc);
-/** 全部玩家已知 NPC = 手写核心 + 已正式首遇的地标人物 + 程序生成 */
-export const allNPCs = (s: GameState): NPCDef[] => [...NPCS, ...metLandmarkNPCs(s), ...s.genNpcs];
-export const findAnyNPC = (s: GameState, id: string) => allNPCs(s).find(n => n.id === id);
+const completeNPCPool = (s: GameState): NPCDef[] => [...NPCS, ...metLandmarkNPCs(s), ...s.genNpcs];
+const huntTargetDef = (targetId: string): HuntTargetDef | undefined => HUNT_TARGET_DEFS.find(target => target.id === targetId);
+const huntTargetIsDead = (s: GameState, target: HuntTargetDef) => (s.confirmedBeyonderDeaths ?? []).some(record => record.npcId === target.npcId)
+  || BEYONDER_DEATH_SOURCES.some(source => source.huntTargetId === target.id && !!source.eventId && (s.firedOnce ?? []).includes(source.eventId));
+/** 特殊猎杀目标只在玩家亲临其活动地点、已经结识或正在调查时出现；死亡后从人脉池移除。 */
+function visibleCoreNPC(s: GameState, npc: NPCDef): boolean {
+  if (npc.id === 'old_neil') return isFormalNightwatchSeerStudent(s)
+    && s.currentLocation?.locationId === 'blackthorn_security' && npcAvailable(npc, s.day, s.hour);
+  if ((npc.id === 'vickroyer' || npc.id === 'leonard') && s.elliotCase?.stage === 'unknown') return false;
+  const target = HUNT_TARGET_DEFS.find(candidate => candidate.npcId === npc.id);
+  if (!target) return true;
+  if (huntTargetIsDead(s, target) || s.flags?.[`hunt_target_departed:${target.id}`]) return false;
+  return s.relations[npc.id] !== undefined || s.activeHunt?.targetId === target.id
+    || (s.currentLocation?.locationId === target.locationId && isTradeFairOpen(s));
+}
+/** 全部玩家已知 NPC = 手写核心 + 已正式首遇的地标人物 + 程序生成。 */
+export const allNPCs = (s: GameState): NPCDef[] => completeNPCPool(s).filter(npc => visibleCoreNPC(s, npc));
+/** 规则层可以查找尚未公开的固定 NPC，但 UI 必须使用 allNPCs。 */
+export const findAnyNPC = (s: GameState, id: string) => completeNPCPool(s).find(n => n.id === id);
 const isNight = (h: number) => h >= 18 || h < 6;
 const OCCULT_SHOP_ITEM_IDS = new Set([
   ...PATHWAYS.flatMap(pathway => [...pathway.seq9.materials, ...pathway.seq8.materials]),
@@ -146,7 +795,40 @@ function explorationCheckRequest(s: GameState, checkId: string, startedAt = { da
       ...def.requirements.filter(requirement => requirement.kind === 'tool').map(requirement => requirement.id),
       ...def.contributions.filter(term => term.kind === 'tool').map(term => term.id),
     ]);
-    context.toolIds = Object.entries(s.items).filter(([id, amount]) => amount > 0 && relevantTools.has(id)).map(([id]) => id);
+    context.toolIds = Object.entries(s.items)
+      .filter(([id, amount]) => amount > 0 && relevantTools.has(id) && (id !== 'revolver' || equippedRevolverReady(s)))
+      .map(([id]) => id);
+    const relevantAbilities = new Set([
+      ...def.requirements.filter(requirement => requirement.kind === 'ability').map(requirement => requirement.id),
+      ...def.contributions.filter(term => term.kind === 'ability').map(term => term.id),
+    ]);
+    if (relevantAbilities.has('spirit_vision') && hasSpiritVisionAbility(s)) context.abilityIds.push('spirit_vision');
+    if (relevantAbilities.has('seer_divination') && hasSeerDivinationSequence(s)) context.abilityIds.push('seer_divination');
+    const seerAbilities: Array<[string, SeerTrainingNodeId | 'focus_preparation']> = [
+      ['seer_meditation_focus', 'focus_preparation'],
+      ['seer_spirit_vision_focus', 'spirit_vision_focus'],
+      ['seer_dowsing', 'dowsing'],
+      ['seer_spirituality_wall', 'spirituality_wall'],
+      ['seer_ritual_safety', 'ritual_safety'],
+      ['seer_spirit_channeling', 'spirit_channeling'],
+      ['seer_charm_theory', 'charm_theory'],
+    ];
+    for (const [abilityId, source] of seerAbilities) {
+      if (!relevantAbilities.has(abilityId)) continue;
+      if (source === 'focus_preparation' ? s.seerTraining?.focusPreparation === true : hasSeerTrainingNode(s, source)) {
+        context.abilityIds.push(abilityId);
+      }
+    }
+    const relevantPreparations = new Set(def.contributions
+      .filter(term => term.kind === 'preparation').map(term => term.id));
+    const dockAssessments = s.investigationWorkspaces?.dock_manifest?.assessments ?? [];
+    for (const hypothesis of INVESTIGATION_HYPOTHESIS_DEFS) {
+      if (!relevantPreparations.has(hypothesis.preparationId)) continue;
+      if (dockAssessments.some(assessment => assessment.hypothesisId === hypothesis.id
+        && (assessment.outcome === 'reliable' || assessment.outcome === 'strong'))) {
+        context.preparationIds.push(hypothesis.preparationId);
+      }
+    }
   }
   return { checkId, definitionVersion: def?.version, context, startedAt };
 }
@@ -191,7 +873,7 @@ function recordExplorationAttempt(s: GameState, result: ExplorationCheckResult, 
   s.explorationAttempts.push(attempt);
 }
 
-function recordCheckAttempt(s: GameState, internal: CheckInternalResult, context: CheckContext, receipt: CheckReceipt, startedAt: { day: number; hour: number }) {
+function recordCheckAttempt(s: GameState, internal: CheckInternalResult, context: CheckContext, receipt: CheckReceipt, startedAt: { day: number; hour: number }): CheckAttemptRecord {
   s.checkAttempts ??= [];
   let sequence = s.checkAttempts.length + 1;
   let attemptId = `${internal.checkId}:${startedAt.day}:${startedAt.hour}:${sequence}`;
@@ -213,7 +895,26 @@ function recordCheckAttempt(s: GameState, internal: CheckInternalResult, context
     receipt: structuredClone(receipt),
   };
   s.checkAttempts.push(attempt);
-  if (s.checkAttempts.length > 200) s.checkAttempts.splice(0, s.checkAttempts.length - 200);
+  if (s.checkAttempts.length > 200) {
+    const protectedIds = new Set([
+      ...(s.murderRecords ?? []).flatMap(record => [record.settlementAttemptId, record.initiatingAttemptId].filter((id): id is string => !!id)),
+      ...(s.activeHunt?.initiatingAttemptId ? [s.activeHunt.initiatingAttemptId] : []),
+      ...(s.areaSuspicionRecords ?? []).map(record => record.settlementAttemptId),
+      ...(s.identityTraceDiscoveries ?? []).map(record => record.investigationAttemptId),
+      ...(s.identityTraceResolutions ?? []).map(record => record.resolutionAttemptId),
+      ...(s.identityCover?.preparationAttemptId ? [s.identityCover.preparationAttemptId] : []),
+      ...Object.values(s.investigationWorkspaces ?? {}).flatMap(workspace => workspace.assessments.map(assessment => assessment.attemptId)),
+      ...s.checkAttempts.filter(candidate => candidate.outcome === 'passed'
+        && DIVINATION_CLUB_COMMISSIONS.some(def => candidate.checkId === def.acceptCheckId
+          || candidate.checkId === def.fieldCheckId || candidate.checkId === def.checkId))
+        .map(candidate => candidate.attemptId),
+    ]);
+    for (let index = 0; s.checkAttempts.length > 200 && index < s.checkAttempts.length;) {
+      if (protectedIds.has(s.checkAttempts[index].attemptId)) index += 1;
+      else s.checkAttempts.splice(index, 1);
+    }
+  }
+  return attempt;
 }
 
 function repeatedBlockedExplorationIssue(s: GameState, internal: CheckInternalResult): string | null {
@@ -239,7 +940,7 @@ function caseThreat(s: GameState, threatId: string): CaseThreatState {
 function raiseCaseThreat(
   s: GameState,
   threatId: string,
-  sourceKind: 'deep_investigation' | 'divination',
+  sourceKind: 'deep_investigation' | 'divination' | 'hypothesis' | 'case_choice',
   sourceId: string,
   amount: number,
 ) {
@@ -271,12 +972,17 @@ function raiseCaseThreat(
     startedDay: s.day,
     startedHour: s.hour,
     narrativeVariant: (s.day + s.hour + s.eventCounter) % 3,
+    preparations: [],
   };
   addLog(s, '回程的窄巷里，一串脚步不再掩饰。那个戴灰帽的陌生人堵住了通向灯火的方向。', 'bad');
 }
 
 export function activeEncounterIssue(s: GameState): string | null {
-  return s.pendingEncounter ? '眼前的跟踪者尚未摆脱，必须先处理这次遭遇。' : null;
+  if (s.pendingEncounter) return '眼前的跟踪者尚未摆脱，必须先处理这次遭遇。';
+  if (s.activeHunt?.phase === 'confronted' || s.activeHunt?.phase === 'combat') {
+    return '目标已经察觉异常，必须先处理眼前的对峙。';
+  }
+  return null;
 }
 
 export function dockThreatSignal(s: GameState): string | null {
@@ -285,6 +991,1000 @@ export function dockThreatSignal(s: GameState): string | null {
   if (threat.attention >= 50) return '有人正在主动翻动或清理你查过的记录。';
   if (threat.attention >= 25) return '你偶尔会在调查地点附近看到相似的灰帽身影。';
   return null;
+}
+
+const INVESTIGATION_RESULT_LABELS: Record<InvestigationAssessmentOutcome, string> = {
+  inconclusive: '没理出头绪',
+  limited: '有些说得通',
+  reliable: '几处能够对上',
+  strong: '多处彼此印证',
+};
+
+function readInvestigationWorkspace(s: GameState, caseId: string): InvestigationWorkspace {
+  return s.investigationWorkspaces?.[caseId] ?? { caseId, selectedClueIds: [], assessments: [] };
+}
+
+function editableInvestigationWorkspace(s: GameState, caseId: string): InvestigationWorkspace {
+  s.investigationWorkspaces ??= {};
+  return s.investigationWorkspaces[caseId] ??= { caseId, selectedClueIds: [], assessments: [] };
+}
+
+function investigationOutcome(result: CheckInternalResult): InvestigationAssessmentOutcome {
+  const margin = result.score - result.difficulty;
+  if (margin >= 10) return 'strong';
+  if (margin >= 0) return 'reliable';
+  if (margin >= -6) return 'limited';
+  return 'inconclusive';
+}
+
+function investigationHypothesis(hypothesisId: InvestigationHypothesisId) {
+  return INVESTIGATION_HYPOTHESIS_DEFS.find(candidate => candidate.id === hypothesisId) ?? null;
+}
+
+function investigationMethod(methodId: InvestigationMethodId) {
+  return INVESTIGATION_METHOD_DEFS.find(candidate => candidate.id === methodId) ?? null;
+}
+
+function investigationCheckRequest(
+  s: GameState,
+  hypothesisId: InvestigationHypothesisId,
+  methodId: InvestigationMethodId,
+  selectedClueIds: readonly string[],
+  startedAt = { day: s.day, hour: s.hour },
+) {
+  const checkId = investigationHypothesisCheckId(hypothesisId, methodId);
+  const request = explorationCheckRequest(s, checkId, startedAt);
+  const relevant = new Set(EXPLORATION_CHECKS.find(def => def.id === checkId)?.contributions
+    .filter(term => term.kind === 'clue').map(term => term.id) ?? []);
+  request.context.clueIds = [...new Set(selectedClueIds)].filter(id => hasClue(s, id) && relevant.has(id)).sort();
+  return request;
+}
+
+export function toggleInvestigationEvidence(s: GameState, caseId: string, clueId: string): ActionResult {
+  if (caseId !== 'dock_manifest') return { ok: false, msg: '这个案子还没有可以梳理的记录。' };
+  const record = s.clues.find(clue => clue.id === clueId && clue.caseId === caseId);
+  if (!record || !INVESTIGATION_EVIDENCE_DEFS.some(def => def.clueId === clueId)) {
+    return { ok: false, msg: '这条记录还没拿到手，不能放进案情梳理。' };
+  }
+  const workspace = editableInvestigationWorkspace(s, caseId);
+  if (workspace.selectedClueIds.includes(clueId)) {
+    workspace.selectedClueIds = workspace.selectedClueIds.filter(id => id !== clueId);
+    return { ok: true };
+  }
+  if (workspace.selectedClueIds.length >= 3) return { ok: false, msg: '桌面已经摆了三份材料，先收起一份再换。' };
+  workspace.selectedClueIds.push(clueId);
+  workspace.selectedClueIds.sort();
+  return { ok: true };
+}
+
+export function investigationHypothesisMethodIssue(
+  s: GameState,
+  hypothesisId: InvestigationHypothesisId,
+  methodId: InvestigationMethodId,
+): string | null {
+  const hypothesis = investigationHypothesis(hypothesisId);
+  const method = investigationMethod(methodId);
+  if (!hypothesis || !method || !hypothesis.methodIds.includes(methodId)) return '这条思路不适合这样查。';
+  if (dockCaseDispositionClue(s)) return '案子已经暂时告一段落，眼下没有必要继续惊动旁人。';
+  if (s.pendingEncounter) return activeEncounterIssue(s);
+  if (s.pendingEvent) return '眼前还有一件事情没有处理完。';
+  const woundIssue = woundActionIssue(s, 'deep_investigation');
+  if (woundIssue) return woundIssue;
+  if (s.atWork) return '工作期间不能展开这轮案件核验。';
+  const workspace = readInvestigationWorkspace(s, hypothesis.caseId);
+  if (!hypothesis.requiredClueIds.every(id => workspace.selectedClueIds.includes(id))) {
+    return '摆在一起的材料还接不上这条思路。';
+  }
+  const selectedKey = [...workspace.selectedClueIds].sort().join('|');
+  if (workspace.assessments.some(assessment => assessment.hypothesisId === hypothesisId
+    && assessment.methodId === methodId && [...assessment.clueIds].sort().join('|') === selectedKey)) {
+    return '这些材料已经这样查过一次了。换份材料，或者换个查法。';
+  }
+  if (methodId === 'compare_records' && s.currentLocation && s.currentLocation.locationId !== 'docks') {
+    return '需要回家整理笔记，或在码头记录窗口附近比对材料。';
+  }
+  if (methodId === 'interview_witness') {
+    if (s.currentLocation?.locationId !== 'tavern') return '需要前往「醉水手」酒馆拜访知情者。';
+    const visitIssue = npcVisitSessionIssue(s, 'mike');
+    if (visitIssue) return visitIssue;
+  }
+  if (methodId === 'inspect_scene' && s.currentLocation?.locationId !== 'docks') return '需要回到东区码头复核现场。';
+  if (methodId === 'occult_verify') {
+    if (!hasSpiritVisionAbility(s)) return '你尚不具备能够受控检视异常的灵视能力。';
+    if (s.currentLocation) return '受控检视需要回到住处，在能够及时中止的环境中进行。';
+  }
+  const request = investigationCheckRequest(s, hypothesisId, methodId, workspace.selectedClueIds);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible && internal.reason !== 'insufficient') return '眼下的条件还不够，暂时查不下去。';
+  if (s.stats.energy <= energyCost(s, method.energyCost)) return '你已经很累了，脑子里很难再理清这些东西。';
+  return null;
+}
+
+export function testInvestigationHypothesis(
+  s: GameState,
+  hypothesisId: InvestigationHypothesisId,
+  methodId: InvestigationMethodId,
+): ActionResult {
+  const issue = investigationHypothesisMethodIssue(s, hypothesisId, methodId);
+  if (issue) return { ok: false, msg: issue };
+  const hypothesis = investigationHypothesis(hypothesisId)!;
+  const method = investigationMethod(methodId)!;
+  const workspace = editableInvestigationWorkspace(s, hypothesis.caseId);
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = investigationCheckRequest(s, hypothesisId, methodId, workspace.selectedClueIds, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '眼下的条件还不够，暂时查不下去。' };
+  const outcome = investigationOutcome(internal);
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, method.energyCost) }]);
+  const receipt: CheckReceipt = {
+    hoursElapsed: method.hours,
+    effects: [
+      receiptEntry('energy', applied[0]),
+      hoursReceipt(method.hours),
+      { id: `hypothesis:${hypothesisId}:assessment`, applied: true, before: false, after: true },
+    ],
+  };
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  workspace.assessments.push({
+    hypothesisId, methodId, clueIds: [...workspace.selectedClueIds].sort(), outcome,
+    attemptId: attempt.attemptId, day: startedAt.day, hour: startedAt.hour,
+  });
+  if (workspace.assessments.length > 30) workspace.assessments.splice(0, workspace.assessments.length - 30);
+  addLog(s, `案情梳理 · ${hypothesis.label}：${INVESTIGATION_RESULT_LABELS[outcome]}。${hypothesis.nextStepByOutcome[outcome]}`,
+    outcome === 'reliable' || outcome === 'strong' ? 'good' : 'info');
+  maybeAnnounceDockWitnessCrisis(s);
+  raiseCaseThreat(s, DOCK_THREAT_ID, 'hypothesis', `hypothesis:${hypothesisId}:${methodId}`, method.attentionOnAttempt);
+  advanceHours(s, method.hours);
+  return { ok: true, outcome: internal.outcome };
+}
+
+export function getInvestigationBoardView(s: GameState, caseId = 'dock_manifest') {
+  if (caseId !== 'dock_manifest') return null;
+  const workspace = readInvestigationWorkspace(s, caseId);
+  const ownedClueIds = new Set(s.clues.filter(clue => clue.caseId === caseId).map(clue => clue.id));
+  const evidence = INVESTIGATION_EVIDENCE_DEFS.filter(def => ownedClueIds.has(def.clueId)).flatMap(def => {
+    const clue = CLUE_DEFS.find(candidate => candidate.id === def.clueId);
+    return clue ? [{
+      clueId: def.clueId, title: clue.title, sourceLabel: clue.sourceLabel,
+      claim: def.claim, sourceQuality: def.sourceQuality,
+      selected: workspace.selectedClueIds.includes(def.clueId),
+    }] : [];
+  });
+  const hypotheses = INVESTIGATION_HYPOTHESIS_DEFS
+    .filter(def => def.caseId === caseId && def.requiredClueIds.every(id => ownedClueIds.has(id)))
+    .map(def => ({
+      id: def.id,
+      label: def.label,
+      statement: def.statement,
+      ready: def.requiredClueIds.every(id => workspace.selectedClueIds.includes(id)),
+      methods: def.methodIds.map(methodId => {
+        const method = investigationMethod(methodId)!;
+        const assessments = workspace.assessments.filter(assessment => assessment.hypothesisId === def.id
+          && assessment.methodId === methodId);
+        const latest = assessments[assessments.length - 1];
+        return {
+          id: method.id, label: method.label, description: method.description, hours: method.hours,
+          issue: investigationHypothesisMethodIssue(s, def.id, method.id),
+          latest: latest ? {
+            label: INVESTIGATION_RESULT_LABELS[latest.outcome],
+            nextStep: def.nextStepByOutcome[latest.outcome],
+            outcome: latest.outcome,
+          } : null,
+        };
+      }),
+    }));
+  return {
+    caseId,
+    evidence,
+    selectedCount: workspace.selectedClueIds.length,
+    maxSelected: 3,
+    hypotheses,
+    guidance: evidence.length < 2
+      ? '手里的材料太少，还看不出它们有没有联系。'
+      : hypotheses.length === 0
+        ? '这些材料暂时接不上。再去别处找一份记录，也许会有变化。'
+        : '从手头材料里挑出至多三份，看看哪些能彼此对上。',
+  };
+}
+
+const DOCK_WITNESS_CRISIS_CLUES = {
+  warn_worker: 'dock_witness_warned',
+  shadow_watcher: 'dock_watcher_route',
+  request_protection: 'dock_witness_protected',
+} as const;
+
+const DOCK_WITNESS_CRISIS_ALL_OUTCOMES = [
+  ...Object.values(DOCK_WITNESS_CRISIS_CLUES),
+  'dock_witness_disappeared',
+] as const;
+
+function dockWitnessCrisisOutcomeClue(s: GameState): string | null {
+  return DOCK_WITNESS_CRISIS_ALL_OUTCOMES.find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+function dockWitnessCrisisReady(s: GameState) {
+  if (!hasClue(s, 'dock_missing_reports') || !isMet(s, 'mike') || dockCaseDispositionClue(s)) return false;
+  const assessments = s.investigationWorkspaces?.dock_manifest?.assessments ?? [];
+  const supported = assessments.some(assessment => assessment.outcome === 'reliable' || assessment.outcome === 'strong');
+  const confirmed = DEEP_INVESTIGATION_DEFS.filter(def => def.caseId === 'dock_manifest'
+    && !!s.deepInvestigations?.[def.id]).length >= 2;
+  return supported || confirmed;
+}
+
+function maybeAnnounceDockWitnessCrisis(s: GameState) {
+  if (!dockWitnessCrisisReady(s) || dockWitnessCrisisOutcomeClue(s) || s.flags.dock_witness_crisis_announced) return;
+  s.flags.dock_witness_crisis_announced = true;
+  addLog(s, '麦克让人捎来一张折了两次的纸条：有个夜班工人发现陌生人在打听点名册，今晚已经不敢独自回家。', 'event');
+  addLog(s, '你可以先提醒他避开原路，也可以去交接处暗中守候；如果已经有正式门路，还能请求安保人员接走他。', 'info');
+}
+
+const DOCK_WITNESS_CHECK_IDS: Record<DockWitnessCrisisChoiceId, string> = {
+  warn_worker: 'dock_witness_crisis_warn',
+  shadow_watcher: 'dock_witness_crisis_shadow',
+  request_protection: 'dock_witness_crisis_protection',
+};
+
+export function dockWitnessCrisisChoiceIssue(s: GameState, choiceId: DockWitnessCrisisChoiceId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  if (!dockWitnessCrisisReady(s)) return '眼下还没有能够确认的知情人危机。';
+  if (dockWitnessCrisisOutcomeClue(s)) return '这次危机已经留下结果，无法重新选择。';
+  if (s.atWork) return '工作期间无法离岗处理这件事。';
+  if (choiceId === 'warn_worker') {
+    if (s.currentLocation?.locationId !== 'tavern') return '需要到「醉水手」酒馆，请麦克把口信送进夜班工棚。';
+  } else if (choiceId === 'shadow_watcher') {
+    if (s.currentLocation?.locationId !== 'docks') return '需要先到东区码头的夜班交接处。';
+    if (!isNight(s.hour)) return '盯梢者只在夜班交接后露面，需要等到入夜。';
+  } else if (choiceId === 'request_protection') {
+    if (!hasFormalNightwatchRoute(s)) return '你还没有能受理敏感保护请求的正式门路。';
+    if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要亲自到黑荆棘安保公司说明情况。';
+  } else return '没有这个处理办法。';
+  const cost = choiceId === 'shadow_watcher' ? 12 : choiceId === 'request_protection' ? 8 : 6;
+  if (s.stats.energy < energyCost(s, cost)) return '你现在太疲惫，无法把这件事处理妥当。';
+  return null;
+}
+
+export function getDockWitnessCrisisView(s: GameState) {
+  if (!dockWitnessCrisisReady(s)) return null;
+  const outcomeClue = dockWitnessCrisisOutcomeClue(s);
+  const resolvedNarratives: Record<string, string> = {
+    dock_witness_warned: '麦克送出了口信。知情工人暂时藏了起来，但盯梢者也会知道有人插了手。',
+    dock_watcher_route: '你没有惊动盯梢者，并记下了他绕向转运仓区的路线。',
+    dock_witness_disappeared: '你在雾里跟丢了人。第二天，知情工人的床铺空着，夜班点名册上也没有请假。',
+    dock_witness_protected: '安保人员接走了知情工人。他暂时安全，但当晚陈述也被一并封存。',
+  };
+  if (outcomeClue) return {
+    phase: 'resolved' as const,
+    title: '夜班口信',
+    narrative: resolvedNarratives[outcomeClue],
+    choices: [],
+  };
+  const shadowResult = toPublicCheckResult(evaluateExplorationCheckInternal(s, DOCK_WITNESS_CHECK_IDS.shadow_watcher));
+  return {
+    phase: 'choice' as const,
+    title: '夜班口信',
+    narrative: '麦克传来消息：一个可能看见过交接异常的夜班工人正被陌生人打听。今晚过去后，事情也许就会变样。',
+    choices: [
+      {
+        id: 'warn_worker' as const,
+        label: '托麦克提醒工人',
+        description: '先让知情人避开原路。能保住证词，却可能让盯梢者察觉有人介入。',
+        hours: 1,
+        issue: dockWitnessCrisisChoiceIssue(s, 'warn_worker'),
+        helpedBy: [] as string[],
+      },
+      {
+        id: 'shadow_watcher' as const,
+        label: '去交接处暗中守候',
+        description: '尝试反过来跟住打听者。即使失手，时间也不会倒退，案件会留下另一种结果。',
+        hours: 2,
+        issue: dockWitnessCrisisChoiceIssue(s, 'shadow_watcher'),
+        helpedBy: shadowResult.helpedBy,
+      },
+      {
+        id: 'request_protection' as const,
+        label: '请求正式保护',
+        description: '用已经建立的正式门路先把人接走。风险较低，但证词会暂时进入对方档案。',
+        hours: 1,
+        issue: dockWitnessCrisisChoiceIssue(s, 'request_protection'),
+        helpedBy: [] as string[],
+      },
+    ],
+  };
+}
+
+export function resolveDockWitnessCrisis(s: GameState, choiceId: DockWitnessCrisisChoiceId): ActionResult {
+  const issue = dockWitnessCrisisChoiceIssue(s, choiceId);
+  if (issue) return { ok: false, msg: issue };
+  const checkId = DOCK_WITNESS_CHECK_IDS[choiceId];
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这个处理办法。' };
+
+  const passed = internal.outcome === 'passed';
+  const hours = choiceId === 'shadow_watcher' ? 2 : 1;
+  const cost = choiceId === 'shadow_watcher' ? 12 : choiceId === 'request_protection' ? 8 : 6;
+  const energyReceipt = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }])[0];
+  const clueId = choiceId === 'shadow_watcher' && !passed
+    ? 'dock_witness_disappeared' : DOCK_WITNESS_CRISIS_CLUES[choiceId];
+  const acquired = acquireClue(s, clueId);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [
+    receiptEntry('energy', energyReceipt),
+    hoursReceipt(hours),
+    { id: `clue:${clueId}`, applied: acquired, before: false, after: acquired },
+  ] };
+  if (choiceId === 'warn_worker') {
+    const favorReceipt = applyEffects(s, [{ k: 'favor', id: 'mike', v: 3 }])[0];
+    receipt.effects.push(receiptEntry('favor:mike', favorReceipt));
+  }
+  if (choiceId === 'warn_worker') {
+    addLog(s, '麦克看完纸条，没有多问。他把工人的名字抄进酒单背面，答应在换班前把人带离原路。', 'event');
+  } else if (choiceId === 'request_protection') {
+    addLog(s, '接待员核对了你的来路，随后派出两名便衣。知情工人会被接到安全处，他的陈述也将暂时封存。', 'event');
+  } else if (passed) {
+    addLog(s, '你隔着两排货箱跟住灰帽身影，看见他避开主路，绕向一片不在公开仓单上的转运仓区。', 'good');
+  } else {
+    addLog(s, '雾里一声货钩落地让你错过了转角。第二天再去工棚时，那名夜班工人的床铺已经空了。', 'bad');
+    addLog(s, '你没能保住证人，但空铺、点名册和失踪时间成为了新的事实。案件没有停下，只是代价变了。', 'info');
+  }
+  const attention = choiceId === 'warn_worker' ? 10 : choiceId === 'request_protection' ? 5 : passed ? 25 : 35;
+  const threatBefore = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? 0;
+  raiseCaseThreat(s, DOCK_THREAT_ID, 'case_choice', `witness_crisis:${choiceId}`, attention);
+  const threatAfter = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? threatBefore;
+  receipt.effects.push({
+    id: 'threat:dock_manifest_cleaner', applied: threatAfter !== threatBefore,
+    before: threatBefore, after: threatAfter, actualDelta: threatAfter - threatBefore,
+  });
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+const DOCK_WITNESS_FOLLOWUP_CHECK_IDS: Record<DockWitnessFollowupRouteId, string> = {
+  warned_witness: 'dock_witness_followup_warned',
+  watched_transfer: 'dock_witness_followup_transfer',
+  missing_witness: 'dock_witness_followup_missing',
+  protected_witness: 'dock_witness_followup_protected',
+};
+
+const DOCK_WITNESS_FOLLOWUP_ROUTE_BY_CLUE: Record<string, DockWitnessFollowupRouteId> = {
+  dock_witness_warned: 'warned_witness',
+  dock_watcher_route: 'watched_transfer',
+  dock_witness_disappeared: 'missing_witness',
+  dock_witness_protected: 'protected_witness',
+};
+
+const DOCK_WITNESS_FOLLOWUP_RESULT_CLUES = [
+  'dock_witness_statement', 'dock_witness_fragment',
+  'dock_transfer_watch_record', 'dock_transfer_decoy',
+  'dock_witness_locker_token', 'dock_witness_last_errand',
+  'dock_sealed_statement_excerpt', 'dock_official_case_summary',
+] as const;
+
+function dockWitnessFollowupRoute(s: GameState): DockWitnessFollowupRouteId | null {
+  const crisisClue = dockWitnessCrisisOutcomeClue(s);
+  return crisisClue ? DOCK_WITNESS_FOLLOWUP_ROUTE_BY_CLUE[crisisClue] ?? null : null;
+}
+
+function dockWitnessFollowupOutcomeClue(s: GameState): string | null {
+  return DOCK_WITNESS_FOLLOWUP_RESULT_CLUES.find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+export function dockWitnessFollowupIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const route = dockWitnessFollowupRoute(s);
+  if (!route) return '需要先处理夜班知情人的危机。';
+  if (dockWitnessFollowupOutcomeClue(s)) return '这条后续已经留下可以核验的结果。';
+  if (dockCaseDispositionClue(s)) return '案件已经完成阶段处置。';
+  if (s.atWork) return '工作期间无法离岗继续调查。';
+  if (route === 'warned_witness') {
+    if (s.currentLocation?.locationId !== 'tavern') return '需要回到「醉水手」酒馆，让麦克安排一次隐蔽会面。';
+  } else if (route === 'watched_transfer') {
+    if (s.currentLocation?.locationId !== 'canal') return '需要沿着记录中的路线前往运河仓库。';
+    if (!isNight(s.hour)) return '那条转运路线只在夜间出现动静。';
+  } else if (route === 'missing_witness') {
+    if (s.currentLocation?.locationId !== 'docks') return '需要回到东区码头，从工棚和点名册查起。';
+    if (s.hour < 7 || s.hour >= 19) return '工棚管理员和领货簿只在白天能够找到。';
+  } else if (route === 'protected_witness') {
+    if (!hasFormalNightwatchRoute(s)) return '只有已经建立的正式接触才能继续询问保护记录。';
+    if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要到黑荆棘安保公司申请核验封存陈述。';
+  }
+  const cost = route === 'watched_transfer' ? 14 : route === 'warned_witness' ? 10 : route === 'missing_witness' ? 10 : 8;
+  if (s.stats.energy < energyCost(s, cost)) return '你现在太疲惫，无法完成这轮调查。';
+  return null;
+}
+
+export function getDockWitnessFollowupView(s: GameState) {
+  const route = dockWitnessFollowupRoute(s);
+  if (!route) return null;
+  const outcomeClue = dockWitnessFollowupOutcomeClue(s);
+  const resolvedNarratives: Record<string, string> = {
+    dock_witness_statement: '知情人说清了汽笛、领货牌与灰帽接头人的先后关系。三件事第一次落在同一段时间里。',
+    dock_witness_fragment: '你没能让惊惶的工人久留，但他写下的“第二声汽笛”和残缺库位号仍可继续核对。',
+    dock_transfer_watch_record: '你守到了那次没有登记的停靠，并把时间、货车和库门位置一一记下。',
+    dock_transfer_decoy: '仓区已经被清理，只剩一枚临时替换的转运标记。有人知道原路线可能暴露。',
+    dock_witness_locker_token: '储物柜里的领货牌与异常仓单上的一处涂改相同，知情人的最后去向终于有了实物联系。',
+    dock_witness_last_errand: '领货牌不见了，但点名册背面的临时差事仍证明他被调去搬运一件无编号货物。',
+    dock_sealed_statement_excerpt: '你获准抄下有限摘录：第二声汽笛、被换过的领货牌，以及一名灰帽接头人。',
+    dock_official_case_summary: '完整陈述仍被封存，但公开摘要确认威胁确实发生在同一段交接空档。',
+  };
+  if (outcomeClue) return {
+    phase: 'resolved' as const,
+    title: '口信之后',
+    narrative: resolvedNarratives[outcomeClue],
+    action: null,
+  };
+  const routeViews: Record<DockWitnessFollowupRouteId, {
+    title: string; narrative: string; label: string; description: string; hoursText: string;
+  }> = {
+    warned_witness: {
+      title: '藏起来的知情人',
+      narrative: '麦克把人暂时安置在别处。工人愿不愿意把当晚所见说完整，取决于你能否问得足够克制。',
+      label: '请麦克安排隐蔽会面', description: '用已经掌握的事实核对陈述，不逼问他不知道的幕后身份。', hoursText: '2小时',
+    },
+    watched_transfer: {
+      title: '通向运河仓区的路线',
+      narrative: '灰帽人绕开的主路通向运河仓区。只有亲自守到下一次转运，才能知道这是不是诱饵。',
+      label: '监看下一次夜间转运', description: '在不惊动仓区人员的情况下记录时间、货车和库门。', hoursText: '3小时',
+    },
+    missing_witness: {
+      title: '空铺留下的东西',
+      narrative: '知情人没有回家。工棚储物柜、点名册和领货簿，是他失踪前最后留下的普通记录。',
+      label: '核对储物柜与领货簿', description: '先确认他最后接过什么差事，再判断是否值得继续追人。', hoursText: '2小时',
+    },
+    protected_witness: {
+      title: '被封存的陈述',
+      narrative: '知情人已经安全，但完整陈述不再由你掌握。你只能凭正式接触申请一份有限核验。',
+      label: '申请核验封存陈述', description: '提交手中可追溯的记录，争取抄下与案件直接相关的部分。', hoursText: '1至2小时',
+    },
+  };
+  const def = routeViews[route];
+  const publicResult = toPublicCheckResult(evaluateExplorationCheckInternal(s, DOCK_WITNESS_FOLLOWUP_CHECK_IDS[route]));
+  return {
+    phase: 'action' as const,
+    title: def.title,
+    narrative: def.narrative,
+    action: {
+      route, label: def.label, description: def.description, hoursText: def.hoursText,
+      issue: dockWitnessFollowupIssue(s), helpedBy: publicResult.helpedBy,
+    },
+  };
+}
+
+export function resolveDockWitnessFollowup(s: GameState): ActionResult {
+  const issue = dockWitnessFollowupIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const route = dockWitnessFollowupRoute(s)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, DOCK_WITNESS_FOLLOWUP_CHECK_IDS[route], startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这轮调查。' };
+  const passed = internal.outcome === 'passed';
+  const resultClues: Record<DockWitnessFollowupRouteId, readonly [string, string]> = {
+    warned_witness: ['dock_witness_statement', 'dock_witness_fragment'],
+    watched_transfer: ['dock_transfer_watch_record', 'dock_transfer_decoy'],
+    missing_witness: ['dock_witness_locker_token', 'dock_witness_last_errand'],
+    protected_witness: ['dock_sealed_statement_excerpt', 'dock_official_case_summary'],
+  };
+  const clueId = resultClues[route][passed ? 0 : 1];
+  const hours = route === 'watched_transfer' ? 3 : route === 'protected_witness' && !passed ? 1 : 2;
+  const cost = route === 'watched_transfer' ? 14 : route === 'warned_witness' ? 10 : route === 'missing_witness' ? 10 : 8;
+  const energyReceipt = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }])[0];
+  const acquired = acquireClue(s, clueId);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [
+    receiptEntry('energy', energyReceipt), hoursReceipt(hours),
+    { id: `clue:${clueId}`, applied: acquired, before: false, after: acquired },
+  ] };
+  if (route === 'warned_witness' && passed) {
+    const favorReceipt = applyEffects(s, [{ k: 'favor', id: 'mike', v: 2 }])[0];
+    receipt.effects.push(receiptEntry('favor:mike', favorReceipt));
+  }
+  const attentionByRoute: Record<DockWitnessFollowupRouteId, readonly [number, number]> = {
+    warned_witness: [10, 20], watched_transfer: [30, 40], missing_witness: [25, 35], protected_witness: [5, 10],
+  };
+  const attention = attentionByRoute[route][passed ? 0 : 1];
+  const narrativeByClue: Record<string, string> = {
+    dock_witness_statement: '知情人压低声音，说清了第二声汽笛、被换过的领货牌和灰帽接头人的出现顺序。',
+    dock_witness_fragment: '工人听见巷外脚步便匆匆离开，只在纸上留下“第二声汽笛”和半截库位号。',
+    dock_transfer_watch_record: '第二声汽笛后，一辆没有灯号的货车贴着仓墙停下。你记下了时间、库门和换车的位置。',
+    dock_transfer_decoy: '你守到天色发白也没见到货车，只在墙角找到一枚刚被替换的转运标记。原路线已经被清理。',
+    dock_witness_locker_token: '储物柜夹层里压着一枚领货牌，库位号与异常仓单上被涂改的那一格完全相同。',
+    dock_witness_last_errand: '柜子里没有实物，点名册背面却写着一件临时差事：搬运无编号货物，地点只留了半个库位号。',
+    dock_sealed_statement_excerpt: '接待员核对你提交的记录后，允许你抄下三处能独立核验的内容，其余姓名仍被遮去。',
+    dock_official_case_summary: '完整陈述没有开放。你只拿到一份公开摘要，但其中确认了威胁发生在同一段交接空档。',
+  };
+  addLog(s, narrativeByClue[clueId], passed ? 'good' : 'info');
+  const threatBefore = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? 0;
+  raiseCaseThreat(s, DOCK_THREAT_ID, 'case_choice', `witness_followup:${route}`, attention);
+  const threatAfter = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? threatBefore;
+  receipt.effects.push({
+    id: 'threat:dock_manifest_cleaner', applied: threatAfter !== threatBefore,
+    before: threatBefore, after: threatAfter, actualDelta: threatAfter - threatBefore,
+  });
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+const DOCK_GRAY_HAT_CHECK_IDS: Record<DockGrayHatOperationId, string> = {
+  observe_exchange: 'dock_gray_hat_observe',
+  bait_manifest: 'dock_gray_hat_bait',
+  joint_watch: 'dock_gray_hat_joint_watch',
+};
+
+const DOCK_GRAY_HAT_RESULT_CLUES = [
+  'dock_gray_hat_exchange_pattern', 'dock_gray_hat_abandoned_route',
+  'dock_gray_hat_countermark', 'dock_gray_hat_trap_exposed',
+  'dock_gray_hat_joint_watch', 'dock_gray_hat_watch_delayed',
+] as const;
+
+function dockGrayHatOperationReady(s: GameState) {
+  return !!dockWitnessFollowupOutcomeClue(s) && !dockCaseDispositionClue(s);
+}
+
+function dockGrayHatOperationOutcomeClue(s: GameState): string | null {
+  return DOCK_GRAY_HAT_RESULT_CLUES.find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+export function dockGrayHatOperationIssue(s: GameState, operationId: DockGrayHatOperationId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  if (!dockGrayHatOperationReady(s)) return '需要先把口信之后的事实核验清楚。';
+  if (dockGrayHatOperationOutcomeClue(s)) return '针对灰帽人的行动已经留下结果，不能重新选择。';
+  if (s.atWork) return '工作期间无法离岗安排这次行动。';
+  if (operationId === 'observe_exchange') {
+    if (s.currentLocation?.locationId !== 'canal') return '需要前往已经查明的运河仓区。';
+    if (!isNight(s.hour)) return '交换点只在夜间可能出现动静。';
+  } else if (operationId === 'bait_manifest') {
+    if (!hasClue(s, 'dock_marked_manifest')) return '手中缺少能够模仿对方暗记的旧仓单。';
+    if (s.currentLocation?.locationId !== 'docks') return '需要回到东区码头，在原交接范围内放出假仓单。';
+    if (!isNight(s.hour)) return '白天人来人往，假仓单无法只落到目标手里。';
+  } else if (operationId === 'joint_watch') {
+    if (!hasFormalNightwatchRoute(s)) return '你还没有能够申请联合盯守的正式门路。';
+    if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要到黑荆棘安保公司递交联合盯守申请。';
+  } else return '没有这个行动方案。';
+  const cost = operationId === 'observe_exchange' ? 14 : operationId === 'bait_manifest' ? 12 : 8;
+  if (s.stats.energy < energyCost(s, cost)) return '你现在太疲惫，无法妥善执行这次行动。';
+  return null;
+}
+
+export function getDockGrayHatOperationView(s: GameState) {
+  if (!dockGrayHatOperationReady(s)) return null;
+  const outcomeClue = dockGrayHatOperationOutcomeClue(s);
+  const outcomeNarratives: Record<string, string> = {
+    dock_gray_hat_exchange_pattern: '连续守候确认：灰帽人负责核验领货牌、替换仓单暗记并清理暴露记录，但他并不直接搬运货物。',
+    dock_gray_hat_abandoned_route: '交换点已经被放弃。你仍能确认对方拥有及时撤换路线的消息来源，但真实姓名与落脚处依旧未知。',
+    dock_gray_hat_countermark: '假仓单引出了一道回应暗记。灰帽人确实负责核验交接，但设局也让他离你更近。',
+    dock_gray_hat_trap_exposed: '假仓单被识破并留下警告。你确认了灰帽人的职责，却也让对方确定有人正在追查。',
+    dock_gray_hat_joint_watch: '联合盯守确认灰帽人是清理记录与核验交接的中间人。正式记录没有给出他的真实姓名。',
+    dock_gray_hat_watch_delayed: '联合行动没有获准，但受理答复证明类似灰帽人曾出现在其他记录清理现场。',
+  };
+  if (outcomeClue) return {
+    phase: 'resolved' as const,
+    title: '灰帽人的位置',
+    narrative: outcomeNarratives[outcomeClue],
+    choices: [],
+  };
+  const choiceDefs: Array<{
+    id: DockGrayHatOperationId; label: string; description: string; hours: number;
+  }> = [
+    {
+      id: 'observe_exchange', label: '继续监视交换点', hours: 3,
+      description: '风险较慢地累积，争取看清他的行动规律；路线也可能在你赶到前被放弃。',
+    },
+    {
+      id: 'bait_manifest', label: '放出假仓单设局', hours: 2,
+      description: '用旧仓单模仿暗记，引对方主动回应；一旦被识破，可能立刻引来追踪。',
+    },
+    {
+      id: 'joint_watch', label: '申请联合盯守', hours: 2,
+      description: '借正式门路共同确认目标；风险较低，但行动是否获准不由你单独决定。',
+    },
+  ];
+  return {
+    phase: 'choice' as const,
+    title: '灰帽人的位置',
+    narrative: '现有事实只能说明灰帽人反复出现在仓单、领货牌与记录清理之间。他可能只是中间人，但也是目前唯一能继续追下去的活线。',
+    choices: choiceDefs.map(choice => {
+      const result = toPublicCheckResult(evaluateExplorationCheckInternal(s, DOCK_GRAY_HAT_CHECK_IDS[choice.id]));
+      return { ...choice, issue: dockGrayHatOperationIssue(s, choice.id), helpedBy: result.helpedBy };
+    }),
+  };
+}
+
+export function resolveDockGrayHatOperation(s: GameState, operationId: DockGrayHatOperationId): ActionResult {
+  const issue = dockGrayHatOperationIssue(s, operationId);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, DOCK_GRAY_HAT_CHECK_IDS[operationId], startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这次行动。' };
+  const passed = internal.outcome === 'passed';
+  const resultClues: Record<DockGrayHatOperationId, readonly [string, string]> = {
+    observe_exchange: ['dock_gray_hat_exchange_pattern', 'dock_gray_hat_abandoned_route'],
+    bait_manifest: ['dock_gray_hat_countermark', 'dock_gray_hat_trap_exposed'],
+    joint_watch: ['dock_gray_hat_joint_watch', 'dock_gray_hat_watch_delayed'],
+  };
+  const clueId = resultClues[operationId][passed ? 0 : 1];
+  const hours = operationId === 'observe_exchange' ? 3 : 2;
+  const cost = operationId === 'observe_exchange' ? 14 : operationId === 'bait_manifest' ? 12 : 8;
+  const energyReceipt = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }])[0];
+  const acquired = acquireClue(s, clueId);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [
+    receiptEntry('energy', energyReceipt), hoursReceipt(hours),
+    { id: `clue:${clueId}`, applied: acquired, before: false, after: acquired },
+  ] };
+  const narratives: Record<string, string> = {
+    dock_gray_hat_exchange_pattern: '你守过两轮汽笛，终于看清灰帽人从不碰货。他只核验领货牌、替换仓单暗记，再把旧纸投入火盆。',
+    dock_gray_hat_abandoned_route: '交换点整夜无人出现。天亮前，你发现门缝里的旧暗记已被刮掉；对方先一步放弃了这条路线。',
+    dock_gray_hat_countermark: '假仓单在第二声汽笛后被人翻过，角落多了一道新的回应暗记。灰帽人已经咬钩。',
+    dock_gray_hat_trap_exposed: '假仓单被整齐划去，背面只留下一道像眼睛的警告。远处随即传来不再掩饰的脚步。',
+    dock_gray_hat_joint_watch: '两名便衣与你分守路口，共同确认灰帽人只负责核验与清理。他察觉包围前已经消失在雾里。',
+    dock_gray_hat_watch_delayed: '申请没有获准。接待员只肯确认：相似装束的人曾出现在另外两处记录被清理的现场。',
+  };
+  addLog(s, narratives[clueId], passed ? 'good' : operationId === 'bait_manifest' ? 'bad' : 'info');
+  const attentionByOperation: Record<DockGrayHatOperationId, readonly [number, number]> = {
+    observe_exchange: [25, 40], bait_manifest: [40, 75], joint_watch: [10, 20],
+  };
+  const attention = attentionByOperation[operationId][passed ? 0 : 1];
+  const threatBefore = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? 0;
+  raiseCaseThreat(s, DOCK_THREAT_ID, 'case_choice', `gray_hat_operation:${operationId}`, attention);
+  const threatAfter = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? threatBefore;
+  receipt.effects.push({
+    id: 'threat:dock_manifest_cleaner', applied: threatAfter !== threatBefore,
+    before: threatBefore, after: threatAfter, actualDelta: threatAfter - threatBefore,
+  });
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+const DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS: Record<DockEncounterAftermathChoiceId, string> = {
+  trace_retreat: 'dock_encounter_aftermath_trace',
+  handoff_token: 'dock_encounter_aftermath_handoff',
+  preserve_evidence: 'dock_encounter_aftermath_preserve',
+};
+
+const DOCK_ENCOUNTER_AFTERMATH_RESULT_CLUES = [
+  'dock_gray_hat_retreat_route', 'dock_gray_hat_trail_lost',
+  'dock_gray_hat_token_handoff', 'dock_gray_hat_evidence_preserved',
+] as const;
+
+function dockEncounterAftermathSourceClue(s: GameState): string | null {
+  return ['dock_gray_hat_dropped_token', 'dock_gray_hat_escape_recollection', 'dock_gray_hat_scene_lost']
+    .find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+function dockEncounterAftermathOutcomeClue(s: GameState): string | null {
+  return DOCK_ENCOUNTER_AFTERMATH_RESULT_CLUES.find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+export function dockEncounterAftermathIssue(s: GameState, choiceId: DockEncounterAftermathChoiceId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (s.pendingEncounter) return activeEncounterIssue(s);
+  const sourceClue = dockEncounterAftermathSourceClue(s);
+  if (!sourceClue || sourceClue === 'dock_gray_hat_scene_lost') return '这次遭遇没有留下能够继续处理的现场证物。';
+  if (dockEncounterAftermathOutcomeClue(s)) return '这次遭遇留下的线索已经完成处理。';
+  if (dockCaseDispositionClue(s)) return '案件已经完成阶段处置。';
+  if (s.atWork) return '工作期间无法整理这次遭遇。';
+  if (choiceId === 'trace_retreat') {
+    if (s.currentLocation) return '需要先回到住处，把路线、时间和现场记录摊开复盘。';
+  } else if (choiceId === 'handoff_token') {
+    if (sourceClue !== 'dock_gray_hat_dropped_token') return '这次脱身没有取得能够移交的实物。';
+    if (!hasFormalNightwatchRoute(s)) return '你还没有能够正式接收敏感证物的可靠门路。';
+    if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要亲自把黄铜牌带到黑荆棘安保公司。';
+  } else if (choiceId === 'preserve_evidence') {
+    if (s.currentLocation) return '需要回到住处，把证物与原始笔记分开封存。';
+  } else return '没有这个处理办法。';
+  const cost = choiceId === 'trace_retreat' ? 10 : choiceId === 'handoff_token' ? 6 : 4;
+  if (s.stats.energy < energyCost(s, cost)) return '你现在太疲惫，无法妥善处理这些线索。';
+  return null;
+}
+
+export function getDockEncounterAftermathView(s: GameState) {
+  const sourceClue = dockEncounterAftermathSourceClue(s);
+  if (!sourceClue) return null;
+  const outcomeClue = dockEncounterAftermathOutcomeClue(s);
+  const resolvedNarratives: Record<string, string> = {
+    dock_gray_hat_scene_lost: '你保住了性命和调查笔记，但现场已经被清空。眼下只能确认灰帽人确实愿意为这些记录动手。',
+    dock_gray_hat_retreat_route: '复盘后的撤退方向指向运河下游旧装卸区，但仍不足以证明那里就是灰帽人的落脚处。',
+    dock_gray_hat_trail_lost: '路线在人流与岔口中断开。你划清了无法继续确认的边界，没有把猜测写成地址。',
+    dock_gray_hat_token_handoff: '正式人员接收黄铜牌并出具回条；他们确认这不是公开港务凭证。',
+    dock_gray_hat_evidence_preserved: '你停止追击，把黄铜牌或路线回忆与原始调查笔记分开封存。',
+  };
+  if (sourceClue === 'dock_gray_hat_scene_lost' || outcomeClue) return {
+    phase: 'resolved' as const,
+    title: '遭遇之后',
+    narrative: resolvedNarratives[outcomeClue ?? sourceClue],
+    choices: [],
+  };
+  const choices: Array<{ id: DockEncounterAftermathChoiceId; label: string; description: string; hours: number }> = [
+    {
+      id: 'trace_retreat', label: '复盘他的撤退方向', hours: 2,
+      description: '把遭遇中的转向、汽笛和既有路线重新对照；失败也只会留下明确的追索边界。',
+    },
+    ...(sourceClue === 'dock_gray_hat_dropped_token' ? [{
+      id: 'handoff_token' as const, label: '正式移交黄铜牌', hours: 1,
+      description: '把实物交给已经建立正式接触的人员核验，并保留接收回条。',
+    }] : []),
+    {
+      id: 'preserve_evidence', label: '封存证物并停止追击', hours: 1,
+      description: '保全目前已经得到的事实，不再为一条未经确认的方向继续冒险。',
+    },
+  ];
+  return {
+    phase: 'choice' as const,
+    title: '遭遇之后',
+    narrative: sourceClue === 'dock_gray_hat_dropped_token'
+      ? '灰帽人撤退时掉下一枚黄铜牌。你可以追索路线、正式移交，也可以先保存证物。'
+      : '你甩脱了跟踪者，仍记得几个关键转向。继续追索可能得到方向，也可能只把自己带回雾里。',
+    choices: choices.map(choice => {
+      const result = toPublicCheckResult(evaluateExplorationCheckInternal(s, DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS[choice.id]));
+      return { ...choice, issue: dockEncounterAftermathIssue(s, choice.id), helpedBy: result.helpedBy };
+    }),
+  };
+}
+
+export function resolveDockEncounterAftermath(s: GameState, choiceId: DockEncounterAftermathChoiceId): ActionResult {
+  const issue = dockEncounterAftermathIssue(s, choiceId);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS[choiceId], startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这个处理办法。' };
+  const passed = internal.outcome === 'passed';
+  const clueId = choiceId === 'trace_retreat'
+    ? passed ? 'dock_gray_hat_retreat_route' : 'dock_gray_hat_trail_lost'
+    : choiceId === 'handoff_token' ? 'dock_gray_hat_token_handoff' : 'dock_gray_hat_evidence_preserved';
+  const hours = choiceId === 'trace_retreat' ? 2 : 1;
+  const cost = choiceId === 'trace_retreat' ? 10 : choiceId === 'handoff_token' ? 6 : 4;
+  const energyReceipt = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }])[0];
+  const acquired = acquireClue(s, clueId);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [
+    receiptEntry('energy', energyReceipt), hoursReceipt(hours),
+    { id: `clue:${clueId}`, applied: acquired, before: false, after: acquired },
+  ] };
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  const narratives: Record<string, string> = {
+    dock_gray_hat_retreat_route: '你把转角、汽笛与仓区路线重新排在一起，确认灰帽人撤向运河下游的旧装卸区。那是方向，不是身份。',
+    dock_gray_hat_trail_lost: '几处转向能够对上，但痕迹最终混进主街人流。你只能把无法继续确认的位置如实记下。',
+    dock_gray_hat_token_handoff: '接待员戴上手套收起黄铜牌，在回条上注明：并非公开港务凭证，来源仍待核验。',
+    dock_gray_hat_evidence_preserved: '你没有继续追进雾里，而是把证物、路线回忆和原始笔记分开放好。',
+  };
+  addLog(s, narratives[clueId], passed ? 'good' : 'info');
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+const DOCK_OLD_YARD_CHECK_IDS: Record<DockOldYardActionId, string> = {
+  survey_perimeter: 'dock_old_yard_survey',
+  question_porters: 'dock_old_yard_question',
+  watch_night_transfer: 'dock_old_yard_watch',
+};
+
+const DOCK_OLD_YARD_RESULT_CLUES: Record<DockOldYardActionId, readonly [string, string]> = {
+  survey_perimeter: ['dock_old_yard_perimeter_map', 'dock_old_yard_public_boundary'],
+  question_porters: ['dock_old_yard_porter_schedule', 'dock_old_yard_workers_silent'],
+  watch_night_transfer: ['dock_old_yard_night_transfer', 'dock_old_yard_watch_disturbed'],
+};
+
+function dockOldYardActionResult(s: GameState, actionId: DockOldYardActionId) {
+  return DOCK_OLD_YARD_RESULT_CLUES[actionId].find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+function dockOldYardResolved(s: GameState) {
+  return !!dockOldYardActionResult(s, 'watch_night_transfer');
+}
+
+export function dockOldYardActionIssue(s: GameState, actionId: DockOldYardActionId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (s.pendingEncounter) return activeEncounterIssue(s);
+  if (!hasClue(s, 'dock_gray_hat_retreat_route')) return '你还没有能够指向这片旧装卸区的可靠路线。';
+  if (dockCaseDispositionClue(s)) return '案件已经完成阶段处置。';
+  if (s.atWork) return '工作期间无法离岗调查。';
+  if (s.currentLocation?.locationId !== 'old_loading_yard') return '需要先抵达运河下游旧装卸区。';
+  if (!DOCK_OLD_YARD_CHECK_IDS[actionId]) return '这里没有这种调查办法。';
+  if (dockOldYardActionResult(s, actionId)) return '这项调查已经留下记录。';
+  if (actionId === 'survey_perimeter' && (s.hour < 7 || s.hour >= 19)) return '天色太暗，无法分清公共边界、积水和废弃通路。';
+  if (actionId === 'question_porters') {
+    if (s.relations.mike === undefined) return '附近搬运工不愿和陌生人谈旧库位；需要先有可信的人引见。';
+    if (s.hour < 9 || s.hour >= 18) return '临时搬运工只会在白天换班时短暂停留。';
+  }
+  if (actionId === 'watch_night_transfer') {
+    if (!dockOldYardActionResult(s, 'survey_perimeter')) return '你还没有确认可用的观察位置和撤离边界。';
+    if (!dockOldYardActionResult(s, 'question_porters')) return '你还不知道临时搬运何时可能出现。';
+    if (!isNight(s.hour)) return '这片区域只有夜间汽笛前后才可能出现转运。';
+  }
+  const cost = actionId === 'watch_night_transfer' ? 14 : 8;
+  if (s.stats.energy <= energyCost(s, cost)) return '你必须保留最低行动能力，当前精力不足以继续。';
+  return null;
+}
+
+export function getDockOldYardView(s: GameState) {
+  if (!hasClue(s, 'dock_gray_hat_retreat_route')) return null;
+  const terminal = dockOldYardActionResult(s, 'watch_night_transfer');
+  const narratives: Record<string, string> = {
+    dock_old_yard_night_transfer: '你确认这里会短暂停靠没有编号的篷车，交接暗记与灰帽人的做法一致；仍没有证据证明这里是某个组织的固定据点。',
+    dock_old_yard_watch_disturbed: '预定灯号提前熄灭。你只能确认这处路线可能已经受到戒备，无法把未出现的货车写进结论。',
+  };
+  const actions: Array<{ id: DockOldYardActionId; label: string; description: string; hours: number }> = [
+    { id: 'survey_perimeter', label: '沿公共边界踩点', hours: 2, description: '核对围栏、临河通道和可以安全离开的方向。' },
+    { id: 'question_porters', label: '请麦克引见临时搬运工', hours: 2, description: '只询问班次、汽笛和无编号封箱，不追问对方不知道的身份。' },
+    { id: 'watch_night_transfer', label: '守候夜间转运', hours: 3, description: '把踩点与口述合在一起选择观察位置，确认是否真的有未登记交接。' },
+  ];
+  return {
+    phase: terminal ? 'resolved' as const : 'active' as const,
+    title: '旧装卸区调查',
+    narrative: terminal ? narratives[terminal] : '这里不是公开营业的仓库。先确认外围和作息，再决定是否值得夜间守候。',
+    actions: actions.map(action => {
+      const result = toPublicCheckResult(evaluateExplorationCheckInternal(s, DOCK_OLD_YARD_CHECK_IDS[action.id]));
+      return {
+        ...action,
+        completed: !!dockOldYardActionResult(s, action.id),
+        issue: dockOldYardActionIssue(s, action.id),
+        helpedBy: result.helpedBy,
+      };
+    }),
+  };
+}
+
+export function resolveDockOldYardAction(s: GameState, actionId: DockOldYardActionId): ActionResult {
+  const issue = dockOldYardActionIssue(s, actionId);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, DOCK_OLD_YARD_CHECK_IDS[actionId], startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这项调查。' };
+  const passed = internal.outcome === 'passed';
+  const clueId = DOCK_OLD_YARD_RESULT_CLUES[actionId][passed ? 0 : 1];
+  const hours = actionId === 'watch_night_transfer' ? 3 : 2;
+  const cost = actionId === 'watch_night_transfer' ? 14 : 8;
+  const energyReceipt = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }])[0];
+  const acquired = acquireClue(s, clueId);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [
+    receiptEntry('energy', energyReceipt), hoursReceipt(hours),
+    { id: `clue:${clueId}`, applied: acquired, before: false, after: acquired },
+  ] };
+  if (actionId !== 'survey_perimeter') {
+    const attention = actionId === 'question_porters' ? (passed ? 8 : 18) : (passed ? 18 : 32);
+    const threatBefore = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? 0;
+    raiseCaseThreat(s, DOCK_THREAT_ID, 'case_choice', `old_loading_yard:${actionId}`, attention);
+    const threatAfter = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? threatBefore;
+    receipt.effects.push({
+      id: 'threat:dock_manifest_cleaner', applied: threatAfter !== threatBefore,
+      before: threatBefore, after: threatAfter, actualDelta: threatAfter - threatBefore,
+    });
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  const narratives: Record<string, string> = {
+    dock_old_yard_perimeter_map: '你沿围栏走完一圈，确认一条临河通道能绕过正门，但它只能提供观察位置，不能证明内部用途。',
+    dock_old_yard_public_boundary: '值守、积水和封死的侧门挡住了视线。你至少记清哪些方向无法安全接近，没有把猜测画进地图。',
+    dock_old_yard_porter_schedule: '麦克引见的临时工只肯说：第二声夜间汽笛前后，有人会临时加钱搬走没有编号的封箱。',
+    dock_old_yard_workers_silent: '对方听见库位号便收住话头，借口要赶工离开。你没有得到班次，却确认这个问题已经容易引起戒备。',
+    dock_old_yard_night_transfer: '第二声汽笛后，一辆没有港务编号的篷车停了不到十分钟。交接者没有叫名字，只在领货牌背面留下灰帽人用过的回应暗记。',
+    dock_old_yard_watch_disturbed: '你刚换到第二个观察点，河边灯号便提前熄灭。没有篷车出现；你只能记下路线可能已经受到戒备。',
+  };
+  addLog(s, narratives[clueId], passed ? 'good' : actionId === 'watch_night_transfer' ? 'bad' : 'info');
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+const DOCK_TRANSFER_FOLLOWUP_CHECK_IDS: Record<DockTransferFollowupId, string> = {
+  tail_wagon: 'dock_transfer_tail_wagon',
+  inspect_crate: 'dock_transfer_inspect_crate',
+  request_interception: 'dock_transfer_request_interception',
+};
+
+const DOCK_TRANSFER_FOLLOWUP_RESULT_CLUES: Record<DockTransferFollowupId, readonly [string, string]> = {
+  tail_wagon: ['dock_wagon_coal_yard_route', 'dock_wagon_lost_at_bridge'],
+  inspect_crate: ['dock_crate_tar_seal', 'dock_crate_packing_trace'],
+  request_interception: ['dock_official_interception_record', 'dock_interception_declined'],
+};
+
+function dockTransferFollowupOutcomeClue(s: GameState) {
+  return Object.values(DOCK_TRANSFER_FOLLOWUP_RESULT_CLUES).flat()
+    .find(clueId => hasClue(s, clueId)) ?? null;
+}
+
+export function dockTransferFollowupIssue(s: GameState, choiceId: DockTransferFollowupId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (s.pendingEncounter) return activeEncounterIssue(s);
+  if (!hasClue(s, 'dock_old_yard_night_transfer')) return '需要先确认旧装卸区确实存在无编号夜间转运。';
+  if (dockTransferFollowupOutcomeClue(s)) return '无编号篷车已经选择了一条后续处理路线。';
+  if (dockCaseDispositionClue(s)) return '案件已经完成阶段处置。';
+  if (!DOCK_TRANSFER_FOLLOWUP_CHECK_IDS[choiceId]) return '没有这种处理路线。';
+  if (s.atWork) return '工作期间无法处理这条转运线。';
+  if (choiceId === 'tail_wagon') {
+    if (s.currentLocation?.locationId !== 'old_loading_yard') return '需要在旧装卸区等待下一辆无编号篷车出现。';
+    if (!isNight(s.hour)) return '篷车只在夜间汽笛前后出现。';
+  } else if (choiceId === 'inspect_crate') {
+    if (s.currentLocation?.locationId !== 'old_loading_yard') return '需要回到旧装卸区检查转运后留下的封箱。';
+  } else {
+    if (!hasFormalNightwatchRoute(s)) return '你还没有能够申请联合截查的正式门路。';
+    if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要亲自到黑荆棘安保公司递交记录。';
+    if (s.hour < 9 || s.hour >= 17) return '联合截查申请只在白天办理。';
+  }
+  const cost = choiceId === 'tail_wagon' ? 15 : choiceId === 'inspect_crate' ? 10 : 12;
+  if (s.stats.energy <= energyCost(s, cost)) return '你必须保留最低行动能力，当前精力不足以继续。';
+  return null;
+}
+
+export function getDockTransferFollowupView(s: GameState) {
+  if (!hasClue(s, 'dock_old_yard_night_transfer')) return null;
+  const outcomeClue = dockTransferFollowupOutcomeClue(s);
+  const narratives: Record<string, string> = {
+    dock_wagon_coal_yard_route: '你跟到河湾煤栈后侧，看见篷车驶入一扇不在公开货场图上的矮门；这只是下一处可核验地点。',
+    dock_wagon_lost_at_bridge: '篷车借运煤车遮挡消失在桥区。你记下最后位置，没有把猜测当成新的地址。',
+    dock_crate_tar_seal: '你从遗留封箱上取下一枚沾焦油的铅封。它可以在安全环境下用灵视检视，或作为明确目标进行占卜。',
+    dock_crate_packing_trace: '封箱已经被清空，你只留下煤灰、湿麻绳和重新钉合的包装记录。',
+    dock_official_interception_record: '联合截查确认篷车没有公开港务编号，但一次性运煤票据仍不足以指向幕后身份。',
+    dock_interception_declined: '截查没有获准；正式答复只登记了车体、灯号与出现时段。',
+  };
+  if (outcomeClue) return {
+    phase: 'resolved' as const, title: '无编号篷车', narrative: narratives[outcomeClue], choices: [],
+  };
+  const choices: Array<{ id: DockTransferFollowupId; label: string; description: string; hours: number }> = [
+    { id: 'tail_wagon', label: '保持距离跟住篷车', hours: 3, description: '尝试确认下一处停靠点；失败只记录跟踪中断的位置。' },
+    { id: 'inspect_crate', label: '检查转运后遗留的封箱', hours: 2, description: '寻找封签与包装痕迹，不徒手翻动无法判断的内容物。' },
+    { id: 'request_interception', label: '申请联合截查', hours: 4, description: '把车体、灯号和时段交给正式人员，由他们决定是否截停。' },
+  ];
+  return {
+    phase: 'choice' as const,
+    title: '无编号篷车',
+    narrative: '你已经确认篷车确实存在，但一次行动只能守住一种目标：去向、遗留实物，或正式截查记录。',
+    choices: choices.map(choice => {
+      const result = toPublicCheckResult(evaluateExplorationCheckInternal(s, DOCK_TRANSFER_FOLLOWUP_CHECK_IDS[choice.id]));
+      return { ...choice, issue: dockTransferFollowupIssue(s, choice.id), helpedBy: result.helpedBy };
+    }),
+  };
+}
+
+export function resolveDockTransferFollowup(s: GameState, choiceId: DockTransferFollowupId): ActionResult {
+  const issue = dockTransferFollowupIssue(s, choiceId);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, DOCK_TRANSFER_FOLLOWUP_CHECK_IDS[choiceId], startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '当前条件无法支持这条处理路线。' };
+  const passed = internal.outcome === 'passed';
+  const clueId = DOCK_TRANSFER_FOLLOWUP_RESULT_CLUES[choiceId][passed ? 0 : 1];
+  const hours = choiceId === 'tail_wagon' ? 3 : choiceId === 'inspect_crate' ? 2 : passed ? 4 : 3;
+  const cost = choiceId === 'tail_wagon' ? 15 : choiceId === 'inspect_crate' ? 10 : 12;
+  const energyReceipt = applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }])[0];
+  const acquired = acquireClue(s, clueId);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [
+    receiptEntry('energy', energyReceipt), hoursReceipt(hours),
+    { id: `clue:${clueId}`, applied: acquired, before: false, after: acquired },
+  ] };
+  if (choiceId === 'inspect_crate' && passed) {
+    const itemReceipt = applyEffects(s, [{ k: 'item', id: 'tarred_cargo_seal', v: 1 }])[0];
+    receipt.effects.push(receiptEntry('item:tarred_cargo_seal', itemReceipt));
+  }
+  if (choiceId === 'tail_wagon') {
+    const threatBefore = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? 0;
+    raiseCaseThreat(s, DOCK_THREAT_ID, 'case_choice', 'dock_transfer_followup:tail_wagon', passed ? 20 : 32);
+    const threatAfter = s.caseThreats?.[DOCK_THREAT_ID]?.attention ?? threatBefore;
+    receipt.effects.push({
+      id: 'threat:dock_manifest_cleaner', applied: threatAfter !== threatBefore,
+      before: threatBefore, after: threatAfter, actualDelta: threatAfter - threatBefore,
+    });
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  const result = getDockTransferFollowupView(s);
+  addLog(s, result?.narrative ?? '你完成了对无编号篷车的后续处理。', passed ? 'good' : 'info');
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
 }
 
 function deepInvestigationDef(investigationId: string): DeepInvestigationDef | null {
@@ -311,6 +2011,8 @@ export function deepInvestigationIssue(s: GameState, investigationId: string): s
   const def = deepInvestigationDef(investigationId);
   if (!def) return '这条线索没有可继续核验的调查方向。';
   if (s.pendingEncounter) return activeEncounterIssue(s);
+  const woundIssue = woundActionIssue(s, 'deep_investigation');
+  if (woundIssue) return woundIssue;
   if (s.deepInvestigations?.[def.id]) return '这条线索的下一步已经确认。';
   if (!hasClue(s, def.clueId)) return '调查笔记中没有这条可核验线索。';
   if (dockCaseDispositionClue(s)) return '这份案件已经完成阶段处置；如需继续追查，应等待新的可靠线索。';
@@ -349,6 +2051,7 @@ export function performDeepInvestigation(s: GameState, investigationId: string):
     };
     receipt.effects.push({ id: `investigation:${def.id}`, applied: true, before: false, after: true });
     addLog(s, `深入调查：${def.nextStepText}`, 'good');
+    maybeAnnounceDockWitnessCrisis(s);
   } else {
     addLog(s, `深入调查：${def.blockedText}`, 'info');
   }
@@ -360,15 +2063,322 @@ export function performDeepInvestigation(s: GameState, investigationId: string):
   return { ok: true, outcome: passed ? 'passed' : 'blocked' };
 }
 
+function dockEncounter(s: GameState) {
+  const encounter = s.pendingEncounter;
+  return encounter?.encounterId === DOCK_ENCOUNTER_ID ? encounter : null;
+}
+
+function hasDockCombatPreparationPrerequisites(s: GameState, preparationId: DockCombatPreparationId) {
+  if (preparationId === 'mapped_retreat') return hasClue(s, 'dock_crate_trace');
+  if (preparationId === 'prepared_ambush') {
+    return hasClue(s, 'dock_manifest_discrepancy') && (s.items.revolver ?? 0) > 0;
+  }
+  return hasClue(s, 'dock_scale_transfer_omen') && (s.items.ritual_chalk ?? 0) > 0
+    && hasSpiritVisionAbility(s);
+}
+
+export function dockCombatPreparationIssue(s: GameState, preparationId: DockCombatPreparationId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const encounter = dockEncounter(s);
+  if (!encounter || encounter.phase !== 'escape_choice') return '当前没有可供布置的码头遭遇。';
+  if (encounter.preparations.includes(preparationId)) return '这项准备已经完成。';
+  const def = DOCK_COMBAT_PREPARATIONS.find(candidate => candidate.id === preparationId);
+  if (!def) return '没有这项准备。';
+  if (preparationId === 'mapped_retreat' && !hasClue(s, 'dock_crate_trace')) return '你还没有核对货箱外围与可用间隙。';
+  if (preparationId === 'prepared_ambush') {
+    if (!hasClue(s, 'dock_manifest_discrepancy')) return '你还不知道交接空档出现在哪一段时间。';
+    if ((s.items.revolver ?? 0) <= 0) return '你没有足以支撑这项反击计划的可靠武器。';
+  }
+  if (preparationId === 'spiritual_guard') {
+    if (!hasClue(s, 'dock_scale_transfer_omen')) return '你还没有得到能够指向转运与退路的占卜记录。';
+    if ((s.items.ritual_chalk ?? 0) <= 0) return '你缺少用于划定边界的普通仪式粉笔。';
+    if (!hasSpiritVisionAbility(s)) return '你没有能够维持这道防护边界的合法灵视能力。';
+  }
+  if (s.stats.energy <= energyCost(s, def.energyCost)) return '你必须保留最低行动能力，当前精力不足以完成这项布置。';
+  return null;
+}
+
+export function getDockCombatPreparations(s: GameState) {
+  const encounter = dockEncounter(s);
+  if (!encounter || encounter.phase !== 'escape_choice') return [];
+  return DOCK_COMBAT_PREPARATIONS
+    .filter(def => def.id !== 'spiritual_guard' || hasClue(s, 'dock_scale_transfer_omen'))
+    .map(def => ({
+    ...def,
+    completed: encounter.preparations.includes(def.id),
+    issue: dockCombatPreparationIssue(s, def.id),
+  }));
+}
+
+export function prepareDockEncounter(s: GameState, preparationId: DockCombatPreparationId): ActionResult {
+  const issue = dockCombatPreparationIssue(s, preparationId);
+  if (issue) return { ok: false, msg: issue };
+  const encounter = dockEncounter(s)!;
+  const def = DOCK_COMBAT_PREPARATIONS.find(candidate => candidate.id === preparationId)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, def.checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible || internal.outcome !== 'passed') return { ok: false, msg: '现有条件无法形成可执行的准备。' };
+  const effects = applyEffects(s, [{ k: 'energy', v: -energyCost(s, def.energyCost) }]);
+  const receipt: CheckReceipt = {
+    hoursElapsed: 1,
+    effects: [receiptEntry('energy', effects[0]), hoursReceipt(1), {
+      id: `combat-prep:${preparationId}`, applied: true, before: false, after: true,
+    }],
+  };
+  encounter.preparations.push(preparationId);
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  addLog(s, `${def.label}：${def.benefitText}`, 'good');
+  advanceHours(s, 1);
+  return { ok: true, outcome: 'passed' };
+}
+
+function canUseSpiritualCombat(s: GameState) {
+  return ['seer', 'spectator', 'apprentice'].some(pathwayId => hasInheritedSequence9Ability(s, pathwayId));
+}
+
+function freshCombatRound(initiated: boolean, advantage = 0): CombatRoundState {
+  return { version: 1, round: 0, advantage, initiated, finisherReady: false, lastAction: null, criticalUsed: false, usedTechniqueIds: [] };
+}
+
+function sanitizeCombatRound(value: unknown, initiatedFallback: boolean): CombatRoundState | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<CombatRoundState>;
+  const validAction = raw.lastAction === null || raw.lastAction === 'physical' || raw.lastAction === 'spiritual' || raw.lastAction === 'guard';
+  if (raw.version !== 1 || !Number.isInteger(raw.round) || raw.round! < 0 || raw.round! > 2
+    || !Number.isInteger(raw.advantage) || raw.advantage! < -3 || raw.advantage! > 5
+    || typeof raw.initiated !== 'boolean' || typeof raw.finisherReady !== 'boolean'
+    || raw.finisherReady !== (raw.round! >= 2) || !validAction || typeof raw.criticalUsed !== 'boolean') return null;
+  const usedTechniqueIds = Array.isArray(raw.usedTechniqueIds)
+    ? [...new Set(raw.usedTechniqueIds.filter(id => typeof id === 'string' && id.length > 0 && id.length < 80))].slice(0, 8)
+    : [];
+  return {
+    version: 1, round: raw.round!, advantage: raw.advantage!, initiated: raw.initiated ?? initiatedFallback,
+    finisherReady: raw.finisherReady, lastAction: raw.lastAction ?? null, criticalUsed: raw.criticalUsed,
+    usedTechniqueIds,
+  };
+}
+
+function combatRoundSignal(round: CombatRoundState) {
+  if (round.advantage >= 3) return '对方的动作开始迟疑，你看见了结束冲突的机会。';
+  if (round.advantage >= 1) return '你暂时稳住了距离，对方没能继续逼近。';
+  if (round.advantage <= -2) return '压力仍在加重，再贸然抢攻可能让伤势恶化。';
+  return '双方都没有暴露身份，短促试探仍在继续。';
+}
+
+type EnemyCombatStyleId = 'concealed_enforcer' | 'seer_smuggler';
+
+const ENEMY_COMBAT_STYLES: Record<EnemyCombatStyleId, readonly [
+  { targetBonus: number; physicalBonus: number; spiritualBonus: number; dodgePressure: number; signal: string },
+  { targetBonus: number; physicalBonus: number; spiritualBonus: number; dodgePressure: number; signal: string },
+]> = {
+  concealed_enforcer: [
+    { targetBonus: 2, physicalBonus: 4, spiritualBonus: 0, dodgePressure: 2, signal: '对方不断换手试探，重心却始终压向你的退路。' },
+    { targetBonus: 0, physicalBonus: 0, spiritualBonus: 6, dodgePressure: 0, signal: '灰帽人避开灯火，周围的声音像被短暂压低。' },
+  ],
+  seer_smuggler: [
+    { targetBonus: 6, physicalBonus: -2, spiritualBonus: 2, dodgePressure: 2, signal: '你尚未真正发力，对方已经提前偏离了瞄准方向。' },
+    { targetBonus: 2, physicalBonus: 2, spiritualBonus: 8, dodgePressure: 0, signal: '对方没有追击，手指却在衣袖中完成了某种固定动作。' },
+  ],
+};
+
+function enemyRoundStyle(styleId: EnemyCombatStyleId, round: number) {
+  return ENEMY_COMBAT_STYLES[styleId][Math.min(1, Math.max(0, round)) as 0 | 1];
+}
+
+function enemyIntentSignal(styleId: EnemyCombatStyleId, round: number) {
+  return enemyRoundStyle(styleId, round).signal;
+}
+
+function combatExchangeIssue(s: GameState, round: CombatRoundState | undefined, action: CombatRoundAction): string | null {
+  if (!round || round.finisherReady || round.round >= 2) return '当前交锋已经可以进入最终处置。';
+  if (!['physical', 'spiritual', 'guard'].includes(action)) return '没有这种可执行的交锋方式。';
+  const energyNeeded = action === 'guard' ? 1 : action === 'physical' ? 8 : 6;
+  if (s.stats.energy < energyNeeded) return `精力不足，至少需要${energyNeeded}点才能完成这次行动。`;
+  if (action === 'spiritual') {
+    if (!canUseSpiritualCombat(s)) return '你没有可以用于压制冲突的合法序列能力。';
+    if (s.combatVitals.spirit < 8) return '精神值不足，无法维持灵性压制。';
+  }
+  return null;
+}
+
+function performCombatExchange(
+  s: GameState,
+  round: CombatRoundState,
+  action: CombatRoundAction,
+  enemyPower: number,
+  preparations: readonly DockCombatPreparationId[] = [],
+  technique?: { id: string; label: string; effect: CombatTechniqueEffect; consumeItemId?: string },
+  enemyStyleId: EnemyCombatStyleId = 'concealed_enforcer',
+) {
+  const issue = combatExchangeIssue(s, round, action);
+  if (issue) return { ok: false as const, msg: issue };
+  if (technique && round.usedTechniqueIds.includes(technique.id)) return { ok: false as const, msg: '这项战术在本次冲突中已经使用过。' };
+  if (technique && s.combatVitals.spirit < technique.effect.spiritCost) return { ok: false as const, msg: '精神值不足，无法稳定使用这项能力。' };
+  if (technique?.consumeItemId && (s.items[technique.consumeItemId] ?? 0) <= 0) return { ok: false as const, msg: '对应物品已经用尽。' };
+  const profile = getCombatProfile(s);
+  if (action === 'physical') consumeRevolverRound(s);
+  const enemyStyle = enemyRoundStyle(enemyStyleId, round.round);
+  const criticalTriggered = action === 'physical' && round.initiated && !round.criticalUsed
+    && preparations.includes('prepared_ambush') && profile.critical >= 18;
+  const actionScore = (action === 'physical' ? profile.physicalAttack
+    : action === 'spiritual' ? profile.spiritualAttack
+      : Math.max(profile.physicalDefense, profile.spiritualDefense) + Math.floor(profile.dodge / 2))
+    + (technique?.effect.scoreBonus ?? 0);
+  const target = enemyPower + round.round * 2 + enemyStyle.targetBonus;
+  let advantageGain = actionScore >= target ? 2 : actionScore >= target - 7 ? 1 : -1;
+  if (criticalTriggered) advantageGain += 2;
+  advantageGain += technique?.effect.advantageBonus ?? 0;
+  if (action === 'guard' && advantageGain < 0) advantageGain = 0;
+
+  const requestedEnergyCost = action === 'guard' ? 5 : action === 'physical' ? 8 : 6;
+  const energyCostValue = action === 'guard'
+    ? Math.min(requestedEnergyCost, Math.max(0, s.stats.energy - 1))
+    : requestedEnergyCost;
+  applyEffects(s, [{ k: 'energy', v: -energyCostValue }]);
+  if (action === 'spiritual') s.combatVitals.spirit = Math.max(0, s.combatVitals.spirit - 8);
+  if (technique?.effect.spiritCost) s.combatVitals.spirit = Math.max(0, s.combatVitals.spirit - technique.effect.spiritCost);
+
+  const guardReduction = action === 'guard' ? 9 : 0;
+  const controlReduction = Math.max(0, round.advantage + advantageGain) * 2;
+  const retreatReduction = preparations.includes('mapped_retreat') ? 3 : 0;
+  const spiritualReduction = preparations.includes('spiritual_guard') ? 4 : 0;
+  const impact = applyCombatImpact(
+    s,
+    Math.max(1, enemyPower + enemyStyle.physicalBonus - 10 - guardReduction - controlReduction - retreatReduction - (technique?.effect.incomingReduction ?? 0)),
+    Math.max(0, Math.floor(enemyPower / 4) + enemyStyle.spiritualBonus - (action === 'spiritual' ? 3 : 0) - spiritualReduction - Math.floor((technique?.effect.incomingReduction ?? 0) / 2)),
+    35 + round.round * 3 + enemyStyle.dodgePressure,
+  );
+  round.round += 1;
+  round.advantage = Math.max(-3, Math.min(5, round.advantage + advantageGain));
+  round.lastAction = action;
+  round.criticalUsed ||= criticalTriggered;
+  if (technique) round.usedTechniqueIds.push(technique.id);
+  round.finisherReady = round.round >= 2;
+  if (technique?.consumeItemId) s.items[technique.consumeItemId] = Math.max(0, (s.items[technique.consumeItemId] ?? 0) - 1);
+  if (criticalTriggered) addLog(s, '你利用预先选定的角度抓住破绽，固定完成了一次先手反击，在对方站稳前夺回了一步距离。', 'good');
+  const actionText = action === 'physical' ? '你以武器和格斗迫使对方改变站位'
+    : action === 'spiritual' ? '你用短促的灵性压制扰乱对方的逼近'
+      : '你收住追击，护住要害并重新确认退路';
+  addLog(s, `${actionText}，这一轮损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值。${combatRoundSignal(round)}`, impact.hpDamage > 0 ? 'info' : 'good');
+  if (technique) addLog(s, `${technique.label}：你把能力或物品转化成了这一轮可验证的战术优势。`, 'good');
+  return { ok: true as const, impact };
+}
+
+function availableCombatTechniques(s: GameState) {
+  const techniques: Array<{ id: string; label: string; description: string; effect: CombatTechniqueEffect; consumeItemId?: string }> = [];
+  if (hasInheritedSequence9Ability(s)) {
+    const skill = SEQUENCE9_COMBAT_SKILLS.find(candidate => candidate.pathwayId === s.pathwayId);
+    if (skill) {
+      const nightBonus = (s.hour >= 18 || s.hour < 6) ? skill.nightScoreBonus ?? 0 : 0;
+      techniques.push({
+        id: `pathway:${skill.id}`, label: skill.label, description: skill.description,
+        effect: { baseAction: skill.baseAction, scoreBonus: skill.scoreBonus + nightBonus, advantageBonus: skill.advantageBonus, incomingReduction: skill.incomingReduction, spiritCost: skill.spiritCost },
+      });
+    }
+  }
+  for (const item of ITEMS) {
+    const technique = item.combat?.technique;
+    if (!technique || (s.items[item.id] ?? 0) <= 0) continue;
+    techniques.push({
+      id: `item:${item.id}`, label: technique.label, description: technique.description,
+      effect: technique, ...(technique.consume ? { consumeItemId: item.id } : {}),
+    });
+  }
+  return techniques;
+}
+
+export function getCombatTechniqueViews(s: GameState) {
+  const round = s.pendingEncounter?.phase === 'combat' ? s.pendingEncounter.combatRound
+    : s.activeHunt?.phase === 'combat' ? s.activeHunt.combatRound : undefined;
+  return availableCombatTechniques(s).map(technique => ({
+    id: technique.id, label: technique.label, description: technique.description,
+    used: !!round?.usedTechniqueIds.includes(technique.id),
+    issue: !round ? '当前没有可以使用战术的交锋。'
+      : round.finisherReady ? '当前交锋已经进入最终处置。'
+        : round.usedTechniqueIds.includes(technique.id) ? '本次冲突中已经使用过。'
+          : s.combatVitals.spirit < technique.effect.spiritCost ? '精神值不足。' : null,
+  }));
+}
+
+function combatTechniqueById(s: GameState, techniqueId: string) {
+  return availableCombatTechniques(s).find(technique => technique.id === techniqueId);
+}
+
+export function dockCombatExchangeIssue(s: GameState, action: CombatRoundAction): string | null {
+  const encounter = dockEncounter(s);
+  if (!encounter || encounter.phase !== 'combat') return '当前没有正在进行的码头交锋。';
+  return combatExchangeIssue(s, encounter.combatRound, action);
+}
+
+export function performDockCombatExchange(s: GameState, action: CombatRoundAction): ActionResult {
+  const encounter = dockEncounter(s);
+  if (!encounter || encounter.phase !== 'combat' || !encounter.combatRound) return { ok: false, msg: '当前没有正在进行的码头交锋。' };
+  const result = performCombatExchange(s, encounter.combatRound, action, 30, encounter.preparations, undefined, 'concealed_enforcer');
+  if (!result.ok) return result;
+  if (rescueFromFatalInjury(s, '短促交锋令你失去意识。')) {
+    addLog(s, '巡夜人的灯光逼退了袭击者；等你醒来时，这次遭遇已经中止。', 'bad');
+  }
+  return { ok: true, outcome: encounter.combatRound?.finisherReady ? 'passed' : 'blocked' };
+}
+
+export function performDockCombatTechnique(s: GameState, techniqueId: string): ActionResult {
+  const encounter = dockEncounter(s);
+  const technique = combatTechniqueById(s, techniqueId);
+  if (!encounter || encounter.phase !== 'combat' || !encounter.combatRound || !technique) return { ok: false, msg: '当前无法使用这项战术。' };
+  const result = performCombatExchange(s, encounter.combatRound, technique.effect.baseAction, 30, encounter.preparations, technique, 'concealed_enforcer');
+  if (!result.ok) return result;
+  if (rescueFromFatalInjury(s, '战术交锋仍令你失去意识。')) addLog(s, '巡夜人的灯光逼退了袭击者；这次遭遇已经中止。', 'bad');
+  return { ok: true, outcome: encounter.combatRound?.finisherReady ? 'passed' : 'blocked' };
+}
+
+export function dockCombatApproachIssue(s: GameState, approach: CombatApproach, initiated = false): string | null {
+  const encounter = dockEncounter(s);
+  if (!encounter || (initiated ? encounter.phase !== 'escape_choice' : encounter.phase !== 'combat')) return '当前没有可结算的码头冲突。';
+  if (approach !== 'physical' && approach !== 'spiritual') return '没有这种可执行的应战方式。';
+  if (initiated) {
+    const woundIssue = woundActionIssue(s, 'active_combat');
+    if (woundIssue) return woundIssue;
+  }
+  if (approach === 'spiritual') {
+    if (!canUseSpiritualCombat(s)) return '你没有可以用于压制冲突的合法序列能力。';
+    if (s.combatVitals.spirit < 8) return '精神值不足，无法维持灵性压制。';
+  }
+  return null;
+}
+
+export function engageDockEncounter(s: GameState, approach: CombatApproach): ActionResult {
+  const issue = dockCombatApproachIssue(s, approach, true);
+  if (issue) return { ok: false, msg: issue };
+  s.pendingEncounter!.phase = 'combat';
+  s.pendingEncounter!.combatRound = freshCombatRound(true);
+  return performDockCombatExchange(s, approach);
+}
+
+function dockDangerAssessment(s: GameState, encounter: NonNullable<GameState['pendingEncounter']>) {
+  if (encounter.preparations.includes('spiritual_guard')) return '防护边界出现短促扰动：对方可能干扰感知。保持边界，避免追入无灯区域。';
+  if (hasClue(s, 'dock_scale_transfer_omen')) return '已有预兆只指向固定转运与退路受阻；它没有揭示对方身份。优先保留撤离路线。';
+  if (hasClue(s, 'dock_crate_trace') || hasClue(s, 'dock_manifest_discrepancy')) return '现场记录表明对方熟悉交接空档与货箱遮挡。先利用已核对的路线，不要盲目追击。';
+  return null;
+}
+
 export function getPendingEncounterView(s: GameState) {
   const encounter = s.pendingEncounter;
   if (!encounter || encounter.encounterId !== DOCK_ENCOUNTER_ID) return null;
   if (encounter.phase === 'combat') {
+    const combatRound = encounter.combatRound;
     return {
       phase: encounter.phase,
       title: '退路被截断',
       text: '第一次脱身没有成功。灰帽人逼近时始终避开灯火，你只能先挡住这次袭击，再寻找离开的机会。',
       actionLabel: '抵挡并寻找脱身机会',
+      assessment: dockDangerAssessment(s, encounter),
+      combatRound: combatRound ? {
+        round: combatRound.round, finisherReady: combatRound.finisherReady,
+        signal: combatRoundSignal(combatRound),
+        enemyIntent: enemyIntentSignal('concealed_enforcer', combatRound.round),
+      } : { round: 2, finisherReady: true, signal: '你已经撑过最危险的贴身逼迫，必须立刻结束冲突。', enemyIntent: '对方正在重新判断是否继续追击。' },
     };
   }
   const texts = [
@@ -381,6 +2391,7 @@ export function getPendingEncounterView(s: GameState) {
     title: '有人跟了上来',
     text: texts[encounter.narrativeVariant % texts.length],
     actionLabel: '利用已知路线设法甩脱',
+    assessment: dockDangerAssessment(s, encounter),
   };
 }
 
@@ -390,6 +2401,7 @@ export function attemptEncounterEscape(s: GameState): ActionResult {
     return { ok: false, msg: '目前没有可以进行的逃脱检定。' };
   }
   const startedAt = { day: s.day, hour: s.hour };
+  const preparations = [...encounter.preparations];
   const request = explorationCheckRequest(s, 'dock_manifest_cleaner_escape', startedAt);
   const internal = evaluateCheck(EXPLORATION_CHECKS, request);
   if (!internal.eligible) return { ok: false, msg: '当前遭遇状态无法进行逃脱检定。' };
@@ -405,31 +2417,56 @@ export function attemptEncounterEscape(s: GameState): ActionResult {
     effects: effects.map((entry, index) => receiptEntry(index === 0 ? 'energy' : 'san', entry)).concat(hoursReceipt(1)),
   };
   const threat = caseThreat(s, encounter.threatId);
+  let rescued = false;
   if (passed) {
     threat.attention = Math.min(threat.attention, 60);
     s.pendingEncounter = null;
     s.currentLocation = null;
     addLog(s, '你借先前记下的货箱间隙和人流转向甩开了跟踪者。对方没有追进灯火最亮的街口。', 'good');
   } else {
-    encounter.phase = 'combat';
-    addLog(s, '你试图借巷道脱身，却在转角被提前截住。逃跑的机会已经过去，只能先挡住对方。', 'bad');
+    const impact = applyCombatImpact(s, encounter.preparations.includes('mapped_retreat') ? 12 : 18, 0, 34);
+    rescued = rescueFromFatalInjury(s, '转角处的第一轮袭击令你失去意识。');
+    if (rescued) {
+      addLog(s, '巡夜人的灯光逼退了追踪者；这次遭遇已经中止。', 'bad');
+    } else {
+      encounter.phase = 'combat';
+      encounter.combatRound = freshCombatRound(false);
+      addLog(s, `你试图借巷道脱身，却在转角被提前截住，伤势消耗了${impact.hpDamage}点生命。逃跑的机会已经过去，只能先挡住对方。`, 'bad');
+    }
   }
   receipt.effects.push({ id: passed ? 'encounter:escaped' : 'encounter:combat', applied: true });
-  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (passed) acquireClue(s, 'dock_gray_hat_escape_recollection');
+  else if (rescued) acquireClue(s, 'dock_gray_hat_scene_lost');
+  if (!passed) {
+    recordAreaSuspicion(s, 'docks', 'dock_escape_failed',
+      dockAreaSuspicionAmount('dock_escape_failed', preparations), attempt);
+  }
   advanceHours(s, 1);
   return { ok: true, outcome: passed ? 'passed' : 'blocked' };
 }
 
-export function resolveEncounterCombat(s: GameState): ActionResult {
+function settleDockEncounterCombat(s: GameState, approach: CombatApproach, initiated: boolean): ActionResult {
   const encounter = s.pendingEncounter;
   if (!encounter || encounter.encounterId !== DOCK_ENCOUNTER_ID || encounter.phase !== 'combat') {
     return { ok: false, msg: '目前没有需要结算的防御战。' };
   }
+  if (encounter.combatRound && !encounter.combatRound.finisherReady) {
+    return { ok: false, msg: '还没有形成结束冲突的机会；先完成眼前的交锋。' };
+  }
+  const approachIssue = dockCombatApproachIssue(s, approach);
+  if (approachIssue) return { ok: false, msg: approachIssue };
+  const profile = getCombatProfile(s);
+  const preparations = [...encounter.preparations];
   const startedAt = { day: s.day, hour: s.hour };
-  const request = explorationCheckRequest(s, 'dock_manifest_cleaner_combat', startedAt);
+  const combatCheckId = approach === 'spiritual'
+    ? initiated ? 'dock_manifest_cleaner_active_spiritual_combat' : 'dock_manifest_cleaner_spiritual_combat'
+    : initiated ? 'dock_manifest_cleaner_active_combat' : 'dock_manifest_cleaner_combat';
+  const request = explorationCheckRequest(s, combatCheckId, startedAt);
   const internal = evaluateCheck(EXPLORATION_CHECKS, request);
   if (!internal.eligible) return { ok: false, msg: '当前遭遇状态无法结算。' };
   const passed = internal.outcome === 'passed';
+  if (approach === 'physical') consumeRevolverRound(s);
   const combatSanCost = Math.min(passed ? 3 : 8, Math.max(0, s.stats.san - 1));
   const effects = applyEffects(s, passed
     ? [{ k: 'energy', v: -25 }, { k: 'san', v: -combatSanCost }]
@@ -439,22 +2476,51 @@ export function resolveEncounterCombat(s: GameState): ActionResult {
     effects: [receiptEntry('energy', effects[0]), receiptEntry('san', effects[1]), hoursReceipt(1)],
   };
   const threat = caseThreat(s, encounter.threatId);
+  if (approach === 'spiritual') {
+    const spiritBefore = s.combatVitals.spirit;
+    s.combatVitals.spirit -= 8;
+    receipt.effects.push({ id: 'spirit', applied: true, before: spiritBefore, after: s.combatVitals.spirit, actualDelta: -8 });
+  }
+  const criticalTriggered = approach === 'physical' && initiated
+    && encounter.preparations.includes('prepared_ambush') && profile.critical >= 18;
+  let physicalPower = passed ? 22 : 34;
+  let spiritualPower = passed ? 6 : 12;
+  if (approach === 'physical') physicalPower -= Math.floor(profile.physicalAttack / 6) + (criticalTriggered ? 8 : 0);
+  else {
+    physicalPower -= Math.floor(profile.spiritualAttack / 10);
+    spiritualPower -= Math.floor(profile.spiritualAttack / 6);
+  }
+  if (encounter.preparations.includes('spiritual_guard')) spiritualPower -= 6;
+  const impact = applyCombatImpact(s, Math.max(1, physicalPower), Math.max(1, spiritualPower), passed ? 38 : 44);
+  const rescued = rescueFromFatalInjury(s, '你在冲突中伤重倒下，附近巡夜人及时赶到。');
+  if (criticalTriggered) addLog(s, '你利用预先选定的角度抓住破绽，固定完成了一次先手反击。', 'good');
+  if (approach === 'spiritual') addLog(s, '你以自身途径能力维持短促压制，没有试图追索对方身份。', 'info');
   if (passed) {
     threat.status = 'resolved';
-    addLog(s, '你没有追击，只在对方失去平衡时冲向街灯。灰帽人放弃继续纠缠，这次清理行动被迫中止。', 'good');
+    addLog(s, `你没有追击，只在对方失去平衡时冲向街灯。你损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值；灰帽人放弃继续纠缠。`, rescued ? 'bad' : 'good');
     receipt.effects.push({ id: 'threat:resolved', applied: true, before: 'active', after: 'resolved' });
   } else {
     threat.attention = Math.min(threat.attention, 50);
     s.flags.dock_encounter_wounded = true;
-    addLog(s, '你带着伤撑到巡夜人的灯光附近。灰帽人没有冒险追来；你保住了调查笔记，却必须回去休养。', 'bad');
+    addLog(s, `你带着伤撑到巡夜人的灯光附近，损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值。灰帽人没有冒险追来；你保住了调查笔记，却必须回去休养。`, 'bad');
     receipt.effects.push({ id: 'encounter:survived', applied: true });
   }
   s.pendingEncounter = null;
   s.currentLocation = null;
   s.atWork = false;
-  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  acquireClue(s, passed && !rescued ? 'dock_gray_hat_dropped_token' : 'dock_gray_hat_scene_lost');
+  const source: Exclude<AreaSuspicionSource, 'hunt_death'> = approach === 'spiritual'
+    ? initiated ? 'dock_active_spiritual' : 'dock_defensive_spiritual'
+    : initiated ? 'dock_active_physical' : 'dock_defensive_physical';
+  recordAreaSuspicion(s, 'docks', source, dockAreaSuspicionAmount(source, preparations), attempt);
   advanceHours(s, 1);
   return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+/** 公开入口仅结算逃脱失败后的防御战；主动应战只能经 engageDockEncounter 进入。 */
+export function resolveEncounterCombat(s: GameState, approach: CombatApproach = 'physical'): ActionResult {
+  return settleDockEncounterCombat(s, approach, s.pendingEncounter?.combatRound?.initiated ?? false);
 }
 
 function receiptEntry(id: string, receipt: AppliedEffectReceipt) {
@@ -479,6 +2545,7 @@ type DivinationTargetDef = {
   pressure: 'low' | 'high';
   antiDivination?: boolean;
   clueId?: string;
+  clueBonuses?: Readonly<Record<string, number>>;
   successText: Record<DivinationMethod, string>;
 };
 
@@ -486,6 +2553,7 @@ const DIVINATION_TARGETS: readonly DivinationTargetDef[] = [
   {
     kind: 'location', id: 'old_tower', title: '旧钟楼的夜间异响', difficulty: 32, pressure: 'low',
     clueId: 'clocktower_divination_omen',
+    clueBonuses: { clocktower_public_complaints: 4, clocktower_repair_orders: 8 },
     successText: {
       cards: '纸牌中的塔反复倒置，停摆的指针却总指向同一段夜色。若要前往，应先核对那些被反复改期的维修记录。',
       dream: '梦里，旧钟楼的指针一次次退回同一刻。醒来时你只确定一件事：维修记录里藏着比传闻更可靠的入口。',
@@ -625,12 +2693,15 @@ export function itemPresentation(s: GameState, itemId: string): { name: string; 
 }
 
 export function spiritVisionInspectionIssue(s: GameState, itemId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (!hasSpiritVisionAbility(s)) return '你尚未真正掌握灵视；灵性数值或理论知识不能代替非凡能力。';
   if (!isAtHome(s)) return '需要先回到住处，在可控环境中检视物品。';
   if ((s.items[itemId] ?? 0) <= 0) return '这件物品并不在你的持有物中。';
   const item = findItem(itemId);
   if (!item?.spiritVision) return '这件物品没有可由灵视稳定辨认的记录。';
   if (s.itemKnowledge?.[itemId]?.spiritVisionInspected) return '这件物品已经完成过灵视检视。';
+  if (s.combatVitals.spirit < 6) return '精神值不足，无法稳定维持灵视。';
   if (s.stats.energy < energyCost(s, 5) + 3) return '你现在太疲惫，无法稳定维持灵视。';
   return null;
 }
@@ -642,6 +2713,7 @@ export function inspectItemWithSpiritVision(s: GameState, itemId: string): Actio
   if (issue) return { ok: false, msg: issue };
   const item = findItem(itemId)!;
   const definition = item.spiritVision!;
+  s.combatVitals.spirit -= 6;
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
   if (definition.sanityCost) applyEffects(s, [{ k: 'san', v: -definition.sanityCost }]);
   if (definition.corruptionCost) applyEffects(s, [{ k: 'cor', v: definition.corruptionCost }]);
@@ -653,6 +2725,10 @@ export function inspectItemWithSpiritVision(s: GameState, itemId: string): Actio
   knowledge.inspectedHour = s.hour;
   if (!knowledge.knownInfo.includes(definition.result)) knowledge.knownInfo.push(definition.result);
   addLog(s, `灵视检视：${definition.result}`, definition.corruptionCost || (definition.sanityCost ?? 0) >= 3 ? 'bad' : 'info');
+  if (itemId === STRANGE_NOTEBOOK_ITEM_ID) {
+    s.strangeNotebook.nextManifestationAbsoluteHour = Math.min(s.strangeNotebook.nextManifestationAbsoluteHour, absoluteHour(s));
+    progressStrangeNotebook(s);
+  }
   return { ok: true, outcome: 'passed' };
 }
 
@@ -762,6 +2838,8 @@ function recordedDivinationProviderAllowed(s: GameState, provider: DivinationPro
 }
 
 export function learnCardDivinationIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '需先下班离开工作地点。';
   if (hasTrustedCardDivinationTraining(s)) return '你已经掌握了这套安全纸牌方法。';
   const trust = trustedNpcIssue(s, 'nelson');
@@ -787,6 +2865,8 @@ export function learnCardDivination(s: GameState): ActionResult {
 }
 
 function providerIssue(s: GameState, provider: DivinationProvider, method: DivinationMethod, target: DivinationTargetDef): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '需先下班离开工作地点。';
   if (provider === 'self') {
     if (method === 'cards') {
@@ -797,18 +2877,20 @@ function providerIssue(s: GameState, provider: DivinationProvider, method: Divin
       return '只有完成正式训练的占卜家才能独自进行梦境占卜。';
     }
   } else if (provider === 'nelson') {
-    const issue = trustedNpcIssue(s, 'nelson');
-    if (issue) return issue;
+    const sessionIssue = npcVisitSessionIssue(s, 'nelson');
+    if (sessionIssue) return sessionIssue;
     if (s.pence < 24) return '你付不起尼尔逊这次代占的费用。';
     if (method !== 'cards') return '尼尔逊只愿意提供边界清楚的纸牌代占。';
   } else {
     const evelyn = findAnyNPC(s, 'evelyn');
     if (!evelyn || !isMet(s, 'evelyn')) return '你尚未与负责异常事务的教会执事建立联系。';
-    if (!npcAvailable(evelyn, s.day, s.hour)) return '伊芙琳此刻不在圣赛琳娜教堂。';
+    const sessionIssue = npcVisitSessionIssue(s, 'evelyn');
+    if (sessionIssue) return sessionIssue;
     if (!hasOfficialEvelynDivinationRelationship(s)) return '教会尚未把你或这件事纳入正式异常记录。';
     if (!(target.id === 'old_tower' || target.id === 'anomaly_evidence')) return '这不属于伊芙琳会受理的官方异常或证物范围。';
     if (method !== 'cards') return '官方记录室采用的是受控象征核验。';
   }
+  if (provider === 'self' && s.combatVitals.spirit < (method === 'dream' ? 12 : 6)) return '精神值不足，无法维持这次占卜。';
   if (s.stats.energy < energyCost(s, provider === 'self' ? 8 : 5) + 5) return '你现在太疲惫，无法完成一轮专注核验。';
   return null;
 }
@@ -819,27 +2901,77 @@ export function divinationIssue(s: GameState, targetKind: DivinationTargetKind, 
   return providerIssue(s, provider, method, target);
 }
 
-function divinationScore(s: GameState, target: DivinationTargetDef, method: DivinationMethod, provider: DivinationProvider): number {
-  let score = provider === 'self'
-    ? s.stats.spi + (s.skills.occult ?? 0) * 4 + (method === 'dream' ? 10 : 5)
-    : provider === 'nelson' ? 36 : 48;
-  if (provider === 'self' && s.divinationTraining.media.includes('symbol_cards') && method === 'cards') score += 4;
-  if (target.id === 'old_tower') {
-    if (hasClue(s, 'clocktower_public_complaints')) score += 4;
-    if (hasClue(s, 'clocktower_repair_orders')) score += 8;
+export function getNpcDivinationRequests(s: GameState, npcId: string) {
+  if (npcId !== 'nelson' && npcId !== 'evelyn') return [];
+  if (npcVisitSessionIssue(s, npcId)) return [];
+  return getDivinationTargets(s).filter(target => npcId === 'nelson'
+    || target.id === 'old_tower' || target.id === 'anomaly_evidence');
+}
+
+function divinationScoreInput(
+  s: GameState,
+  target: DivinationTargetDef,
+  method: DivinationMethod,
+  provider: DivinationProvider,
+): Extract<DivinationScoreInput, { version: 1 }> {
+  const methodDef = DIVINATION_METHOD_DEFS.find(candidate => candidate.id === method)!;
+  const self = provider === 'self';
+  return {
+    version: 1,
+    spirituality: self ? s.stats.spi : 0,
+    occultSkill: self ? (s.skills.occult ?? 0) : 0,
+    methodBase: self ? methodDef.baseValue : provider === 'nelson' ? 36 : 48,
+    toolIds: self ? methodDef.toolBonuses.filter(tool => (s.items[tool.itemId] ?? 0) > 0).map(tool => tool.itemId) : [],
+    seerDivinationBonus: self && hasSeerDivinationSequence(s) ? 2 : 0,
+    clueIds: Object.keys(target.clueBonuses ?? {}).filter(clueId => hasClue(s, clueId)),
+    lowSanity: self && s.stats.san < 45,
+    highCorruption: self && s.stats.cor >= 30,
+    jammed: !!s.flags.jammed,
+  };
+}
+
+function scoreDivinationInput(target: DivinationTargetDef, method: DivinationMethod, provider: DivinationProvider, input: DivinationScoreInput): number | null {
+  if (input.version === 23) {
+    return input.provenance === 'validated_v23_attempt'
+      && Number.isInteger(input.validatedScore)
+      && input.validatedScore >= -100
+      && input.validatedScore <= 500
+      ? input.validatedScore : null;
   }
-  if (target.id === 'cryptic_note' && hasClue(s, 'cryptic_note_warning')) score += 6;
-  if (s.stats.san < 45) score -= 8;
-  if (s.stats.cor >= 30) score -= 8;
-  if (s.flags.jammed) score -= 20;
+  const methodDef = DIVINATION_METHOD_DEFS.find(candidate => candidate.id === method);
+  if (!methodDef || !Number.isFinite(input.spirituality) || !Number.isFinite(input.occultSkill)
+    || !Number.isFinite(input.methodBase) || !Number.isFinite(input.seerDivinationBonus)
+    || !Array.isArray(input.toolIds) || !input.toolIds.every(id => typeof id === 'string')
+    || new Set(input.toolIds).size !== input.toolIds.length
+    || !Array.isArray(input.clueIds) || !input.clueIds.every(id => typeof id === 'string')
+    || new Set(input.clueIds).size !== input.clueIds.length
+    || typeof input.lowSanity !== 'boolean' || typeof input.highCorruption !== 'boolean' || typeof input.jammed !== 'boolean') return null;
+  if (provider === 'self') {
+    if (input.spirituality < 0 || input.spirituality > 100 || input.occultSkill < 0 || input.occultSkill > 10
+      || input.methodBase !== methodDef.baseValue || ![0, 2].includes(input.seerDivinationBonus)
+      || input.toolIds.some(id => !methodDef.toolBonuses.some(tool => tool.itemId === id))) return null;
+  } else if (input.spirituality !== 0 || input.occultSkill !== 0 || input.toolIds.length > 0
+    || input.seerDivinationBonus !== 0 || input.lowSanity || input.highCorruption
+    || input.methodBase !== (provider === 'nelson' ? 36 : 48)) return null;
+  if (input.clueIds.some(id => (target.clueBonuses?.[id] ?? 0) === 0)) return null;
+  let score = input.methodBase + input.spirituality + input.occultSkill * 4 + input.seerDivinationBonus;
+  for (const itemId of input.toolIds) score += methodDef.toolBonuses.find(tool => tool.itemId === itemId)?.value ?? 0;
+  for (const clueId of input.clueIds) score += target.clueBonuses?.[clueId] ?? 0;
+  if (input.lowSanity) score -= 8;
+  if (input.highCorruption) score -= 8;
+  if (input.jammed) score -= 20;
   return score;
+}
+
+function divinationScore(s: GameState, target: DivinationTargetDef, method: DivinationMethod, provider: DivinationProvider): number {
+  return scoreDivinationInput(target, method, provider, divinationScoreInput(s, target, method, provider))!;
 }
 
 export function evaluateDivination(s: GameState, targetKind: DivinationTargetKind, targetId: string, method: DivinationMethod, provider: DivinationProvider): { outcome: DivinationOutcome; score: number } | null {
   const target = divinationTarget(s, targetKind, targetId);
   if (!target || providerIssue(s, provider, method, target)) return null;
   const score = divinationScore(s, target, method, provider);
-  if (s.flags.jammed) return { outcome: 'obscured', score };
+  if (divinationScoreInput(s, target, method, provider).jammed) return { outcome: 'obscured', score };
   if (score >= target.difficulty) return { outcome: targetKind === 'location' ? 'omen' : 'hint', score };
   if (target.antiDivination && score >= target.difficulty - 6) return { outcome: 'obscured', score };
   if (method === 'dream' || target.pressure === 'high') return { outcome: 'backlash', score };
@@ -853,7 +2985,10 @@ export function performDivination(s: GameState, targetKind: DivinationTargetKind
   if (!target) return { ok: false, msg: genericDivinationTargetIssue };
   const issue = providerIssue(s, provider, method, target);
   if (issue) return { ok: false, msg: issue };
+  const scoreInput = divinationScoreInput(s, target, method, provider);
   const result = evaluateDivination(s, targetKind, targetId, method, provider)!;
+  if (provider === 'self') s.combatVitals.spirit -= method === 'dream' ? 12 : 6;
+  else s.npcVisitSession = null;
   const cost = provider === 'self' ? 8 : 5;
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, cost) }]);
   if (provider === 'nelson') applyEffects(s, [{ k: 'money', v: -24 }]);
@@ -865,7 +3000,7 @@ export function performDivination(s: GameState, targetKind: DivinationTargetKind
   if (provider === 'evelyn') {
     s.flags.official_divination_record = true;
   }
-  const attempt: DivinationAttempt = { targetKind, targetId, method, provider, outcome: result.outcome, day: s.day, hour: s.hour, score: result.score };
+  const attempt: DivinationAttempt = { targetKind, targetId, method, provider, outcome: result.outcome, day: s.day, hour: s.hour, score: result.score, scoreInput };
   if (provider === 'nelson' || provider === 'evelyn') {
     addDivinationConsultationCredential(s, provider, targetKind, targetId, method, attempt.day, attempt.hour);
   }
@@ -883,6 +3018,11 @@ export function performDivination(s: GameState, targetKind: DivinationTargetKind
     const item = findItem(targetId);
     if (item?.category === 'occult') itemKnowledgeState(s, targetId).identifiedAsOccult = true;
   }
+  if (targetKind === 'item' && targetId === STRANGE_NOTEBOOK_ITEM_ID
+    && (result.outcome === 'hint' || result.outcome === 'backlash')) {
+    s.strangeNotebook.nextManifestationAbsoluteHour = Math.min(s.strangeNotebook.nextManifestationAbsoluteHour, absoluteHour(s));
+    progressStrangeNotebook(s);
+  }
   s.divinationInsights.push(insight);
   if (provider === 'self' && targetKind === 'item' && targetId === 'dock_scale_evidence') {
     const attention = result.outcome === 'hint' ? 15
@@ -898,16 +3038,757 @@ export function acquaint(s: GameState, id: string, base: number) {
   if (isMet(s, id)) return;
   applyEffects(s, [{ k: 'favor', id, v: base }]);
 }
+function energyCostAtHour(s: GameState, base: number, hour: number): number {
+  return Math.round(base * (hasTalent(s, 'night_owl') && isNight(hour) ? 0.7 : 1));
+}
+
 function energyCost(s: GameState, base: number): number {
-  return Math.round(base * (hasTalent(s, 'night_owl') && isNight(s.hour) ? 0.7 : 1));
+  return energyCostAtHour(s, base, s.hour);
+}
+
+function actionFitsWindow(hour: number, hours: number, openFrom: number, openTo: number): boolean {
+  return hour >= openFrom && hour + hours <= openTo;
+}
+
+export function isActiveNightwatchSequence9Member(s: GameState): boolean {
+  const route = s.organizationRoutes?.nightwatch;
+  const nightwatch = ORGANIZATIONS.find(organization => organization.id === 'nightwatch');
+  if (s.sequence !== 9 || !s.pathwayId || !route || route.status !== 'committed'
+    || route.selectedPathway !== s.pathwayId || !nightwatch?.heldPathways.some(pathwayId => pathwayId === s.pathwayId)) return false;
+  const lead = s.pathwayLeads?.[s.pathwayId];
+  return !!lead && lead.organizationId === 'nightwatch' && lead.commitment === true;
+}
+
+export function isFormalNightwatchSeerStudent(s: GameState): boolean {
+  if (s.sequence !== 9 || s.pathwayId !== 'seer') return false;
+  const route = s.organizationRoutes?.nightwatch;
+  const lead = s.pathwayLeads?.seer;
+  return !!route && route.status === 'committed' && route.selectedPathway === 'seer'
+    && !!lead && lead.organizationId === 'nightwatch' && lead.commitment === true;
+}
+
+export function hasSeerTrainingNode(s: GameState, nodeId: SeerTrainingNodeId): boolean {
+  return isFormalNightwatchSeerStudent(s) && (s.seerTraining?.learnedNodeIds ?? []).includes(nodeId);
+}
+
+function oldNeilTeachingIssue(s: GameState, hours: number): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (s.atWork) return '工作期间不能参加值夜者内部课程。';
+  if (!isFormalNightwatchSeerStudent(s)) return '这套课程只向黑夜教会正式掌握的序列9占卜家开放。';
+  if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要先到黑荆棘安保公司参加正式课程。';
+  const mentor = findAnyNPC(s, 'old_neil');
+  if (!mentor || !npcAvailable(mentor, s.day, s.hour) || !actionFitsWindow(s.hour, hours, 9, 17)) {
+    return '老尼尔只在周一至周六9:00–17:00安排能够完整结束的课程。';
+  }
+  return null;
+}
+
+export function getSeerTrainingNodes(s: GameState) {
+  return oldNeilTeachingIssue(s, 0) ? [] : SEER_TRAINING_NODES;
+}
+
+export function seerTrainingNodeIssue(s: GameState, nodeId: SeerTrainingNodeId): string | null {
+  const node = SEER_TRAINING_NODES.find(candidate => candidate.id === nodeId);
+  if (!node) return '没有这项正式课程。';
+  const teachingIssue = oldNeilTeachingIssue(s, node.hours);
+  if (teachingIssue) return teachingIssue;
+  if (s.seerTraining.learnedNodeIds.includes(node.id)) return '这项课程已经完成。';
+  const missing = node.prerequisites.filter(id => !s.seerTraining.learnedNodeIds.includes(id));
+  if (missing.length) return '请先完成前置课程。';
+  if (node.requiredItemId && (s.items[node.requiredItemId] ?? 0) <= 0) return `课程需要准备普通工具【${findItem(node.requiredItemId)?.name ?? node.requiredItemId}】。`;
+  if (node.requiredPractice === 'meditation' && s.seerTraining.meditationPracticeDays.length === 0) return '请先完成一次有记录的冥想练习。';
+  if (node.requiredPractice === 'ritual_safety' && !s.seerTraining.ritualPracticeComplete) return '请先在监督下完成一次结构化仪式安全练习。';
+  if (node.requiredPractice === 'spirit_channeling_review' && !s.seerTraining.spiritChannelingCaseIds.includes('elliot_kidnapping')) {
+    return '请先在黑荆棘监督下完成一次正式案件记录回溯。';
+  }
+  if (s.stats.energy < energyCost(s, node.energyCost)) return '你当前太过疲惫，无法完成整段课程。';
+  return null;
+}
+
+export function learnSeerTrainingNode(s: GameState, nodeId: SeerTrainingNodeId): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = seerTrainingNodeIssue(s, nodeId);
+  if (issue) return { ok: false, msg: issue };
+  const node = SEER_TRAINING_NODES.find(candidate => candidate.id === nodeId)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, node.energyCost) }]);
+  s.seerTraining.learnedNodeIds.push(node.id);
+  s.seerTraining.lessonRecords.push({ nodeId: node.id, day: startedAt.day, hour: startedAt.hour });
+  acquaint(s, 'old_neil', 0);
+  addLog(s, `老尼尔带你完成【${node.label}】课程，把练习边界写进记录，随后收回教具，要求你先用现有案件验证这些步骤。`, 'good');
+  advanceHours(s, node.hours);
+  return { ok: true };
+}
+
+function seerSafePracticeLocation(s: GameState): boolean {
+  return isAtHome(s) || s.currentLocation?.locationId === 'blackthorn_security';
+}
+
+export function practiceSeerMeditation(s: GameState): ActionResult {
+  const issue = seerMeditationPracticeIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const practiceDay = s.day;
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 6) }]);
+  s.seerTraining.meditationPracticeDays.push(practiceDay);
+  s.seerTraining.focusPreparation = true;
+  addLog(s, '你按记录完成冥想并主动结束。留下的是一次可消费的专注准备，不是永久属性。', 'good');
+  advanceHours(s, 1);
+  return { ok: true };
+}
+
+export function seerMeditationPracticeIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (s.atWork) return '工作期间不能进行冥想练习。';
+  if (!hasSeerTrainingNode(s, 'meditation_control')) return '请先完成老尼尔的冥想控制课程。';
+  if (!seerSafePracticeLocation(s)) return '这里只适合赶路，不适合建立安全的冥想结束边界。';
+  if (s.seerTraining.meditationPracticeDays.includes(s.day)) return '今天已经完成过一次有记录的冥想练习。';
+  if (s.seerTraining.focusPreparation) return '上一次冥想形成的专注准备尚未使用。';
+  if (s.stats.energy < energyCost(s, 6)) return '你当前太过疲惫，无法维持清晰的结束口令。';
+  return null;
+}
+
+function consumeSeerFocusPreparation(s: GameState, request: ReturnType<typeof explorationCheckRequest>, receipt: CheckReceipt) {
+  if (!request.context.abilityIds.includes('seer_meditation_focus') || !s.seerTraining.focusPreparation) return;
+  s.seerTraining.focusPreparation = false;
+  receipt.effects.push({ id: 'seer_training:focus_preparation', applied: true, before: true, after: false });
+}
+
+export function performSeerRitualSafetyPractice(s: GameState): ActionResult {
+  const issue = seerRitualSafetyPracticeIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'seer_ritual_safety_practice', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  const cost = energyCost(s, passed ? 12 : 5);
+  const applied = applyEffects(s, [{ k: 'energy', v: -cost }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    s.seerTraining.ritualPracticeComplete = true;
+    receipt.effects.push({ id: 'seer_training:ritual_practice', applied: true, before: false, after: true });
+    addLog(s, '你按顺序完成材料核对、边界封闭、主动终止和现场清理。粉笔线被擦除，器材清点归位，老尼尔在记录上签了字。', 'good');
+  } else {
+    addLog(s, '老尼尔在边界闭合前叫停练习：退出条件还不够清晰。粉笔线被擦除，现场封存；提升相关经验后可重新练习。', 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function seerRitualSafetyPracticeIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const teachingIssue = oldNeilTeachingIssue(s, 2);
+  if (teachingIssue) return teachingIssue;
+  if (!hasSeerTrainingNode(s, 'spirituality_wall') || !hasSeerTrainingNode(s, 'ritual_safety')) {
+    return '请先完成灵性之墙与仪式安全课程。';
+  }
+  if (s.seerTraining.ritualPracticeComplete) return '这项结构化安全练习已经完成。';
+  const request = explorationCheckRequest(s, 'seer_ritual_safety_practice', { day: s.day, hour: s.hour });
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return '练习边界或普通工具尚未准备完整。';
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return repeated;
+  const cost = energyCost(s, internal.outcome === 'passed' ? 12 : 5);
+  if (s.stats.energy < cost) return '你当前太过疲惫，无法完成这轮结构化练习。';
+  return null;
+}
+
+export function performSeerSpiritChannelingReview(s: GameState): ActionResult {
+  const issue = seerSpiritChannelingReviewIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'seer_spirit_channeling_review', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  const cost = energyCost(s, passed ? 10 : 4);
+  const applied = applyEffects(s, [{ k: 'energy', v: -cost }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    s.seerTraining.spiritChannelingCaseIds.push('elliot_kidnapping');
+    receipt.effects.push({ id: 'seer_training:case_review', applied: true, before: false, after: true });
+    addLog(s, '你只按委托书回溯已知时间线，并在出现无来源的联想前主动结束。老尼尔将越过记录边界的内容逐条划掉。', 'good');
+  } else {
+    addLog(s, '回溯开始混入无法由案件记录支持的联想，老尼尔立即终止并要求你重新区分事实与猜测。', 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function seerSpiritChannelingReviewIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const teachingIssue = oldNeilTeachingIssue(s, 2);
+  if (teachingIssue) return teachingIssue;
+  if (!hasSeerTrainingNode(s, 'spirit_channeling')) return '请先完成通灵基础课程。';
+  if (s.seerTraining.spiritChannelingCaseIds.includes('elliot_kidnapping')) return '艾略特案件的记录回溯已经完成。';
+  if (s.elliotCase.employerId !== 'vickroyer' || !hasClue(s, 'elliot_commission_brief')) return '必须持有来源完整的正式案件记录。';
+  const request = explorationCheckRequest(s, 'seer_spirit_channeling_review', { day: s.day, hour: s.hour });
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return '正式案件记录或监督条件不完整。';
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return repeated;
+  const cost = energyCost(s, internal.outcome === 'passed' ? 10 : 4);
+  if (s.stats.energy < cost) return '你当前太过疲惫，无法保持记录边界。';
+  return null;
+}
+
+export function performBlankCharmTheoryPractice(s: GameState): ActionResult {
+  const issue = blankCharmTheoryPracticeIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'seer_blank_charm_structure', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  const cost = energyCost(s, passed ? 8 : 3);
+  const effects: Effect[] = [{ k: 'energy', v: -cost }, ...(passed ? [{ k: 'item' as const, id: 'blank_charm_paper', v: -1 }] : [])];
+  const applied = applyEffects(s, effects);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    s.seerTraining.blankCharmPracticeComplete = true;
+    receipt.effects.push(receiptEntry('item:blank_charm_paper', applied[1]));
+    receipt.effects.push({ id: 'seer_training:blank_charm', applied: true, before: false, after: true });
+    addLog(s, '你在空白纸上标出结构、承载区与作废线。老尼尔盖上「作废练习」印记，并让你当场撕毁。', 'good');
+  } else {
+    addLog(s, '结构线越过了预定承载区，老尼尔要求立刻作废草图。空白载体没有被激活，也没有留下可用成品。', 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function blankCharmTheoryPracticeIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const teachingIssue = oldNeilTeachingIssue(s, 2);
+  if (teachingIssue) return teachingIssue;
+  if (!hasSeerTrainingNode(s, 'charm_theory')) return '请先完成符咒理论课程。';
+  if (s.seerTraining.blankCharmPracticeComplete) return '空白载体结构练习已经完成。';
+  const request = explorationCheckRequest(s, 'seer_blank_charm_structure', { day: s.day, hour: s.hour });
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return '缺少空白纸质载体或监督条件。';
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return repeated;
+  const cost = energyCost(s, internal.outcome === 'passed' ? 8 : 3);
+  if (s.stats.energy < cost) return '你当前太过疲惫，无法完成结构核对。';
+  return null;
+}
+
+function hasSequence9DivinationClubAccess(s: GameState): boolean {
+  return s.pathwayId === 'seer' && s.sequence === 9 && hasSeerDivinationSequence(s);
+}
+
+/** v23 旧闭环只用于确认历史结算；不会由此补发新结论或扮演证据。 */
+const LEGACY_DIVINATION_CLUB_CHECKS: readonly CheckDef[] = [
+  {
+    id: 'club_commission_lost_keepsake', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'divination_club:lost_keepsake' }, difficulty: 36,
+    requirements: [{ kind: 'clue', id: 'club_lost_keepsake_brief' }, { kind: 'location', id: 'divination_club' }],
+    contributions: [
+      { kind: 'stat', id: 'mnd', multiplier: 1, publicLabel: '陈述梳理' },
+      { kind: 'skill', id: 'investigate', multiplier: 4, publicLabel: '调查经验' },
+      { kind: 'clue', id: 'club_lost_keepsake_brief', value: 8, publicLabel: '来访记录' },
+      { kind: 'clue', id: 'tingen_city_directory', value: 4, publicLabel: '城区公共目录' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+      passed: { hoursElapsed: 2, effectIds: ['energy', 'money', 'digestion', 'club_reputation', 'hours'] },
+    },
+  },
+  {
+    id: 'club_commission_journey_omen', version: 1, domain: 'exploration',
+    target: { kind: 'case', id: 'divination_club:journey_omen' }, difficulty: 34,
+    requirements: [{ kind: 'clue', id: 'club_journey_statement' }, { kind: 'ability', id: 'spirit_vision' }, { kind: 'location', id: 'divination_club' }],
+    contributions: [
+      { kind: 'stat', id: 'spi', multiplier: 1, publicLabel: '灵性直觉' },
+      { kind: 'skill', id: 'occult', multiplier: 4, publicLabel: '神秘学经验' },
+      { kind: 'clue', id: 'club_journey_statement', value: 8, publicLabel: '预约陈述' },
+      { kind: 'ability', id: 'spirit_vision', value: 6, publicLabel: '占卜家训练' },
+    ],
+    receiptPolicy: {
+      blocked: { hoursElapsed: 1, effectIds: ['energy', 'hours'] },
+      passed: { hoursElapsed: 2, effectIds: ['energy', 'money', 'digestion', 'club_reputation', 'hours'] },
+    },
+  },
+  ...DIVINATION_CLUB_COMMISSIONS.map(commission => {
+    const current = EXPLORATION_CHECKS.find(check => check.id === commission.checkId)!;
+    return {
+      ...current,
+      version: 2,
+      contributions: current.contributions.filter(term => term.kind !== 'tool').map(term =>
+        term.kind === 'ability' && term.id === 'seer_divination' ? { ...term, value: 4, publicLabel: '占卜家能力' } : term),
+    } satisfies CheckDef;
+  }),
+  (() => {
+    const current = EXPLORATION_CHECKS.find(check => check.id === 'elliot_locator_divination')!;
+    return {
+      ...current,
+      version: 2,
+      contributions: current.contributions.filter(term => term.kind !== 'tool'
+        && !(term.kind === 'ability' && term.id === 'seer_divination')),
+    } satisfies CheckDef;
+  })(),
+];
+
+function nightwatchRoutineCycleKey(day: number, cooldown: 'daily' | 'weekly'): string {
+  return cooldown === 'daily' ? `day:${day}` : `week:${Math.floor((day - 1) / 7)}`;
+}
+
+export function nightwatchRoutineIssue(s: GameState, actionId: NightwatchRoutineActionId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const action = NIGHTWATCH_ROUTINE_ACTIONS.find(candidate => candidate.id === actionId);
+  if (!action) return '没有这项值夜者轮值安排。';
+  if (s.atWork) return '工作期间不能参加值夜者轮值。';
+  if (!isActiveNightwatchSequence9Member(s)) return '只有已完成途径承诺的序列9值夜者成员才能参加轮值。';
+  if (s.currentLocation?.locationId !== 'blackthorn_security') return '需要先到黑荆棘安保公司报到。';
+  if (!actionFitsWindow(s.hour, action.hours, action.openFrom, action.openTo)) return '当前时段无法完成整段轮值。';
+  const cycleKey = nightwatchRoutineCycleKey(s.day, action.cooldown);
+  if ((s.nightwatchEarlyLoop?.records ?? []).some(record => record.actionId === actionId && record.cycleKey === cycleKey)) {
+    return action.cooldown === 'daily' ? '这项轮值今天已经完成。' : '这项外围轮值本周期已经完成。';
+  }
+  if (s.stats.energy < energyCost(s, action.energyCost)) return '你当前太过疲惫，无法完成整段轮值。';
+  return null;
+}
+
+export function performNightwatchRoutine(s: GameState, actionId: NightwatchRoutineActionId): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = nightwatchRoutineIssue(s, actionId);
+  if (issue) return { ok: false, msg: issue };
+  const action = NIGHTWATCH_ROUTINE_ACTIONS.find(candidate => candidate.id === actionId)!;
+  const startedDay = s.day;
+  const cycleKey = nightwatchRoutineCycleKey(startedDay, action.cooldown);
+  const costs = applyEffects(s, [{ k: 'energy', v: -energyCost(s, action.energyCost) }, { k: 'money', v: action.pay }]);
+  s.nightwatchEarlyLoop.reputation += action.reputationGain;
+  s.nightwatchEarlyLoop.records.push({ actionId, day: startedDay, cycleKey });
+  let trainingText = '';
+  if (action.trainingSkill && action.trainingPoints) {
+    const skill = action.trainingSkill;
+    const prior = s.nightwatchEarlyLoop.trainingProgress[skill] ?? 0;
+    const total = prior + action.trainingPoints;
+    if (total >= 3 && s.skills[skill] < 10) {
+      s.skills[skill] += 1;
+      s.nightwatchEarlyLoop.trainingProgress[skill] = total - 3;
+      trainingText = ` ${SKILL_NAMES[skill]}训练形成了可复核的进步。`;
+    } else {
+      s.nightwatchEarlyLoop.trainingProgress[skill] = total;
+      trainingText = ` ${SKILL_NAMES[skill]}训练进度得到记录。`;
+    }
+  }
+  addLog(s, `你完成了【${action.label}】。${action.pay > 0 ? `轮值报酬${fmtMoney(action.pay)}已入账。` : ''}${trainingText}`, 'good');
+  void costs;
+  advanceHours(s, action.hours);
+  return { ok: true };
+}
+
+export function divinationClubJoinIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (s.atWork) return '工作期间不能办理俱乐部会员手续。';
+  if (s.divinationClub?.joined) return '你已经是占卜俱乐部会员。';
+  if (!hasSequence9DivinationClubAccess(s)) return '当前阶段没有可核验的占卜家会员资格。';
+  if (s.currentLocation?.locationId !== 'divination_club') return '需要亲自前往占卜俱乐部办理手续。';
+  if (!actionFitsWindow(s.hour, 1, 10, 20)) return '俱乐部接待时间为10:00至20:00。';
+  if (!s.knowledge.includes('public_divination_etiquette')) return '先向接待员了解会员制度与普通占卜礼仪。';
+  if (s.pence < 60) return '会员登记费需要5苏勒。';
+  if (s.stats.energy < energyCost(s, 3)) return '你当前太疲惫，无法认真完成会员登记。';
+  return null;
+}
+
+export function joinDivinationClub(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = divinationClubJoinIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  applyEffects(s, [{ k: 'money', v: -60 }, { k: 'energy', v: -energyCost(s, 3) }]);
+  s.divinationClub.joined = true;
+  addLog(s, '你完成会员登记。接待员说明：每份咨询都必须先留下事实陈述，报酬和条件按登记表执行。', 'good');
+  advanceHours(s, 1);
+  return { ok: true };
+}
+
+export function getDivinationClubCommissions(s: GameState) {
+  if (activeEncounterIssue(s) || !s.divinationClub?.joined || !hasSequence9DivinationClubAccess(s)) return [];
+  if (s.divinationClub.activeCommissionId) {
+    const active = DIVINATION_CLUB_COMMISSIONS.find(def => def.id === s.divinationClub.activeCommissionId);
+    return active ? [active] : [];
+  }
+  const next = DIVINATION_CLUB_COMMISSIONS.find(def => !s.divinationClub.completedCommissionIds.includes(def.id));
+  return next ? [next] : [];
+}
+
+export function acceptDivinationClubCommission(s: GameState, commissionId: DivinationClubCommissionId): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
+  const def = DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === commissionId);
+  if (!def || !s.divinationClub?.joined || !hasSequence9DivinationClubAccess(s)) return { ok: false, msg: '当前没有这份可承接的俱乐部咨询。' };
+  if (s.atWork || s.currentLocation?.locationId !== 'divination_club' || !actionFitsWindow(s.hour, def.acceptHours, 10, 20)) {
+    return { ok: false, msg: '需要在俱乐部接待时段亲自承接咨询。' };
+  }
+  if (s.divinationClub.activeCommissionId) return { ok: false, msg: '请先完成当前咨询。' };
+  if (s.divinationClub.completedCommissionIds.includes(def.id)) return { ok: false, msg: '这份固定咨询已经结清。' };
+  if (getDivinationClubCommissions(s)[0]?.id !== def.id) return { ok: false, msg: '接待员请你先完成当前开放的那份咨询。' };
+  const existingBriefing = s.clues.find(clue => clue.id === def.briefingClueId);
+  if (existingBriefing) return { ok: false, msg: '这份来访记录需要先由接待员核对登记状态。' };
+  if (s.stats.energy < energyCost(s, def.acceptEnergyCost)) return { ok: false, msg: '你当前太过疲惫，无法认真听取并核对事实陈述。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, def.acceptCheckId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible || internal.outcome !== 'passed') return { ok: false, msg: '当前会员资格或接待地点无法完成登记。' };
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, def.acceptEnergyCost) }]);
+  const acquired = acquireClue(s, def.briefingClueId, 'npc', def.clientId);
+  const receipt: CheckReceipt = { hoursElapsed: def.acceptHours, effects: [
+    receiptEntry('energy', applied[0]),
+    { id: `clue:${def.briefingClueId}`, applied: acquired, before: false, after: acquired },
+    hoursReceipt(def.acceptHours),
+  ] };
+  s.divinationClub.activeCommissionId = def.id;
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  addLog(s, `${def.clientName}在登记表上签名后，你承接了【${def.label}】并取得事实陈述。`, 'event');
+  advanceHours(s, def.acceptHours);
+  return { ok: true };
+}
+
+function activeDivinationClubCommission(s: GameState) {
+  return DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === s.divinationClub?.activeCommissionId);
+}
+
+function divinationClubFieldHours(locationId: string): [number, number] {
+  return locationId === 'market' ? [8, 20] : [9, 18];
+}
+
+export function investigateActiveDivinationClubCommissionIssue(s: GameState): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const def = activeDivinationClubCommission(s);
+  if (!def || !s.divinationClub.joined || !hasSequence9DivinationClubAccess(s)) return '当前没有可外勤核对的俱乐部咨询。';
+  if (s.atWork) return '工作期间不能处理俱乐部外勤。';
+  const briefing = s.clues.find(clue => clue.id === def.briefingClueId);
+  if (!briefing || briefing.sourceKind !== 'npc' || briefing.sourceId !== def.clientId) return '来访者签名确认的事实陈述尚不完整。';
+  if (hasClue(s, def.fieldClueId)) return '这份咨询的外勤记录已经完成，可以返回俱乐部整理结论。';
+  if (s.currentLocation?.locationId !== def.fieldLocationId) return `需要前往【${LOCATIONS.find(location => location.id === def.fieldLocationId)?.name ?? def.fieldLocationId}】核对事实。`;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, def.fieldCheckId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return '当前地点或来访记录不足以开始核对。';
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return repeated;
+  const hours = internal.outcome === 'passed' ? def.fieldPassHours : def.fieldBlockedHours;
+  const [openFrom, openTo] = divinationClubFieldHours(def.fieldLocationId);
+  if (!actionFitsWindow(s.hour, hours, openFrom, openTo)) return '当前时段不足以完成这轮公开记录核对。';
+  const baseEnergy = internal.outcome === 'passed' ? def.fieldPassEnergyCost : def.fieldBlockedEnergyCost;
+  if (s.stats.energy < energyCost(s, baseEnergy)) return '你当前太过疲惫，无法仔细完成现场核对。';
+  return null;
+}
+
+export function investigateActiveDivinationClubCommission(s: GameState): ActionResult {
+  const issue = investigateActiveDivinationClubCommissionIssue(s);
+  if (issue) return { ok: false, msg: issue };
+  const def = activeDivinationClubCommission(s)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, def.fieldCheckId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? def.fieldPassHours : def.fieldBlockedHours;
+  const baseEnergy = passed ? def.fieldPassEnergyCost : def.fieldBlockedEnergyCost;
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, baseEnergy) }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    acquireClue(s, def.fieldClueId, 'location', def.fieldLocationId);
+    receipt.effects.push({ id: `clue:${def.fieldClueId}`, applied: true, before: false, after: true });
+    addLog(s, `你完成了【${def.fieldActionLabel}】，只把能够复核的事实写入外勤记录。`, 'good');
+  } else {
+    addLog(s, `这轮外勤没有形成可靠记录。${def.fieldNextStepText}`, 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+function recordDivinationClubActingEvidence(s: GameState, commissionId: DivinationClubCommissionId): boolean {
+  const def = DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === commissionId);
+  if (!def || s.pathwayId !== 'seer' || s.sequence !== 9) return false;
+  const progress = ensureSequence8Progress(s);
+  if (!progress) return false;
+  const contextKey = `divination_club:${def.id}`;
+  for (const records of Object.values(progress.evidence)) {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      if (records[index].contextKey === contextKey) records.splice(index, 1);
+    }
+  }
+  progress.evidence[def.actingPrincipleId] ??= [];
+  progress.evidence[def.actingPrincipleId].push({
+    actionId: `club_commission:${def.id}`, principleId: def.actingPrincipleId, contextKey, day: s.day,
+  });
+  updateReviewReady(s, progress);
+  return true;
+}
+
+export function resolveDivinationClubCommission(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
+  const def = activeDivinationClubCommission(s);
+  if (!def || !s.divinationClub.joined || !hasSequence9DivinationClubAccess(s)) return { ok: false, msg: '当前没有可处理的俱乐部咨询。' };
+  if (s.atWork || s.currentLocation?.locationId !== 'divination_club') return { ok: false, msg: '需要在占卜俱乐部处理这份咨询。' };
+  if (!hasClue(s, def.fieldClueId)) return { ok: false, msg: `需要先完成【${def.fieldActionLabel}】，再带着外勤记录返回俱乐部。` };
+  if (hasClue(s, def.outcomeClueId)) return { ok: false, msg: '这份咨询的结论记录需要先由俱乐部复核。' };
+  if (!actionFitsWindow(s.hour, Math.max(def.passHours, def.blockedHours), 10, 20)) return { ok: false, msg: '当前时段不足以完成一轮俱乐部咨询。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, def.checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '来访记录或处理条件仍不完整。' };
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return { ok: false, msg: repeated };
+  const baseEnergy = internal.outcome === 'passed' ? def.passEnergyCost : def.blockedEnergyCost;
+  if (s.stats.energy < energyCost(s, baseEnergy)) return { ok: false, msg: '你当前太过疲惫，无法完成这轮咨询。' };
+  if (internal.outcome === 'blocked') {
+    const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, def.blockedEnergyCost) }]);
+    const receipt: CheckReceipt = { hoursElapsed: def.blockedHours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(def.blockedHours)] };
+    const usedFocus = request.context.abilityIds.includes('seer_meditation_focus') && s.seerTraining.focusPreparation;
+    if (usedFocus) s.seerTraining.focusPreparation = false;
+    receipt.effects.push({ id: 'seer_training:focus_preparation', applied: usedFocus, before: usedFocus, after: false });
+    recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+    addLog(s, `这轮咨询没有形成可靠结论。${def.nextStepText}`, 'info');
+    advanceHours(s, def.blockedHours);
+    return { ok: true, outcome: 'blocked' };
+  }
+  const applied = applyEffects(s, [
+    { k: 'energy', v: -energyCost(s, def.passEnergyCost) }, { k: 'money', v: def.reward }, { k: 'digestion', v: def.digestionGain },
+  ]);
+  const beforeReputation = s.divinationClub.reputation;
+  s.divinationClub.reputation += def.reputationGain;
+  acquireClue(s, def.outcomeClueId, 'npc', def.clientId);
+  const actingRecorded = recordDivinationClubActingEvidence(s, def.id);
+  s.divinationClub.completedCommissionIds.push(def.id);
+  s.divinationClub.activeCommissionId = null;
+  const usedFocus = request.context.abilityIds.includes('seer_meditation_focus') && s.seerTraining.focusPreparation;
+  if (usedFocus) s.seerTraining.focusPreparation = false;
+  const receipt: CheckReceipt = { hoursElapsed: def.passHours, effects: [
+    receiptEntry('energy', applied[0]), receiptEntry('money', applied[1]), receiptEntry('digestion', applied[2]),
+    { id: 'club_reputation', applied: true, before: beforeReputation, after: s.divinationClub.reputation, actualDelta: def.reputationGain },
+    hoursReceipt(def.passHours),
+    { id: `clue:${def.outcomeClueId}`, applied: true, before: false, after: true },
+    { id: `acting:club:${def.id}`, applied: actingRecorded, before: false, after: actingRecorded },
+    { id: 'seer_training:focus_preparation', applied: usedFocus, before: usedFocus, after: false },
+  ] };
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  addLog(s, `${def.narrationVariants[(s.divinationClub.completedCommissionIds.length - 1) % def.narrationVariants.length]} 委托按登记金额结清；这次克制而可核验的处理让魔药反馈变得更顺畅。`, 'good');
+  advanceHours(s, def.passHours);
+  return { ok: true, outcome: 'passed' };
+}
+
+function elliotCaseMemberIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  if (!isActiveNightwatchSequence9Member(s)) return '这是一项正式外勤，只向已完成途径承诺的序列9值夜者成员开放。';
+  if (s.atWork) return '工作期间不能处理值夜者外勤。';
+  return null;
+}
+
+export function acceptElliotCommission(s: GameState): ActionResult {
+  const memberIssue = elliotCaseMemberIssue(s);
+  if (memberIssue) return { ok: false, msg: memberIssue };
+  if (s.elliotCase.stage !== 'unknown') return { ok: false, msg: '艾略特案件已经登记，不能重复接案。' };
+  if (s.currentLocation?.locationId !== 'blackthorn_security' || !actionFitsWindow(s.hour, 1, 9, 17)) {
+    return { ok: false, msg: '需要在白天到黑荆棘安保公司与委托人当面登记。' };
+  }
+  const startedDay = s.day;
+  acquaint(s, 'vickroyer', 0);
+  acquaint(s, 'leonard', 0);
+  acquireClue(s, 'elliot_commission_brief', 'npc', 'vickroyer');
+  acquireClue(s, 'elliot_worn_coat', 'npc', 'vickroyer');
+  acquireClue(s, 'elliot_partner_assignment', 'npc', 'leonard');
+  s.elliotCase = { stage: 'commissioned', employerId: 'vickroyer', assignedPartnerId: 'leonard', locatorMode: null, rewardClaimed: false };
+  addLog(s, '维克罗尔先生签署寻子委托，并当面交来艾略特穿过的旧外套。伦纳德被安排为同行队员；此时没有任何报酬入账。', 'event');
+  advanceHours(s, 1);
+  void startedDay;
+  return { ok: true };
+}
+
+export function locateElliot(s: GameState, mode: ElliotLocatorMode): ActionResult {
+  const memberIssue = elliotCaseMemberIssue(s);
+  if (memberIssue) return { ok: false, msg: memberIssue };
+  if (s.elliotCase.stage !== 'commissioned' || s.elliotCase.employerId !== 'vickroyer') return { ok: false, msg: '缺少由委托人登记的艾略特失踪案件。' };
+  if (s.currentLocation?.locationId !== 'blackthorn_security') return { ok: false, msg: '需要先回黑荆棘安保公司使用委托材料。' };
+  if (mode === 'divination' && !hasSeerDivinationSequence(s)) return { ok: false, msg: '你没有受过可核验的寻人占卜训练；可以改查公开记录。' };
+  const checkId = mode === 'divination' ? 'elliot_locator_divination' : 'elliot_locator_records';
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '委托材料或处理条件仍不完整。' };
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return { ok: false, msg: repeated };
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  if (s.stats.energy < energyCost(s, passed ? 10 : 5)) return { ok: false, msg: '你当前太过疲惫，无法完成这轮寻人工作。' };
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, passed ? 10 : 5) }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    acquireClue(s, 'elliot_hideout_address', 'event', `elliot_locator:${mode}`);
+    if (!s.visitedLocations.includes('forston_hideout')) s.visitedLocations.push('forston_hideout');
+    s.elliotCase.stage = 'location_known';
+    s.elliotCase.locatorMode = mode;
+    receipt.effects.push({ id: 'clue:elliot_hideout_address', applied: true });
+    addLog(s, '两条街名和一处门牌能够相互核对：目标在弗尔斯顿路一栋旧宅。地址已经解锁，但屋内情况仍未知。', 'good');
+  } else {
+    addLog(s, mode === 'divination'
+      ? '指向在街区边缘散开，尚不能据此出发。可以补强神秘学训练，或改用公开记录调查。'
+      : '账目与车行记录还没有形成唯一地址。可以提升调查经验，或由受训占卜家使用失踪者旧外套。', 'info');
+  }
+  consumeSeerFocusPreparation(s, request, receipt);
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function confirmElliotPresence(s: GameState, mode: 'spirit_vision' | 'investigation'): ActionResult {
+  const memberIssue = elliotCaseMemberIssue(s);
+  if (memberIssue) return { ok: false, msg: memberIssue };
+  if (s.elliotCase.stage !== 'location_known') return { ok: false, msg: '还没有取得可核验的藏身处地址。' };
+  if (s.currentLocation?.locationId !== 'forston_hideout') return { ok: false, msg: '需要先前往已经确认的弗尔斯顿路旧宅。' };
+  if (mode === 'spirit_vision' && !hasSpiritVisionAbility(s)) return { ok: false, msg: '你没有可靠的灵视能力；可以改为观察门窗、脚印和送餐痕迹。' };
+  const checkId = mode === 'spirit_vision' ? 'elliot_confirm_spirit_vision' : 'elliot_confirm_investigation';
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '现场确认条件不足。' };
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return { ok: false, msg: repeated };
+  const passed = internal.outcome === 'passed';
+  if (s.stats.energy < energyCost(s, passed ? 8 : 4)) return { ok: false, msg: '你当前太过疲惫，无法继续确认屋内情况。' };
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, passed ? 8 : 4) }]);
+  const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', applied[0]), hoursReceipt(1)] };
+  if (passed) {
+    acquireClue(s, 'elliot_presence_confirmed', 'location', 'forston_hideout');
+    s.elliotCase.stage = 'presence_confirmed';
+    receipt.effects.push({ id: 'clue:elliot_presence_confirmed', applied: true });
+    addLog(s, '你确认艾略特仍在屋内，也确认了守门人的换位空档。现在可以按同行方案营救，或先撤退申请增援。', 'good');
+  } else {
+    addLog(s, '你只能确认屋内有人活动，无法排除诱饵。案件不会关闭；补充相关经验后可以再次确认。', 'info');
+  }
+  consumeSeerFocusPreparation(s, request, receipt);
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, 1);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function requestElliotBackup(s: GameState): ActionResult {
+  const memberIssue = elliotCaseMemberIssue(s);
+  if (memberIssue) return { ok: false, msg: memberIssue };
+  if (s.elliotCase.stage !== 'presence_confirmed' || s.currentLocation?.locationId !== 'forston_hideout') {
+    return { ok: false, msg: '只有确认人质仍在屋内后，才能按撤退口令申请增援。' };
+  }
+  if (s.stats.energy < energyCost(s, 6)) return { ok: false, msg: '你太疲惫，无法安全撤回并完成增援说明。' };
+  const returnHours = s.currentLocation.returnHours;
+  s.currentLocation = null;
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 6) }]);
+  acquireClue(s, 'elliot_backup_ready', 'npc', 'leonard');
+  s.elliotCase.stage = 'backup_ready';
+  addLog(s, '你没有贸然闯入，而是按口令撤回并向伦纳德复述门窗、人数和退路。增援方案已经就绪。', 'good');
+  advanceHours(s, returnHours + 1);
+  return { ok: true };
+}
+
+export function rescueElliotWithTeam(s: GameState): ActionResult {
+  const memberIssue = elliotCaseMemberIssue(s);
+  if (memberIssue) return { ok: false, msg: memberIssue };
+  if (!['presence_confirmed', 'backup_ready'].includes(s.elliotCase.stage)) return { ok: false, msg: '必须先确认艾略特仍在屋内。' };
+  if (s.elliotCase.assignedPartnerId !== 'leonard' || !hasClue(s, 'elliot_partner_assignment')) return { ok: false, msg: '没有经过登记的同行队员，不能单独发起营救。' };
+  if (s.currentLocation?.locationId !== 'forston_hideout') return { ok: false, msg: '需要与队员一同回到目标旧宅。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'elliot_team_rescue', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  if (!internal.eligible) return { ok: false, msg: '营救所需的现场确认或同行安排不完整。' };
+  const repeated = repeatedBlockedExplorationIssue(s, internal);
+  if (repeated) return { ok: false, msg: repeated };
+  const passed = internal.outcome === 'passed';
+  const hours = passed ? 2 : 1;
+  if (s.stats.energy < energyCost(s, passed ? 18 : 8)) return { ok: false, msg: '你当前太过疲惫，无法与队友执行完整营救方案。' };
+  const applied = applyEffects(s, [{ k: 'energy', v: -energyCost(s, passed ? 18 : 8) }]);
+  const receipt: CheckReceipt = { hoursElapsed: hours, effects: [receiptEntry('energy', applied[0]), hoursReceipt(hours)] };
+  if (passed) {
+    acquireClue(s, 'elliot_rescue_record', 'location', 'forston_hideout');
+    s.elliotCase.stage = 'rescued';
+    receipt.effects.push({ id: 'clue:elliot_rescue_record', applied: true });
+    addLog(s, '你与伦纳德按分工控制门口并带出艾略特。报酬尚未领取，必须回到委托人与组织处结案。', 'good');
+  } else {
+    addLog(s, '守门人的位置迫使你们中止推进。艾略特尚未被转移；可以撤退申请增援，或在相关训练改善后重试。', 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, hours);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function settleElliotCase(s: GameState): ActionResult {
+  const memberIssue = elliotCaseMemberIssue(s);
+  if (memberIssue) return { ok: false, msg: memberIssue };
+  if (s.elliotCase.stage !== 'rescued' || !hasClue(s, 'elliot_rescue_record')) return { ok: false, msg: '案件尚未形成可结案的营救记录。' };
+  if (s.elliotCase.rewardClaimed) return { ok: false, msg: '维克罗尔先生已经结清这份委托。' };
+  if (s.elliotCase.employerId !== 'vickroyer' || !isMet(s, 'vickroyer')) return { ok: false, msg: '找不到这份委托的登记雇主。' };
+  if (s.currentLocation?.locationId !== 'blackthorn_security' || !actionFitsWindow(s.hour, 1, 9, 17)) {
+    return { ok: false, msg: '需要在白天回黑荆棘安保公司，由委托人与组织共同结案。' };
+  }
+  applyEffects(s, [{ k: 'money', v: 2400 }]);
+  s.nightwatchEarlyLoop.reputation += 3;
+  s.elliotCase.rewardClaimed = true;
+  s.elliotCase.stage = 'closed';
+  addLog(s, '维克罗尔先生确认儿子平安后，按签名委托书一次性支付10镑；黑荆棘同时记录了你的外勤表现。', 'good');
+  advanceHours(s, 1);
+  return { ok: true };
 }
 
 function trustedNpcIssue(s: GameState, npcId: string, minFavor = VISIT_FAVOR): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const npc = findAnyNPC(s, npcId);
   if (!npc) return '找不到负责这条线索的人。';
   if (!isMet(s, npcId)) return `你还没有与${npc.name}正式结识。`;
   if ((s.relations[npcId] ?? -100) < minFavor) return `${npc.name}还没有信任你到愿意谈及敏感背景的程度。`;
   if (!npcAvailable(npc, s.day, s.hour)) return `${npc.name}此刻不在可交谈的地点；请按其作息另约时间。`;
+  return null;
+}
+
+export function npcVisitSessionIssue(s: GameState, npcId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const npc = findAnyNPC(s, npcId);
+  if (!npc) return '找不到负责这次会面的联系人。';
+  if (!isMet(s, npcId)) return `你还没有与${npc.name}正式结识。`;
+  if ((s.relations[npcId] ?? -100) < VISIT_FAVOR) return `${npc.name}还没有信任你到愿意受理这类请求。`;
+  const session = s.npcVisitSession;
+  if (!session || session.npcId !== npcId || session.day !== s.day || session.hour !== s.hour) {
+    return '需要先与对方当面完成一次拜访交谈，再在这次会面中提出请求。';
+  }
+  const startedAbsoluteHour = (session.startedDay - 1) * 24 + session.startedHour;
+  const completedAbsoluteHour = (session.day - 1) * 24 + session.hour;
+  if (!Number.isInteger(session.startedDay) || session.startedDay < 1
+    || !Number.isInteger(session.startedHour) || session.startedHour < 0 || session.startedHour > 23
+    || startedAbsoluteHour + 1 !== completedAbsoluteHour
+    || !npcAvailable(npc, session.startedDay, session.startedHour)) {
+    return '这次会面没有可核验的当面拜访记录。';
+  }
   return null;
 }
 
@@ -933,9 +3814,11 @@ function recordLocationCompletion(s: GameState, locationId: string) {
   addLog(s, `✦ 实地调查记录：你发现了【${def.publicLabel}】。目前只能确认它值得辨认，尚不知道背后牵涉何方。`, 'event');
 }
 
-// ============ 初始状态（普通人开局，出身+天赋+随机城市人口） ============
-export function newGame(name: string, originId: string, talents: string[]): GameState {
+// ============ 初始状态（普通人开局，出身+天赋+开局事件+随机城市人口） ============
+export function newGame(name: string, originId: string, talents: string[], requestedOpening: OpeningScenarioId = 'ordinary_morning'): GameState {
   const origin = ORIGINS.find(o => o.id === originId) ?? ORIGINS[0];
+  const openingScenarioId = OPENING_SCENARIOS.some(opening => opening.id === requestedOpening)
+    ? requestedOpening : 'ordinary_morning';
   const genNpcs: GenNPC[] = [];
   for (let i = 0; i < 8; i++) genNpcs.push(generateNPC());
   const s: GameState = {
@@ -943,12 +3826,21 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     started: true,
     playerName: name || '无名者',
     originId: origin.id,
+    openingScenarioId,
+    strangeNotebook: {
+      status: openingScenarioId === 'strange_notebook' ? 'held' : 'absent',
+      influenceStage: 0, acquiredAbsoluteHour: 7,
+      nextManifestationAbsoluteHour: openingScenarioId === 'strange_notebook' ? 19 : Number.MAX_SAFE_INTEGER,
+      odditiesRecorded: false,
+    },
     talents,
     pathwayId: null,
     sequence: null,
     day: 1,
     hour: 7,
     stats: { phy: 20, spi: 10, mnd: 20, cha: 20, san: 85, cor: 0, energy: 90 },
+    combatVitals: { hp: 1, spirit: 1 },
+    combatLoadout: { weaponId: null, armorId: null, focusId: null },
     pence: origin.pence,
     digestion: 0,
     exposure: 0,
@@ -956,6 +3848,10 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     canReadRoselleScript: true,
     leads: createStructuredLeads(),
     organizationRoutes: createOrganizationRoutes(),
+    nightwatchEarlyLoop: createNightwatchEarlyLoopState(),
+    divinationClub: createDivinationClubState(),
+    elliotCase: createElliotCaseState(),
+    seerTraining: createSeerTrainingState(),
     diaryPages: createDiaryPages(),
     materialSources: createMaterialSources(),
     sequence8Progress: null,
@@ -967,6 +3863,7 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     landmarkEncounters: [],
     clues: [],
     deepInvestigations: {},
+    investigationWorkspaces: {},
     caseThreats: {},
     pendingEncounter: null,
     explorationAttempts: [],
@@ -979,11 +3876,21 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     languages: { ruen: 'fluent', old_feysac: 'none' },
     awareness: 'ordinary',
     pathwayLeads: createPathwayLeads(),
-    items: { ...(origin.items ?? {}) },
+    items: { ...(origin.items ?? {}), ...(openingScenarioId === 'strange_notebook' ? { antigonus_notebook: 1 } : {}) },
     itemKnowledge: {},
     sequence9Preparations: [],
     tradeFair: createTradeFairState(),
     confirmedBeyonderDeaths: [],
+    activeHunt: null,
+    murderRecords: [],
+    infamy: 0,
+    lawAttention: 0,
+    areaSuspicionRecords: [],
+    identityTraceDiscoveries: [],
+    identityTraceResolutions: [],
+    identityCover: null,
+    areaSuspicion: {},
+    wantedAreas: [],
     intel: [...(origin.intel ?? [])],
     knowledge: [...(origin.knowledge ?? [])],
     studyProgress: 0,
@@ -992,6 +3899,7 @@ export function newGame(name: string, originId: string, talents: string[]): Game
     skills: { investigate: 0, combat: 0, speech: 0, occult: 0, sneak: 0 },
     nemesis: null,
     relations: {},
+    npcVisitSession: null,
     tags: [...(origin.tags ?? [])],
     flags: {},
     timers: [
@@ -1033,8 +3941,13 @@ export function newGame(name: string, originId: string, talents: string[]): Game
   if (talents.includes('spirit_affinity')) s.stats.spi = clamp(s.stats.spi + 5);
   if (talents.includes('sixth_sense')) s.stats.spi = clamp(s.stats.spi + 3);
   if (talents.includes('strong_body')) s.stats.phy = clamp(s.stats.phy + 6);
+  const initialCombat = getCombatProfile(s);
+  s.combatVitals = { hp: initialCombat.maxHp, spirit: initialCombat.maxSpirit };
 
   addLog(s, `第1天清晨，你在东区的阁楼里睁开眼。【${origin.name}】——${origin.desc}`, 'system');
+  if (openingScenarioId === 'strange_notebook') {
+    addLog(s, '你面前的桌上放着一本奇怪的笔记。你不记得自己何时把它带回了家。', 'event');
+  }
   const initialJob = findJob(s.jobId);
   if (initialJob) addLog(s, `你目前受雇为【${initialJob.name}】，工作地点在${initialJob.location}。上班前要先安排通勤。`, 'info');
   addLog(s, `全部身家${fmtMoney(origin.pence)}，房租7天后到期。这座雾城表面平静，水面之下却有东西在动……活下去。至于会不会撞上「那个世界」——看机缘。`, 'info');
@@ -1362,6 +4275,7 @@ export function applyEffects(s: GameState, effects: Effect[]): AppliedEffectRece
     }
     receipts.push(receipt);
   }
+  if (s.combatVitals) clampCombatVitals(s);
   return receipts;
 }
 
@@ -1404,8 +4318,130 @@ export function getVisibleTimers(s: GameState): Timer[] {
   });
 }
 
+const STRANGE_NOTEBOOK_ITEM_ID = 'antigonus_notebook';
+
+function progressStrangeNotebook(s: GameState) {
+  const notebook = s.strangeNotebook;
+  if (!notebook || s.openingScenarioId !== 'strange_notebook' || notebook.status === 'absent' || notebook.status === 'surrendered') return;
+  const now = absoluteHour(s);
+  if (notebook.status === 'missing') {
+    if (notebook.returnAbsoluteHour === undefined || now < notebook.returnAbsoluteHour) return;
+    notebook.status = 'held';
+    delete notebook.returnAbsoluteHour;
+    s.items[STRANGE_NOTEBOOK_ITEM_ID] = Math.max(1, s.items[STRANGE_NOTEBOOK_ITEM_ID] ?? 0);
+    addLog(s, '你回到阁楼时，那本黑色笔记又端端正正地放在桌上。你无法回忆自己是否曾把门打开。', 'bad');
+    notebook.nextManifestationAbsoluteHour = Math.min(notebook.nextManifestationAbsoluteHour, now + 8);
+    return;
+  }
+  if ((s.items[STRANGE_NOTEBOOK_ITEM_ID] ?? 0) <= 0 || now < notebook.nextManifestationAbsoluteHour) return;
+
+  if (notebook.influenceStage === 0) {
+    notebook.influenceStage = 1;
+    notebook.nextManifestationAbsoluteHour = now + 18;
+    addLog(s, '你发现笔记有三页被自己折过角，可你完全不记得翻过它。昨夜记住的一段家族史，今天却从纸上消失了。', 'event');
+    return;
+  }
+  if (notebook.influenceStage === 1) {
+    notebook.influenceStage = 2;
+    notebook.nextManifestationAbsoluteHour = now + 24;
+    applyEffects(s, [{ k: 'san', v: -4 }, { k: 'cor', v: 1 }]);
+    addLog(s, '你从雾中山峰的梦里惊醒，手边多了一张路线草图。墨迹是你的，起笔处却不是你熟悉的街道。', 'bad');
+    return;
+  }
+  if (notebook.influenceStage === 2) {
+    notebook.influenceStage = 3;
+    notebook.nextManifestationAbsoluteHour = now + 24;
+    applyEffects(s, [{ k: 'san', v: -6 }, { k: 'cor', v: 3 }]);
+    addLog(s, '你在街口回过神，怀里抱着那本笔记，已经走完一段没有记忆的路。再拖下去，你可能连“这是自己的决定”都无法判断。', 'bad');
+    return;
+  }
+  notebook.influenceStage = 4;
+  s.gameOver = {
+    title: '被改写的去向',
+    text: '下一段记忆断裂后，你没有再回到阁楼。桌上的账单和未吃完的面包都还在，只有那本黑色笔记与你一同消失在廷根的雾里。',
+  };
+}
+
+export function strangeNotebookActionIssue(s: GameState, action: 'examine' | 'record' | 'discard' | 'surrender'): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
+  const notebook = s.strangeNotebook;
+  if (!notebook || notebook.status !== 'held' || (s.items[STRANGE_NOTEBOOK_ITEM_ID] ?? 0) <= 0) return '那本笔记现在不在你手中。';
+  if (action === 'surrender') {
+    const locationId = s.currentLocation?.locationId;
+    if (locationId !== 'st_selena_church' && locationId !== 'blackthorn_security') return '需要亲自前往圣赛琳娜教堂或黑荆棘安保公司。';
+    if (notebook.influenceStage < 1 && !hasClue(s, 'strange_notebook_inconsistency')) return '你还无法向接待人员说明哪里异常；先把能复核的矛盾记录下来。';
+    return null;
+  }
+  if (!isAtHome(s)) return '需要先回到住处处理这本笔记。';
+  if (action === 'record' && notebook.influenceStage < 1) return '目前还没有足以逐项记录的矛盾。';
+  if (action === 'record' && notebook.odditiesRecorded) return '页码、墨迹和记忆缺口已经记录过了。';
+  if (s.stats.energy < energyCost(s, action === 'examine' ? 8 : 5) + 2) return '你现在太疲惫，无法保持清醒地处理它。';
+  return null;
+}
+
+export function examineStrangeNotebook(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = strangeNotebookActionIssue(s, 'examine');
+  if (issue) return { ok: false, msg: issue };
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 8) }, { k: 'san', v: -2 }]);
+  advanceHours(s, 1);
+  if (!s.gameOver) {
+    s.strangeNotebook.nextManifestationAbsoluteHour = Math.min(s.strangeNotebook.nextManifestationAbsoluteHour, absoluteHour(s));
+    progressStrangeNotebook(s);
+  }
+  return { ok: true };
+}
+
+export function recordStrangeNotebookOddities(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = strangeNotebookActionIssue(s, 'record');
+  if (issue) return { ok: false, msg: issue };
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+  advanceHours(s, 1);
+  s.strangeNotebook.odditiesRecorded = true;
+  acquireClue(s, 'strange_notebook_inconsistency', 'event', 'opening:strange_notebook');
+  addLog(s, '你把页码、墨迹差异和记忆缺口分栏记录。至少现在，你有了一份能交给别人复核的事实，而不是一句“这书很怪”。', 'good');
+  return { ok: true };
+}
+
+export function discardStrangeNotebook(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = strangeNotebookActionIssue(s, 'discard');
+  if (issue) return { ok: false, msg: issue };
+  applyEffects(s, [{ k: 'energy', v: -energyCost(s, 5) }]);
+  advanceHours(s, 1);
+  s.items[STRANGE_NOTEBOOK_ITEM_ID] = 0;
+  s.strangeNotebook.status = 'missing';
+  s.strangeNotebook.returnAbsoluteHour = absoluteHour(s) + 12;
+  addLog(s, '你把笔记留在一处与自己无关的公共角落，确认没有人看见。离开时，你短暂地松了口气。', 'info');
+  return { ok: true };
+}
+
+export function surrenderStrangeNotebook(s: GameState): ActionResult {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const issue = strangeNotebookActionIssue(s, 'surrender');
+  if (issue) return { ok: false, msg: issue };
+  const place = s.currentLocation?.locationId === 'blackthorn_security' ? '安保公司的接待室' : '教堂的事务窗口';
+  s.items[STRANGE_NOTEBOOK_ITEM_ID] = 0;
+  s.strangeNotebook.status = 'surrendered';
+  s.strangeNotebook.handedOffLocationId = s.currentLocation!.locationId as 'st_selena_church' | 'blackthorn_security';
+  s.strangeNotebook.handedOffDay = s.day;
+  s.strangeNotebook.handedOffHour = s.hour;
+  s.flags.strange_notebook_handed_off = true;
+  acquireClue(s, 'strange_notebook_official_receipt', 'location', s.currentLocation!.locationId);
+  if (s.awareness === 'ordinary') s.awareness = 'witness';
+  addLog(s, `你在${place}逐项说明记忆缺口，并交出黑色笔记。接待人没有解释它是什么，只要求你停止誊抄、阅读和占卜；随后，两名戴黑手套的人把证物装进铅灰色匣子。`, 'good');
+  return { ok: true };
+}
+
 export function advanceHours(s: GameState, hours: number) {
   for (let i = 0; i < hours; i++) {
+    s.npcVisitSession = null;
     s.hour++;
     if (s.hour >= 24) {
       s.hour = 0;
@@ -1413,6 +4449,8 @@ export function advanceHours(s: GameState, hours: number) {
       dailySettlement(s);
     }
     tickTimers(s);
+    progressStrangeNotebook(s);
+    rebuildAreaSuspicion(s);
     if (s.gameOver) return;
   }
   checkGameOver(s);
@@ -1669,7 +4707,10 @@ type EventCandidate =
 function eventRuntimeEligible(s: GameState, eventId: string): boolean {
   // 这桩死亡只可能发生在担保交易会真实营业、玩家本人已经到场的时段。
   // 邀请或黑市地点本身都不能让它在普通夜晚进入抽取池。
-  return eventId !== 'adv_confirmed_beyonder_death' || isTradeFairOpen(s);
+  if (eventId !== 'adv_confirmed_beyonder_death') return true;
+  return isTradeFairOpen(s)
+    && !s.confirmedBeyonderDeaths.some(record => record.sourceId === 'fallen_seer_smuggler')
+    && s.activeHunt?.targetId !== 'masked_fortune_smuggler';
 }
 
 function queueTradeFairDeathAfterMidnightSettlement(s: GameState, locationId: string): boolean {
@@ -1778,6 +4819,8 @@ export function currentEvent(s: GameState): GameEvent | null {
 
 // ============ 委托 ============
 export function acceptCommission(s: GameState, id: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能外出接取委托。' };
@@ -1817,6 +4860,8 @@ export function workmatesFor(s: GameState): GenNPC[] {
 }
 
 export function takeJob(s: GameState, jobId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，不能当场换工作。' };
   if (s.jobId) return { ok: false, msg: '你已有工作；若想改行，请先离职。' };
   const job = findJob(jobId);
@@ -1830,9 +4875,18 @@ export function takeJob(s: GameState, jobId: string): ActionResult {
 export function commuteToWork(s: GameState): ActionResult {
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const woundIssue = woundActionIssue(s, 'work');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   if (s.currentLocation) return { ok: false, msg: '你还在外出的地点，需先返回住处。' };
   const job = currentJob(s);
   if (!job) return { ok: false, msg: '你目前失业，需要先选择一份工作。' };
+  const identityStatus = getAreaSuspicionStatus(s, job.locationId);
+  if (identityStatus.wanted) {
+    return { ok: false, msg: `你在【${job.location}】所在区域已经被通缉，不能通过公开通勤重新进入。` };
+  }
+  if (identityStatus.value >= 70 && isPublicIdentityCheckpoint(job.locationId) && !getIdentityCoverStatus(s).active) {
+    return { ok: false, msg: `【${job.location}】附近正在按外貌与工作记录核对身份；先准备能够经受普通盘问的身份掩饰。` };
+  }
   if (s.atWork) return { ok: false, msg: `你已经在${job.location}。` };
   const arrival = s.hour + job.commuteHours;
   if (arrival < job.shiftStart) return { ok: false, msg: `现在出发会太早。${job.name}的班次从${job.shiftStart}:00开始。` };
@@ -1854,6 +4908,8 @@ export function commuteToWork(s: GameState): ActionResult {
 export function doWork(s: GameState): ActionResult {
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const woundIssue = woundActionIssue(s, 'work');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   const job = currentJob(s);
   if (!job) return { ok: false, msg: '你目前失业，需要先选择一份工作。' };
   if (!s.atWork) return { ok: false, msg: `你还没到岗，请先通勤前往${job.location}。` };
@@ -1871,6 +4927,8 @@ export function doWork(s: GameState): ActionResult {
 
 /** 到岗后选择一位真实同事互动，并接入现有关系值。 */
 export function interactWithWorkmate(s: GameState, npcId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const job = currentJob(s);
   if (!job || !s.atWork) return { ok: false, msg: '只有到岗后才能和同事互动。' };
   if (s.hour >= job.shiftEnd) return { ok: false, msg: '同事们已经收工了，请下班离开。' };
@@ -1883,11 +4941,11 @@ export function interactWithWorkmate(s: GameState, npcId: string): ActionResult 
   const gain = wasMet ? 2 + rnd(3) : 4 + rnd(3);
   applyEffects(s, [{ k: 'favor', id: npc.id, v: gain }]);
   const scenes = [
-    `歇手时，你和${npc.name}聊起「${npc.motive}」。ta比平时多说了几句。`,
-    `${npc.name}帮你接过一件麻烦活，你也替ta遮掩了一次小疏漏。你们的配合自然了些。`,
-    `你和${npc.name}交换了些工作诀窍。ta${npc.traits.join('、')}，对你倒不算设防。`,
+    `歇手时，你和${npc.name}聊起「${npc.motive}」。对方比平时多说了几句。`,
+    `${npc.name}帮你接过一件麻烦活，你也替对方遮掩了一次小疏漏。你们的配合自然了些。`,
+    `你和${npc.name}交换了些工作诀窍。对方${npc.traits.join('、')}，对你倒不算设防。`,
   ];
-  addLog(s, wasMet ? scenes[rnd(scenes.length)] : `✦ 结交：你在${job.location}正式认识了同事${npc.name}（${npc.identity}）。ta${npc.traits.join('、')}，心里惦记着「${npc.motive}」。`, wasMet ? 'info' : 'good');
+  addLog(s, wasMet ? scenes[rnd(scenes.length)] : `✦ 结交：你在${job.location}正式认识了同事${npc.name}（${npc.identity}）。对方${npc.traits.join('、')}，心里惦记着「${npc.motive}」。`, wasMet ? 'info' : 'good');
   advanceHours(s, 1);
   return { ok: true };
 }
@@ -1904,6 +4962,8 @@ export function leaveWork(s: GameState): ActionResult {
 }
 
 export function resignJob(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const job = currentJob(s);
   if (!job) return { ok: false, msg: '你目前没有可以辞去的工作。' };
   if (s.atWork) leaveWork(s);
@@ -1967,6 +5027,8 @@ export function sequence9LocationActionIssue(s: GameState, abilityId: Sequence9E
   if (!def || def.mode !== 'preparation') return '这项序列能力不存在。';
   if (!hasInheritedSequence9Ability(s, def.pathwayId)) return '这不是你当前途径能够使用的能力。';
   if (currentEvent(s)) return '先处理眼前正在发生的事情。';
+  const woundIssue = woundActionIssue(s, 'explore');
+  if (woundIssue) return woundIssue;
   if (s.atWork || !s.currentLocation) return '需要先抵达一个可调查的地点。';
   const accessIssue = locationAccessIssue(s, s.currentLocation.locationId);
   if (accessIssue) return accessIssue;
@@ -2012,6 +5074,8 @@ export function performSequence9LocationAction(s: GameState, abilityId: Sequence
 }
 
 function performExploreAtLocation(s: GameState, locationId: string, actionHours: number, companionId?: string): ActionResult {
+  const woundIssue = woundActionIssue(s, 'explore');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   const accessIssue = locationAccessIssue(s, locationId);
   if (accessIssue) return { ok: false, msg: accessIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，需先下班离开。' };
@@ -2024,7 +5088,7 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
     const n = findAnyNPC(s, companionId);
     if (!n) return { ok: false, msg: '找不到这个人。' };
     if ((s.relations[companionId] ?? -999) < COMPANION_MIN_FAVOR) return { ok: false, msg: `${n.name}还没有信任你到愿意一起涉险的程度。` };
-    if (!npcAvailable(n, s.day, s.hour)) return { ok: false, msg: `${n.name}此刻走不开——摸清ta的作息，挑ta得空的时候来邀。` };
+    if (!npcAvailable(n, s.day, s.hour)) return { ok: false, msg: `${n.name}此刻走不开——摸清对方的作息，挑空闲的时候来邀。` };
     comp = n;
   }
   const commissionForHere = s.activeCommission?.locationId === locationId ? s.activeCommission : null;
@@ -2096,12 +5160,12 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
       if (comp) {
         const cut = Math.round(c.reward * 0.3);
         applyEffects(s, [{ k: 'money', v: -cut }, { k: 'favor', id: comp.id, v: 4 }]);
-        addLog(s, `${comp.name}按约定分走了${fmtMoney(cut)}。共同出生入死一场，ta看你的眼神多了几分信任。`, 'info');
+        addLog(s, `${comp.name}按约定分走了${fmtMoney(cut)}。共同出生入死一场，对方看你的眼神多了几分信任。`, 'info');
       }
       s.activeCommission = null;
       s.board = s.board.filter(commission => isLocationUnlocked(s, commission.locationId));
       // 碰了非凡事务，可能惹上隐秘组织
-      if (c.occult && !s.nemesis && rnd(100) < 30) {
+      if (c.occult && !s.nemesis && !s.activeHunt && rnd(100) < 30) {
         s.nemesis = spawnNemesis(s, 'occult');
         addLog(s, `⚠️ 回程路上你总觉得被什么视线黏着。有人盯上你了。`, 'bad');
       }
@@ -2134,26 +5198,45 @@ function performExploreAtLocation(s: GameState, locationId: string, actionHours:
   return { ok: true };
 }
 
-export function travelToLocation(s: GameState, locationId: string, mode: TravelMode, companionId?: string): ActionResult {
+export function travelIssue(s: GameState, locationId: string, mode: TravelMode, companionId?: string): string | null {
   const encounterIssue = activeEncounterIssue(s);
-  if (encounterIssue) return { ok: false, msg: encounterIssue };
+  if (encounterIssue) return encounterIssue;
   const accessIssue = locationAccessIssue(s, locationId);
-  if (accessIssue) return { ok: false, msg: accessIssue };
-  if (!isAtHome(s)) return { ok: false, msg: s.atWork ? '需先下班回家再出发。' : '你已经身处另一个地点，需先离开才能改道。' };
+  if (accessIssue) return accessIssue;
+  if (!isAtHome(s)) return s.atWork ? '需先下班回家再出发。' : '你已经身处另一个地点，需先离开才能改道。';
   const location = LOCATIONS.find(candidate => candidate.id === locationId);
-  if (!location) return { ok: false, msg: accessIssue ?? '这个去向尚未查明。先从传闻、委托或可信路线中寻找入口。' };
-  if (location.nightOnly && !(s.hour >= 22 || s.hour < 2)) return { ok: false, msg: `${location.name}只在深夜（22:00–2:00）张开。` };
+  if (!location) return accessIssue ?? '这个去向尚未查明。先从传闻、委托或可信路线中寻找入口。';
+  const identityStatus = getAreaSuspicionStatus(s, locationId);
+  const emergencyClinicTrip = getWoundStatus(s).level === 'critical' && locationId === 'north_clinic' && mode === 'rickshaw';
+  if (identityStatus.wanted && !emergencyClinicTrip) return `你在【${location.name}】已经被通缉，不能再通过公开交通或街道重新进入。`;
+  if (identityStatus.value >= 70 && isPublicIdentityCheckpoint(locationId)
+    && !getIdentityCoverStatus(s).active && !emergencyClinicTrip) {
+    return `【${location.name}】附近正在核对可疑者身份；先在住处准备普通伪装和一致的身份说辞。`;
+  }
+  if (location.nightOnly && !(s.hour >= 22 || s.hour < 2)) return `${location.name}只在深夜（22:00–2:00）张开。`;
+  if (getWoundStatus(s).level === 'critical' && (locationId !== 'north_clinic' || mode !== 'rickshaw')) {
+    return '濒危状态下只能乘人力车前往北区诊所。';
+  }
   if (companionId) {
     const companion = findAnyNPC(s, companionId);
-    if (!companion) return { ok: false, msg: '找不到这个人。' };
-    if ((s.relations[companionId] ?? -999) < COMPANION_MIN_FAVOR) return { ok: false, msg: `${companion.name}还没有信任你到愿意一起出门的程度。` };
-    if (!npcAvailable(companion, s.day, s.hour)) return { ok: false, msg: `${companion.name}此刻走不开。` };
+    if (!companion) return '找不到这个人。';
+    if ((s.relations[companionId] ?? -999) < COMPANION_MIN_FAVOR) return `${companion.name}还没有信任你到愿意一起出门的程度。`;
+    if (!npcAvailable(companion, s.day, s.hour)) return `${companion.name}此刻走不开。`;
   }
   const travelers = companionId ? 2 : 1;
   const travel = getTravelQuote(s, locationId, mode, travelers);
-  if (!travel) return { ok: false, msg: '这种交通方式不能缩短这趟行程。' };
-  if (s.pence < travel.fee) return { ok: false, msg: '付不起这趟车费。' };
-  if (s.stats.energy < 5) return { ok: false, msg: '你现在太疲惫，无法安全出门。' };
+  if (!travel) return '这种交通方式不能缩短这趟行程。';
+  if (s.pence < travel.fee) return '付不起这趟车费。';
+  if (s.stats.energy < 5) return '你现在太疲惫，无法安全出门。';
+  return null;
+}
+
+export function travelToLocation(s: GameState, locationId: string, mode: TravelMode, companionId?: string): ActionResult {
+  const issue = travelIssue(s, locationId, mode, companionId);
+  if (issue) return { ok: false, msg: issue };
+  const location = LOCATIONS.find(candidate => candidate.id === locationId)!;
+  const travelers = companionId ? 2 : 1;
+  const travel = getTravelQuote(s, locationId, mode, travelers)!;
   applyEffects(s, [{ k: 'money', v: -travel.fee }]);
   const outboundHours = Math.ceil(travel.hours / 2);
   const returnHours = Math.floor(travel.hours / 2);
@@ -2187,6 +5270,8 @@ export function leaveCurrentLocation(s: GameState): ActionResult {
 }
 
 function salvageAtLocation(s: GameState, locationId: string): ActionResult {
+  const woundIssue = woundActionIssue(s, 'salvage');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   const def = SALVAGE_DEFS.find(candidate => candidate.locationId === locationId);
   if (!def) return { ok: false, msg: '这里没有可安全搜集的固定目标。' };
   if (s.completedLocationActions.includes(def.id)) return { ok: false, msg: '这处能带走的普通物资已经清理完了。' };
@@ -2295,6 +5380,9 @@ function performAtLocationActionInternal(
   actionHours: number,
   randomSource: () => number = Math.random,
 ): ActionResult {
+  if (getWoundStatus(s).level === 'critical') {
+    return { ok: false, msg: woundActionIssue(s, 'explore')! };
+  }
   const stay = s.currentLocation;
   if (!stay) return { ok: false, msg: '需要先抵达一个地点。' };
   const location = LOCATIONS.find(candidate => candidate.id === stay.locationId);
@@ -2319,6 +5407,11 @@ function performAtLocationActionInternal(
 export function performAtLocationAction(s: GameState, actionId: LocationActionId, randomSource: () => number = Math.random): ActionResult {
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
+  const woundIssue = actionId === 'salvage'
+    ? woundActionIssue(s, 'salvage')
+    : actionId === 'explore' || getWoundStatus(s).level === 'critical'
+      ? woundActionIssue(s, 'explore') : null;
+  if (woundIssue) return { ok: false, msg: woundIssue };
   return performAtLocationActionInternal(s, actionId, 1, randomSource);
 }
 
@@ -2364,6 +5457,8 @@ export function landmarkActionIssue(s: GameState, actionId: string): string | nu
     return '当前地点没有这项可核实的公开活动。';
   }
   if (s.atWork) return '需先结束工作再处理地点事务。';
+  const woundIssue = getWoundStatus(s).level === 'critical' ? woundActionIssue(s, 'explore') : null;
+  if (woundIssue) return woundIssue;
   if (landmarkActionCompleted(s, def)) return '这项公开资料已经记入笔记，重复查阅不会产生新收获。';
   if (!landmarkActionOpen(s, def)) {
     const end = def.openTo! > 24 ? def.openTo! - 24 : def.openTo!;
@@ -2451,6 +5546,8 @@ function visibleBookSource(s: GameState, bookId: string): boolean {
 }
 
 export function acquireBookIssue(s: GameState, bookId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const book = BOOK_DEFS.find(candidate => candidate.id === bookId);
   const source = BOOK_SOURCE_DEFS.find(candidate => candidate.bookId === bookId);
   if (!book || !source || !visibleBookSource(s, bookId)) return '这本书的可靠来源尚未进入你的视野。';
@@ -2488,6 +5585,8 @@ export function acquireBook(s: GameState, bookId: string): ActionResult {
 }
 
 export function readingIssue(s: GameState, bookId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const book = BOOK_DEFS.find(candidate => candidate.id === bookId);
   const state = s.books[bookId];
   if (!book || !state?.acquired) return '这本书不在你的书架上。';
@@ -2565,11 +5664,15 @@ export function readBookSession(s: GameState, bookId: string): ActionResult {
 
 /** 攀谈：在对方当前所在的公开场合搭话。陌生人会触发「结交事件」，初识则慢慢加深印象。 */
 export function doChat(s: GameState, npcId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，不能外出攀谈。' };
   const npc = findAnyNPC(s, npcId);
   if (!npc) return { ok: false, msg: '找不到这个人。' };
+  const huntTarget = HUNT_TARGET_DEFS.find(target => target.npcId === npcId);
+  if (huntTarget && s.currentLocation?.locationId !== huntTarget.locationId) return { ok: false, msg: '只有亲临对方所在的场所，才能与他搭话。' };
   if (!npcAvailable(npc, s.day, s.hour)) return { ok: false, msg: `${npc.name}现在不在方便搭话的地方。` };
   const fav = s.relations[npcId];
   if (fav !== undefined && fav >= VISIT_FAVOR) return { ok: false, msg: '你们已经是熟人，可以直接「拜访」了。' };
@@ -2583,16 +5686,20 @@ export function doChat(s: GameState, npcId: string): ActionResult {
     // —— 结交事件：第一次正式相识 ——
     acquaint(s, npcId, 4 + rnd(4));
     if (gen) {
-      addLog(s, `✦ 结交：你找机会和${gen.name}搭上了话（${gen.identity}）。ta${gen.traits.join('、')}——聊下来你隐约觉得，这个人心里装着「${gen.motive}」这回事。`, 'good');
+      addLog(s, `✦ 结交：你找机会和${gen.name}搭上了话（${gen.identity}）。对方${gen.traits.join('、')}——聊下来你隐约觉得，这个人心里装着「${gen.motive}」这回事。`, 'good');
     } else {
       addLog(s, `✦ 结交：你正式认识了${npc.name}（${npc.identity}）。${npc.desc}`, 'good');
+      if (huntTarget?.id === 'masked_fortune_smuggler') {
+        acquireClue(s, 'masked_smuggler_trade_tell', 'npc', npc.id);
+        addLog(s, '交谈中，他三次避开同一组占卜象征，却能准确指出你从未说出口的牌位。你只把这处矛盾记了下来，尚不能据此判断他的真实身份。', 'event');
+      }
     }
   } else {
     // —— 初识阶段的寒暄 ——
     applyEffects(s, [{ k: 'favor', id: npcId, v: 1 + rnd(3) }]);
     const smallTalk = gen
-      ? [`你陪${gen.name}聊了几句${gen.motive}的进展。`, `${gen.name}对你熟络了些，顺嘴抱怨起今天的活计。`, `你给${gen.name}递了支烟，ta的话多了两句。`]
-      : [`你和${npc.name}寒暄了一阵，ta对你多了几分印象。`, `${npc.name}抬眼认出是你，语气比上回缓和了些。`, `你陪${npc.name}聊了些街区见闻，关系近了一点。`];
+      ? [`你陪${gen.name}聊了几句${gen.motive}的进展。`, `${gen.name}对你熟络了些，顺嘴抱怨起今天的活计。`, `你给${gen.name}递了支烟，对方的话多了两句。`]
+      : [`你和${npc.name}寒暄了一阵，对方对你多了几分印象。`, `${npc.name}抬眼认出是你，语气比上回缓和了些。`, `你陪${npc.name}聊了些街区见闻，关系近了一点。`];
     addLog(s, smallTalk[rnd(smallTalk.length)], 'info');
     const now = s.relations[npcId] ?? 0;
     if (now >= VISIT_FAVOR) addLog(s, `✦ ${npc.name}已经把你当自己人了——现在可以登门「拜访」了。`, 'system');
@@ -2601,20 +5708,26 @@ export function doChat(s: GameState, npcId: string): ActionResult {
 }
 
 export function doSocial(s: GameState, npcId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，不能外出拜访。' };
   const npc = findAnyNPC(s, npcId);
   if (!npc) return { ok: false, msg: '找不到这个人。' };
+  const huntTarget = HUNT_TARGET_DEFS.find(target => target.npcId === npcId);
+  if (huntTarget && s.currentLocation?.locationId !== huntTarget.locationId) return { ok: false, msg: '只有亲临对方所在的场所，才能与他见面。' };
   if (!npcAvailable(npc, s.day, s.hour)) return { ok: false, msg: `${npc.name}现在不在方便见客的地方。` };
   const fav = s.relations[npcId];
   if (fav === undefined) return { ok: false, msg: '你们还不认识。先找机会攀谈结交（酒馆、街头、市集都是认识人的地方）。' };
   if (fav < VISIT_FAVOR) return { ok: false, msg: '你们还只是点头之交。先多攀谈几次，等对方真正信任你再登门。' };
   if (s.stats.energy < 8) return { ok: false, msg: '精力不足。' };
+  const visitStartedAt = { day: s.day, hour: s.hour };
   applyEffects(s, [{ k: 'energy', v: -energyCost(s, 8) }]);
   addLog(s, `你拜访了${npc.name}（${npc.identity}）。`, 'info');
   advanceHours(s, 1);
   if (s.gameOver) return { ok: true };
+  s.npcVisitSession = { npcId, startedDay: visitStartedAt.day, startedHour: visitStartedAt.hour, day: s.day, hour: s.hour };
 
   // 生成 NPC：通用社交结算
   const gen = s.genNpcs.find(n => n.id === npcId);
@@ -2666,7 +5779,7 @@ function performTavernLocation(s: GameState, locationId: string, travel: TravelQ
       const gen = s.genNpcs.find(n => n.id === npc.id);
       acquaint(s, npc.id, 4 + rnd(4));
       addLog(s, gen
-        ? `✦ 结交：你在酒馆结识了${npc.name}（${npc.identity}）。几杯下肚，${gen.traits.join('、')}的ta说漏了嘴——ta正为「${gen.motive}」发愁。`
+        ? `✦ 结交：你在酒馆结识了${npc.name}（${npc.identity}）。几杯下肚，${gen.traits.join('、')}的对方说漏了嘴——最近正为「${gen.motive}」发愁。`
         : `✦ 结交：你在酒馆结识了${npc.name}（${npc.identity}）。${npc.desc}`, 'good');
     } else {
       const known = present.filter(n => n.id !== 'mike' && (s.relations[n.id] ?? 0) < VISIT_FAVOR);
@@ -2701,12 +5814,16 @@ export function doNap(s: GameState): ActionResult {
   if (s.currentLocation) return { ok: false, msg: '你还在外出的地点，需先返回住处。' };
   if (s.atWork) return { ok: false, msg: '工作地点不是睡觉的地方。' };
   applyEffects(s, [{ k: 'energy', v: 12 }]);
+  const profile = getCombatProfile(s);
+  s.combatVitals.spirit = Math.min(profile.maxSpirit, s.combatVitals.spirit + Math.floor(profile.maxSpirit * 0.25));
   addLog(s, '你小憩了一小时，醒来时手脚轻快了些。', 'info');
   advanceHours(s, 1);
   return { ok: true };
 }
 
 export function doMeal(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '你还在工作地点，需先下班离开。' };
@@ -2725,11 +5842,16 @@ export function doSleep(s: GameState): ActionResult {
   const hours = s.hour < 7 ? 7 - s.hour : 24 - s.hour + 7;
   if (s.pathwayId === 'sleepless') {
     applyEffects(s, [{ k: 'energy', v: 40 }, { k: 'san', v: 5 }]);
+    const profile = getCombatProfile(s);
+    s.combatVitals.spirit = Math.min(profile.maxSpirit, s.combatVitals.spirit + Math.floor(profile.maxSpirit * 0.5));
     addLog(s, '不眠者无需睡眠。你静夜冥想，让疲惫与杂念随着呼吸缓缓沉淀。', 'info');
     advanceHours(s, 2);
     return { ok: true };
   }
   const recover = s.tags.includes('homeless') ? 50 : 100;
+  const profile = getCombatProfile(s);
+  s.combatVitals.spirit = profile.maxSpirit;
+  s.combatVitals.hp = Math.min(profile.maxHp, s.combatVitals.hp + Math.max(1, Math.floor(profile.maxHp * 0.1)));
   addLog(s, s.tags.includes('homeless') ? '你在桥洞下凑合了一夜。寒气和噪声让这场睡眠几乎称不上休息。' : '你睡了一觉。蒸汽城在窗外低鸣。', 'info');
   s.stats.energy = recover;
   s.stats.san = clamp(s.stats.san + 10);
@@ -2760,7 +5882,7 @@ function performWanderLocation(s: GameState, locationId: string, travel: TravelQ
         : `✦ 结交：你在${spot}遇上了${npc.name}（${npc.identity}），攀谈了几句，算是正式认识了。`, 'good');
     } else {
       applyEffects(s, [{ k: 'favor', id: npc.id, v: 1 + rnd(2) }]);
-      addLog(s, `你撞见了${npc.name}——这个时间ta果然在${spot}。你们站在街边聊了几句，告别时语气亲近了些。`, 'info');
+      addLog(s, `你撞见了${npc.name}——这个时间对方果然在${spot}。你们站在街边聊了几句，告别时语气亲近了些。`, 'info');
     }
     return { ok: true };
   }
@@ -2816,6 +5938,8 @@ export function getOrganizationOffers(s: GameState, organizationId: Organization
 const leadDefForOrganization = (organizationId: OrganizationId) => ORGANIZATION_LEAD_DEFS.find(def => def.organizationId === organizationId);
 
 export function organizationEntryIssue(s: GameState, organizationId: OrganizationId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能调查敏感背景线索。';
   if (isBeyonder(s)) return '该入口只面向尚未选定途径的凡人。';
   if (organizationId === 'nightwatch') return '值夜者线索请从地方报纸与旧钟楼开始。';
@@ -2830,6 +5954,8 @@ export function organizationEntryIssue(s: GameState, organizationId: Organizatio
 }
 
 export function organizationIdentificationIssue(s: GameState, organizationId: OrganizationId, npcId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能拜访鉴定人。';
   if (isBeyonder(s)) return '该入口只面向凡人。';
   const def = leadDefForOrganization(organizationId);
@@ -2870,6 +5996,8 @@ export function discoverOrganizationEvidence(s: GameState, organizationId: Organ
 }
 
 export function decodeOrganizationEvidence(s: GameState, organizationId: OrganizationId): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能整理线索。' };
   if (isBeyonder(s)) return { ok: false, msg: '该入口只面向凡人。' };
   const def = leadDefForOrganization(organizationId);
@@ -2905,6 +6033,8 @@ export function identifyOrganizationEvidence(s: GameState, organizationId: Organ
 }
 
 export function verifyOrganizationEvidence(s: GameState, organizationId: OrganizationId): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能参加组织核验。' };
   if (isBeyonder(s)) return { ok: false, msg: '该入口只面向凡人。' };
   const def = leadDefForOrganization(organizationId);
@@ -2922,6 +6052,8 @@ export function verifyOrganizationEvidence(s: GameState, organizationId: Organiz
 }
 
 export function contactOrganization(s: GameState, organizationId: OrganizationId): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能参加组织接触。' };
   if (isBeyonder(s)) return { ok: false, msg: '该候选流程只面向凡人。' };
   const def = leadDefForOrganization(organizationId);
@@ -2961,6 +6093,8 @@ export function getOrganizationQualificationTaskView(s: GameState, organizationI
 }
 
 export function organizationQualificationIssue(s: GameState, organizationId: OrganizationId): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const task = organizationQualificationTask(organizationId);
   if (!task) return '该组织不使用这项外围资格任务。';
   if (s.atWork) return '工作期间不能完成组织资格任务。';
@@ -3015,6 +6149,8 @@ export function completeOrganizationQualification(s: GameState, organizationId: 
 }
 
 export function joinOrganization(s: GameState, organizationId: OrganizationId): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能签署组织成员约定。' };
   if (isBeyonder(s)) return { ok: false, msg: '该流程只面向尚未选定途径的凡人。' };
   const route = organizationRoute(s, organizationId);
@@ -3029,6 +6165,8 @@ export function joinOrganization(s: GameState, organizationId: OrganizationId): 
 }
 
 export function openOrganizationOffers(s: GameState, organizationId: OrganizationId): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const route = organizationRoute(s, organizationId);
   if (route.status !== 'member') return { ok: false, msg: '未加入组织，不能查看魔药报价。' };
   route.status = 'offer_pending';
@@ -3038,6 +6176,8 @@ export function openOrganizationOffers(s: GameState, organizationId: Organizatio
 }
 
 export function leaveOrganization(s: GameState, organizationId: OrganizationId): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能办理退出组织。' };
   const route = organizationRoute(s, organizationId);
   if (!['member', 'offer_pending'].includes(route.status)) return { ok: false, msg: '只有尚未承诺途径的成员可以退出。' };
@@ -3050,6 +6190,8 @@ export function leaveOrganization(s: GameState, organizationId: OrganizationId):
 }
 
 export function commitOrganizationPathway(s: GameState, organizationId: OrganizationId, pathwayId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能签署途径承诺。' };
   if (isBeyonder(s)) return { ok: false, msg: '你已经是非凡者。' };
   const route = organizationRoute(s, organizationId);
@@ -3081,6 +6223,8 @@ export function commitOrganizationPathway(s: GameState, organizationId: Organiza
 }
 
 export function materialCollectionIssue(s: GameState, sourceId: string, locationId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能领取或采集定向材料。';
   const source = s.materialSources[sourceId];
   if (!source || !source.unlocked) return '该定向材料来源尚未由已加入组织解锁。';
@@ -3106,6 +6250,8 @@ export function materialCollectionIssue(s: GameState, sourceId: string, location
 }
 
 export function collectMaterialSource(s: GameState, sourceId: string, locationId: string): ActionResult {
+  const woundIssue = woundActionIssue(s, 'salvage');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   const issue = materialCollectionIssue(s, sourceId, locationId);
   if (issue) return { ok: false, msg: issue };
   const source = s.materialSources[sourceId];
@@ -3121,6 +6267,8 @@ export function collectMaterialSource(s: GameState, sourceId: string, locationId
 }
 
 export function diarySourceIssue(s: GameState, pageId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能追查日记页。';
   const def = ROSELLE_DIARY_PAGE_DEFS.find(page => page.id === pageId);
   const page = s.diaryPages[pageId];
@@ -3152,6 +6300,8 @@ export function discoverDiaryPage(s: GameState, pageId: string): ActionResult {
 }
 
 export function decodeDiaryPage(s: GameState, pageId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能译读日记。' };
   const def = ROSELLE_DIARY_PAGE_DEFS.find(page => page.id === pageId);
   const page = s.diaryPages[pageId];
@@ -3169,6 +6319,8 @@ export function decodeDiaryPage(s: GameState, pageId: string): ActionResult {
 }
 
 export function diaryAuthenticationIssue(s: GameState, pageId: string, npcId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能进行纸张与来源鉴定。';
   const def = ROSELLE_DIARY_PAGE_DEFS.find(page => page.id === pageId);
   const page = s.diaryPages[pageId];
@@ -3226,6 +6378,8 @@ export type OfficialTimedAction = 'report' | 'screening' | 'stabilization' | 'in
 
 /** 供引擎与 UI 共用的办理时间门槛。 */
 export function officialTimingIssue(s: GameState, action: OfficialTimedAction): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const lead = organizationRoute(s, 'nightwatch');
   if (action === 'night_watch') {
     if (!isClocktowerTraceHours(s.hour) && s.hour < 18) return '观察勤务只在18:00至凌晨2:00开始。';
@@ -3247,6 +6401,8 @@ export function officialTimingIssue(s: GameState, action: OfficialTimedAction): 
 
 /** 确定性的世俗前置：只核对公开记录，不改变 awareness。 */
 export function researchClocktowerRumors(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能去档案室查资料。' };
   if (isBeyonder(s)) return { ok: false, msg: '这条公开记录只为尚未接触非凡世界的普通人提供入口。' };
   if (s.awareness !== 'ordinary') return { ok: false, msg: '你已亲历异常，无需再从公开传闻开始。' };
@@ -3267,6 +6423,8 @@ export function researchClocktowerRumors(s: GameState): ActionResult {
 }
 
 export function compareClocktowerRepairRecordsIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能去市政工程档案室。';
   if (isBeyonder(s) || s.awareness !== 'ordinary') return '这项世俗档案比对只面向尚未确认异常的普通人。';
   const route = organizationRoute(s, 'nightwatch');
@@ -3291,6 +6449,8 @@ export function compareClocktowerRepairRecords(s: GameState): ActionResult {
 }
 
 export function requestManorAddressIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能去古书店追问旧地址。';
   if (isBeyonder(s)) return '这条地址线索只为尚未选定途径的普通人保留。';
   if (hasClue(s, 'manor_address')) return '那处旧宅的路线已经记入调查笔记。';
@@ -3313,6 +6473,8 @@ export function requestManorAddress(s: GameState): ActionResult {
 }
 
 function dockManifestBaseIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能离岗调查码头档案。';
   if (isBeyonder(s)) return '这条世俗调查只属于尚未成为非凡者的普通人。';
   if (!hasVisitedLocation(s, 'docks')) return '需要先亲自去过东区码头，才能核对当地记录。';
@@ -3445,6 +6607,8 @@ export function getDockSequence9Actions(s: GameState): DockSequence9ActionDef[] 
 }
 
 function dockSequence9BaseIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (!legalDockSequence9Pathway(s)) return '只有五条已知途径的合法序列9能够开展这项调查。';
   if (!s.intel.includes('dock_missing')) return '你还不知道码头失踪案的可靠传闻，无法确定调查目标。';
   return null;
@@ -3552,7 +6716,14 @@ export function dockCaseDispositionClue(s: GameState): string | null {
 
 /** 只返回玩家当前地点真实可见的处置，避免以禁用按钮泄露隐藏渠道。 */
 export function getDockCaseDispositions(s: GameState) {
-  if (!hasClue(s, 'dock_seq9_conclusion') || dockCaseDispositionClue(s)) return [];
+  if (!hasClue(s, 'dock_seq9_conclusion') || dockCaseDispositionClue(s)
+    || (dockWitnessCrisisReady(s) && !dockWitnessCrisisOutcomeClue(s))
+    || (dockWitnessFollowupRoute(s) && !dockWitnessFollowupOutcomeClue(s))
+    || (dockGrayHatOperationReady(s) && !dockGrayHatOperationOutcomeClue(s))
+    || (dockEncounterAftermathSourceClue(s) && dockEncounterAftermathSourceClue(s) !== 'dock_gray_hat_scene_lost'
+      && !dockEncounterAftermathOutcomeClue(s))
+    || (hasClue(s, 'dock_gray_hat_retreat_route') && !dockOldYardResolved(s))
+    || (hasClue(s, 'dock_old_yard_night_transfer') && !dockTransferFollowupOutcomeClue(s))) return [];
   return DOCK_CASE_DISPOSITIONS.filter(disposition => s.currentLocation?.locationId === disposition.locationId
     && isLocationUnlocked(s, disposition.locationId)
     && (!disposition.requiredNpcId || isMet(s, disposition.requiredNpcId))
@@ -3560,10 +6731,23 @@ export function getDockCaseDispositions(s: GameState) {
 }
 
 export function dockCaseDispositionIssue(s: GameState, dispositionId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return encounterIssue;
   if (!hasClue(s, 'dock_seq9_conclusion')) return '需要先完成码头失踪案的综合调查。';
   if (dockCaseDispositionClue(s)) return '这份调查记录已经完成处置，不能再选择另一个互斥渠道。';
+  if (dockWitnessCrisisReady(s) && !dockWitnessCrisisOutcomeClue(s)) return '知情人可能正被盯上，需要先决定怎样处理这条口信。';
+  if (dockWitnessFollowupRoute(s) && !dockWitnessFollowupOutcomeClue(s)) return '口信之后还有一处能够核验的事实，需要先把它查清。';
+  if (dockGrayHatOperationReady(s) && !dockGrayHatOperationOutcomeClue(s)) return '灰帽接头人已经成为唯一活线，需要先决定怎样继续盯住他。';
+  if (dockEncounterAftermathSourceClue(s) && dockEncounterAftermathSourceClue(s) !== 'dock_gray_hat_scene_lost'
+    && !dockEncounterAftermathOutcomeClue(s)) return '遭遇已经结束，但现场所得仍需先追索、移交或封存。';
+  if (hasClue(s, 'dock_gray_hat_retreat_route') && !dockOldYardResolved(s)) {
+    return '撤退方向已经指向旧装卸区，需要先完成外围核对、询问和夜间守候。';
+  }
+  if (hasClue(s, 'dock_old_yard_night_transfer') && !dockTransferFollowupOutcomeClue(s)) {
+    return '无编号篷车已经成为新的活线，需要先选择跟踪、检查遗留封箱或申请正式截查。';
+  }
   const disposition = DOCK_CASE_DISPOSITIONS.find(candidate => candidate.id === dispositionId);
   if (!disposition) return '当前没有可执行的案件处置。';
   if (!isLocationUnlocked(s, disposition.locationId) || s.currentLocation?.locationId !== disposition.locationId) {
@@ -3603,6 +6787,8 @@ export function performDockCaseDisposition(s: GameState, dispositionId: string):
 
 /** 主动调查一个固定异常，不依赖随机事件池；玩家也可以永远不触碰它。 */
 export function traceClocktowerAnomaly(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能去追查钟楼异响。' };
   if (isBeyonder(s)) return { ok: false, msg: '这条记录只属于尚未接触非凡世界的普通人。' };
   if (s.awareness !== 'ordinary') return { ok: false, msg: '你已经确认过异常存在，无需重复调查。' };
@@ -3691,6 +6877,8 @@ export function officialScreeningMissing(s: GameState): string[] {
 }
 
 export function officialStabilizationIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (isBeyonder(s)) return '已成为非凡者，不能使用凡人候选稳定观察。';
   if (s.awareness !== 'informed') return '只有已向伊芙琳上报并确认异常的知情者才能申请稳定观察。';
   const lead = organizationRoute(s, 'nightwatch');
@@ -3829,6 +7017,8 @@ export function hasTradeFairInvitation(s: GameState): boolean {
 }
 
 export function tradeFairInvitationIssue(s: GameState, sourceId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (isBeyonder(s)) return '这条通用入门交易路线只面向尚未成为非凡者的人。';
   if (s.atWork) return '工作期间不能索取地下交易会邀请。';
   if (hasTradeFairInvitation(s)) return '你已经持有一份可核验的交易会担保邀请。';
@@ -3872,6 +7062,8 @@ export function isTradeFairOpen(s: GameState): boolean {
 }
 
 export function tradeFairAccessIssue(s: GameState): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (!hasTradeFairInvitation(s)) return '你没有可核验的交易会邀请与担保日程。';
   if (s.currentLocation?.locationId !== 'black_market') return '需要亲自抵达邀请指定的黑市后巷。';
   if (!isTradeFairOpen(s)) return `交易会只在${TRADE_FAIR_SCHEDULE_LABEL}营业。`;
@@ -3896,6 +7088,8 @@ export function getTradeFairCatalog(s: GameState): readonly TradeFairProductDef[
 }
 
 export function tradeFairProductIssue(s: GameState, productId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   const access = tradeFairAccessIssue(s);
   if (access) return access;
   if (isBeyonder(s)) return '成为非凡者后不能再使用凡人序列9入门货单。';
@@ -3981,6 +7175,8 @@ export function appraiseCharacteristicAtTradeFair(s: GameState, itemId: string):
 }
 
 export function tradeFairConfirmationIssue(s: GameState, pathwayId: string, mode: TradeFairConfirmationMode): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (!isAtHome(s)) return '请先回到住处，在安全环境中完成不可逆的途径确认。';
   if (isBeyonder(s)) return '你已经是非凡者。';
   if (!hasTradeFairInvitation(s)) return '缺少可核验的交易会担保来源。';
@@ -4026,20 +7222,38 @@ export function confirmTradeFairPathway(s: GameState, pathwayId: string, mode: T
   return { ok: true };
 }
 
-function extractCharacteristicFromConfirmedDeath(s: GameState, sourceId: string): boolean {
+function recordConfirmedBeyonderDeath(s: GameState, sourceId: string, cause: 'event' | 'hunt', settlementAttemptId?: string): boolean {
   const source = BEYONDER_DEATH_SOURCES.find(candidate => candidate.id === sourceId);
   const activeEvent = currentEvent(s);
-  if (!source || activeEvent?.id !== source.eventId || !isTradeFairOpen(s)
-    || s.confirmedBeyonderDeaths.some(record => record.sourceId === sourceId)) return false;
+  if (!source || s.confirmedBeyonderDeaths.some(record => record.sourceId === sourceId || record.npcId === source.npcId)) return false;
+  if (cause === 'event' && (!source.eventId || activeEvent?.id !== source.eventId || !isTradeFairOpen(s))) return false;
+  if (cause === 'hunt') {
+    const hunt = s.activeHunt;
+    const target = source.huntTargetId ? huntTargetDef(source.huntTargetId) : undefined;
+    const allPrepared = hunt && Object.values(hunt.preparations).every(Boolean);
+    const authorizedPhase = hunt?.phase === 'ready'
+      || (hunt?.phase === 'combat' && hunt.confrontationCause === 'failed_strike');
+    const settlement = settlementAttemptId ? s.checkAttempts.find(attempt => attempt.attemptId === settlementAttemptId) : undefined;
+    const validSettlement = settlement?.outcome === 'passed'
+      && (settlement.checkId === 'hunt_masked_smuggler_strike' || settlement.checkId === 'hunt_masked_smuggler_combat');
+    if (!hunt || !target || hunt.targetId !== target.id || !allPrepared || !authorizedPhase || !validSettlement) return false;
+  }
   s.confirmedBeyonderDeaths.push({
     sourceId, npcId: source.npcId, pathwayId: source.pathwayId, sequence: 9,
-    characteristicItemId: source.characteristicItemId, confirmedDay: s.day, confirmedHour: s.hour,
+    characteristicItemId: source.characteristicItemId, confirmedDay: s.day, confirmedHour: s.hour, cause,
+    ...(cause === 'hunt' ? { settlementAttemptId } : {}),
   });
   s.items[source.characteristicItemId] = (s.items[source.characteristicItemId] ?? 0) + 1;
   return true;
 }
 
+function extractCharacteristicFromConfirmedDeath(s: GameState, sourceId: string): boolean {
+  return recordConfirmedBeyonderDeath(s, sourceId, 'event');
+}
+
 export function buyItem(s: GameState, itemId: string, price: number, sellerId?: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能外出交易。' };
@@ -4090,11 +7304,17 @@ export function getShopInventory(s: GameState, shopId: string): { itemId: string
 }
 
 export function buyFromShop(s: GameState, shopId: string, itemId: string): ActionResult {
+  const woundIssue = woundActionIssue(s, 'shop');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   const encounterIssue = activeEncounterIssue(s);
   if (encounterIssue) return { ok: false, msg: encounterIssue };
   const shop = SHOP_DEFS.find(candidate => candidate.id === shopId);
   if (!shop || s.currentLocation?.locationId !== shop.locationId) return { ok: false, msg: '需要亲自到对应店铺才能购买。' };
   if (!shopOpenAt(shopId, s.hour)) return { ok: false, msg: '店铺现在没有营业。' };
+  const identityStatus = getAreaSuspicionStatus(s, shop.locationId);
+  if (isPublicIdentityCheckpoint(shop.locationId) && identityStatus.value >= 70 && !getIdentityCoverStatus(s).active) {
+    return { ok: false, msg: '店主正在按巡查告示核对可疑者特征，不愿在身份没有说明清楚时继续交易。' };
+  }
   const offered = getShopInventory(s, shopId).find(item => item.itemId === itemId);
   if (!offered) return { ok: false, msg: '这件商品不在当前固定货单中。' };
   if (s.pence < offered.price) return { ok: false, msg: '钱不够。' };
@@ -4185,6 +7405,8 @@ export function canDrink(s: GameState, pathwayId: string): { ok: boolean; missin
 }
 
 export function drinkPotion(s: GameState, pathwayId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.currentLocation) return { ok: false, msg: '需要先回到住处或正式监督场所再服食魔药。' };
   if (s.atWork) return { ok: false, msg: '工作期间不能服食魔药。' };
   const check = canDrink(s, pathwayId);
@@ -4348,6 +7570,8 @@ function requirementIssue(s: GameState, requirement: SceneRequirement): string |
 }
 
 export function actingActionIssue(s: GameState, actionId: string): string | null {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return criticalIssue;
   if (s.atWork) return '工作期间不能进行扮演场景。';
   if (s.sequence !== 9 || !s.pathwayId) return '只有序列9可以积累本阶段扮演证据。';
   const def = SEQUENCE8_ACTING_DEFS[s.pathwayId as keyof typeof SEQUENCE8_ACTING_DEFS];
@@ -4414,6 +7638,8 @@ export function sequence8ReviewMissing(s: GameState): string[] {
 }
 
 export function requestSeq8Review(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能提交晋升审核。' };
   const missing = sequence8ReviewMissing(s);
   if (missing.length) return { ok: false, msg: missing.join('、') };
@@ -4428,6 +7654,8 @@ export function requestSeq8Review(s: GameState): ActionResult {
 }
 
 export function completeSeq8Review(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能参加组织复核。' };
   const progress = ensureSequence8Progress(s);
   if (!progress || progress.stage !== 'review_pending' || !s.pathwayId) return { ok: false, msg: '尚未提交或当前没有待完成的序列8审核。' };
@@ -4445,6 +7673,8 @@ export function completeSeq8Review(s: GameState): ActionResult {
 }
 
 export function planSeq8Ritual(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.currentLocation) return { ok: false, msg: '需要先回到安全住处再规划稳定化情境。' };
   if (s.atWork) return { ok: false, msg: '工作期间不能制定稳定化情境计划。' };
   const progress = ensureSequence8Progress(s);
@@ -4457,6 +7687,8 @@ export function planSeq8Ritual(s: GameState): ActionResult {
 }
 
 export function performSeq8RitualStep(s: GameState, stepId: string): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.currentLocation) return { ok: false, msg: '需要先回到安全住处再准备稳定化情境。' };
   if (s.atWork) return { ok: false, msg: '工作期间不能准备稳定化情境。' };
   const progress = ensureSequence8Progress(s);
@@ -4481,7 +7713,7 @@ export function performSeq8RitualStep(s: GameState, stepId: string): ActionResul
 
 export function canPromote(s: GameState): { ok: boolean; missing: string[] } {
   if (!isBeyonder(s)) return { ok: false, missing: ['普通人无法晋升'] };
-  if (s.sequence !== 9) return { ok: false, missing: ['Demo 目前只开放到序列8'] };
+  if (s.sequence !== 9) return { ok: false, missing: ['目前只开放到序列8'] };
   const pw = findPathway(s.pathwayId);
   const progress = ensureSequence8Progress(s);
   if (!pw || !progress) return { ok: false, missing: ['途径进度数据缺失'] };
@@ -4496,6 +7728,8 @@ export function canPromote(s: GameState): { ok: boolean; missing: string[] } {
 }
 
 export function doPromote(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.currentLocation) return { ok: false, msg: '需要先回到安全住处再进行晋升。' };
   if (s.atWork) return { ok: false, msg: '工作期间不能举行晋升仪式。' };
   const check = canPromote(s);
@@ -4525,6 +7759,585 @@ export function doPromote(s: GameState): ActionResult {
   return { ok: true };
 }
 
+// ============ 有准备的猎杀与后果 ============
+type HuntActionId = 'identify' | HuntPreparationKey | 'strike';
+
+const HUNT_PREPARATION_META: Record<HuntPreparationKey, { checkId: string; clueId: string; label: string }> = {
+  routine: { checkId: 'hunt_masked_smuggler_routine', clueId: 'masked_smuggler_routine', label: '观察作息与离场习惯' },
+  secludedMeeting: { checkId: 'hunt_masked_smuggler_isolation', clueId: 'masked_smuggler_secluded_meeting', label: '安排只有两人的会面' },
+  escapeRoute: { checkId: 'hunt_masked_smuggler_escape_route', clueId: 'masked_smuggler_escape_route', label: '勘察避开巡夜人的退路' },
+  ambush: { checkId: 'hunt_masked_smuggler_ambush', clueId: 'masked_smuggler_ambush_position', label: '选择能够取得先手的位置' },
+};
+
+const freshActiveHunt = (targetId: string): ActiveHunt => ({
+  targetId, phase: 'investigating', identityConfirmed: false, suspicion: 0,
+  preparations: { routine: false, secludedMeeting: false, escapeRoute: false, ambush: false },
+});
+
+function huntTargetAvailableIssue(s: GameState, target: HuntTargetDef): string | null {
+  if (huntTargetIsDead(s, target)) return '这个目标已经死亡。';
+  if (s.flags[`hunt_target_departed:${target.id}`]) return '目标已经离开廷根，原有计划失效。';
+  if (!isMet(s, target.npcId)) return '你还没有与这个人正式接触，无法建立可靠计划。';
+  if (s.currentLocation?.locationId !== target.locationId) return '必须亲临目标活动的地点。';
+  const npc = findAnyNPC(s, target.npcId);
+  if (!npc || !npcAvailable(npc, s.day, s.hour) || !isTradeFairOpen(s)) return '目标此刻不在能够接触的场合。';
+  return null;
+}
+
+function huntCheckId(action: HuntActionId): string {
+  if (action === 'identify') return 'hunt_masked_smuggler_identify';
+  if (action === 'strike') return 'hunt_masked_smuggler_strike';
+  return HUNT_PREPARATION_META[action].checkId;
+}
+
+export function huntActionIssue(s: GameState, targetId: string, action: HuntActionId): string | null {
+  const encounterIssue = activeEncounterIssue(s);
+  if (encounterIssue) return encounterIssue;
+  const woundIssue = woundActionIssue(s, 'active_hunt');
+  if (woundIssue) return woundIssue;
+  if (s.atWork) return '工作期间不能跟踪或接触目标。';
+  const target = huntTargetDef(targetId);
+  if (!target) return '没有可核验的目标资料。';
+  const availableIssue = huntTargetAvailableIssue(s, target);
+  if (availableIssue) return availableIssue;
+  const hunt = s.activeHunt;
+  if (hunt && hunt.targetId !== targetId) return '你已经在调查另一个目标。';
+  if (!hunt && action !== 'identify') return '先确认对方是否真的不是普通人。';
+  if (!hunt && s.nemesis) return '已有敌人在暗中盯着你；此时再制造新的仇家，退路无法保证。';
+  if (action === 'identify' && hunt?.identityConfirmed) return '对方的非凡者身份已经由多项迹象交叉确认。';
+  if (action !== 'identify' && !hunt?.identityConfirmed) return '现有证据还不能确认对方是非凡者。';
+  if (action !== 'identify' && action !== 'strike' && hunt!.preparations[action]) return '这一项准备已经完成。';
+  if (action !== 'identify' && action !== 'routine' && action !== 'strike' && !hunt!.preparations.routine) return '先观察目标的作息与离场习惯。';
+  if (action === 'strike' && (!Object.values(hunt!.preparations).every(Boolean) || hunt!.phase !== 'ready')) {
+    return '必须先确认单独会面、撤离路线和偷袭先手，任何一项缺失都不能动手。';
+  }
+  const internal = evaluateExplorationCheckInternal(s, huntCheckId(action));
+  if (!internal.eligible && internal.reason !== 'insufficient') return '当前线索或现场条件不足。';
+  const repeatedIssue = repeatedBlockedExplorationIssue(s, internal);
+  if (repeatedIssue) return repeatedIssue;
+  const minimumEnergy = action === 'strike' ? 30 : 12;
+  if (s.stats.energy <= energyCost(s, minimumEnergy)) return '你当前的状态不足以维持这一步行动。';
+  return null;
+}
+
+function raiseHuntSuspicion(s: GameState, hunt: ActiveHunt): { before: number; after: number } {
+  const before = hunt.suspicion;
+  hunt.suspicion = Math.min(3, hunt.suspicion + 1);
+  if (hunt.suspicion >= 2) {
+    hunt.phase = 'confronted';
+    hunt.confrontationCause = 'alerted';
+    addLog(s, '目标突然停止离场，转身堵住你回到灯火下的方向。先前的观察已经引起警觉，现在只能设法脱身。', 'bad');
+  }
+  return { before, after: hunt.suspicion };
+}
+
+export function investigateHuntTarget(s: GameState, targetId: string): ActionResult {
+  const issue = huntActionIssue(s, targetId, 'identify');
+  if (issue) return { ok: false, msg: issue };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'hunt_masked_smuggler_identify', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hunt = s.activeHunt ??= freshActiveHunt(targetId);
+  const effects = applyEffects(s, [{ k: 'energy', v: -energyCost(s, passed ? 10 : 6) }]);
+  const receipt: CheckReceipt = { hoursElapsed: passed ? 2 : 1, effects: [receiptEntry('energy', effects[0]), hoursReceipt(passed ? 2 : 1)] };
+  if (passed) {
+    hunt.identityConfirmed = true;
+    hunt.phase = 'preparing';
+    receipt.effects.push({ id: 'hunt:identity', applied: true, before: false, after: true });
+    addLog(s, '你把对方避开的象征、异常准确的判断和交易时残留的灵性反应逐项交叉：现有证据足以确认他不是普通人，但仍不能凭此知道具体途径。', 'good');
+  } else {
+    const suspicion = raiseHuntSuspicion(s, hunt);
+    receipt.effects.push({ id: 'hunt:suspicion', applied: true, ...suspicion, actualDelta: suspicion.after - suspicion.before });
+    addLog(s, '现有观察不足以排除精心训练的江湖手法。继续盯同一处细节只会暴露自己，需要先补充能力或调查经验。', 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, passed ? 2 : 1);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function prepareHuntStep(s: GameState, targetId: string, step: HuntPreparationKey): ActionResult {
+  const issue = huntActionIssue(s, targetId, step);
+  if (issue) return { ok: false, msg: issue };
+  const meta = HUNT_PREPARATION_META[step];
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, meta.checkId, startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const hunt = s.activeHunt!;
+  const effects = applyEffects(s, [{ k: 'energy', v: -energyCost(s, passed ? 10 : 6) }]);
+  const receipt: CheckReceipt = { hoursElapsed: passed ? 2 : 1, effects: [receiptEntry('energy', effects[0]), hoursReceipt(passed ? 2 : 1)] };
+  if (passed) {
+    hunt.preparations[step] = true;
+    acquireClue(s, meta.clueId, step === 'routine' || step === 'secludedMeeting' ? 'npc' : 'location', step === 'routine' || step === 'secludedMeeting' ? huntTargetDef(targetId)!.npcId : huntTargetDef(targetId)!.locationId);
+    receipt.effects.push({ id: `clue:${meta.clueId}`, applied: true, before: false, after: true });
+    if (Object.values(hunt.preparations).every(Boolean)) hunt.phase = 'ready';
+    addLog(s, `${meta.label}：准备完成。${hunt.phase === 'ready' ? '目标、单独会面、退路与先手都已核对；现在才具备动手条件。' : '这只是计划的一部分，还不能据此动手。'}`, 'good');
+  } else {
+    const suspicion = raiseHuntSuspicion(s, hunt);
+    receipt.effects.push({ id: 'hunt:suspicion', applied: true, ...suspicion, actualDelta: suspicion.after - suspicion.before });
+    addLog(s, `${meta.label}没有形成可靠方案。你及时停手，没有把猜测写成“已经准备好”。`, 'info');
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, passed ? 2 : 1);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+function completeHuntDeath(s: GameState, target: HuntTargetDef, settlementAttemptId: string, initiatingAttemptId?: string): boolean {
+  if (!recordConfirmedBeyonderDeath(s, target.deathSourceId, 'hunt', settlementAttemptId)) return false;
+  const settlementAttempt = s.checkAttempts.find(attempt => attempt.attemptId === settlementAttemptId);
+  if (!settlementAttempt) return false;
+  const infamyGain = 25;
+  const lawAttentionGain = 8;
+  s.infamy = Math.max(0, s.infamy + infamyGain);
+  s.lawAttention = Math.max(0, s.lawAttention + lawAttentionGain);
+  s.murderRecords.push({
+    targetId: target.id, npcId: target.npcId, deathSourceId: target.deathSourceId,
+    day: s.day, hour: s.hour, infamyGain, lawAttentionGain, avengerName: target.avenger.name,
+    settlementAttemptId, ...(initiatingAttemptId ? { initiatingAttemptId } : {}),
+  });
+  recordAreaSuspicion(s, target.locationId, 'hunt_death', 20, settlementAttempt);
+  s.relations[target.npcId] = -100;
+  s.nemesis = structuredClone(target.avenger);
+  addLog(s, '短促的冲突结束后，尸体旁缓慢析出一团异常残留。你只能确认它来自刚死去的非凡者；在可信鉴定前，不能判断途径，更不能直接服食。', 'bad');
+  addLog(s, '现场没有目击者，预先记录的退路也避开了巡夜人，但一个熟人的失踪不会永远无人追问。地下圈子开始流传关于你的低语。', 'bad');
+  addLog(s, '几天内，你反复看到同一双灰色手套出现在远处。死者的朋友已经沿交易记录追了上来。', 'bad');
+  s.activeHunt = null;
+  return true;
+}
+
+export function executeHunt(s: GameState, targetId: string): ActionResult {
+  const issue = huntActionIssue(s, targetId, 'strike');
+  if (issue) return { ok: false, msg: issue };
+  const target = huntTargetDef(targetId)!;
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'hunt_masked_smuggler_strike', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  consumeRevolverRound(s);
+  const passed = internal.outcome === 'passed';
+  const effects = applyEffects(s, [{ k: 'energy', v: -energyCost(s, 25) }, { k: 'san', v: passed ? -6 : -4 }]);
+  const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', effects[0]), receiptEntry('san', effects[1]), hoursReceipt(1)] };
+  advanceHours(s, 1);
+  if (passed) {
+    const beforeInfamy = s.infamy;
+    const beforeLaw = s.lawAttention;
+    receipt.effects.push(
+      { id: 'hunt:death', applied: true, before: false, after: true },
+      { id: 'infamy', applied: true, before: beforeInfamy, after: beforeInfamy + 25, actualDelta: 25 },
+      { id: 'law_attention', applied: true, before: beforeLaw, after: beforeLaw + 8, actualDelta: 8 },
+      { id: 'nemesis', applied: true, before: false, after: true },
+    );
+  } else {
+    s.activeHunt!.phase = 'combat';
+    s.activeHunt!.confrontationCause = 'failed_strike';
+    s.activeHunt!.combatRound = freshCombatRound(true, s.activeHunt!.preparations.ambush ? 1 : 0);
+    receipt.effects.push({ id: 'hunt:combat', applied: true, before: 'ready', after: 'combat' });
+    addLog(s, '偷袭没有按计划结束冲突。目标避开要害并封住出口，先手已经失去，必须正面应战。', 'bad');
+  }
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (passed) {
+    if (!completeHuntDeath(s, target, attempt.attemptId)) return { ok: false, msg: '死亡来源无法完成权威结算。' };
+  } else {
+    s.activeHunt!.initiatingAttemptId = attempt.attemptId;
+  }
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function getHuntPlanView(s: GameState) {
+  const hunt = s.activeHunt;
+  if (!hunt) {
+    const target = HUNT_TARGET_DEFS.find(candidate => s.currentLocation?.locationId === candidate.locationId
+      && isMet(s, candidate.npcId) && !huntTargetIsDead(s, candidate) && !s.flags[`hunt_target_departed:${candidate.id}`]);
+    if (!target) return null;
+    return { targetId: target.id, label: target.publicLabel, identityConfirmed: false, phase: 'investigating' as const, suspicionSignal: null, preparations: freshActiveHunt(target.id).preparations };
+  }
+  const target = huntTargetDef(hunt.targetId);
+  if (!target) return null;
+  return {
+    targetId: target.id, label: target.publicLabel, identityConfirmed: hunt.identityConfirmed, phase: hunt.phase,
+    suspicionSignal: hunt.suspicion === 0 ? null : hunt.suspicion === 1 ? '对方开始留意周围反复出现的面孔。' : '对方已经察觉你的调查。',
+    preparations: { ...hunt.preparations },
+  };
+}
+
+export function getHuntEncounterView(s: GameState) {
+  const hunt = s.activeHunt;
+  const target = hunt ? huntTargetDef(hunt.targetId) : undefined;
+  if (!hunt || !target || (hunt.phase !== 'confronted' && hunt.phase !== 'combat')) return null;
+  return hunt.phase === 'combat'
+    ? { phase: 'combat' as const, title: '先手已经失去', text: '目标不再掩饰异常能力。你只能先挡住这次攻击，再决定能否活着离开。', actionLabel: '正面应战并寻找结束机会',
+      combatRound: hunt.combatRound ? {
+        round: hunt.combatRound.round, finisherReady: hunt.combatRound.finisherReady,
+        signal: combatRoundSignal(hunt.combatRound),
+        enemyIntent: enemyIntentSignal('seer_smuggler', hunt.combatRound.round),
+      } : { round: 2, finisherReady: true, signal: '最危险的一轮已经过去，现在必须决定如何结束冲突。', enemyIntent: '对方正在寻找下一次预判的落点。' } }
+    : { phase: 'escape_choice' as const, title: '调查引起了警觉', text: '目标堵住通向灯火的方向，却还没有直接动手。若能利用既有退路脱身，这场冲突仍可避免。', actionLabel: '设法脱身' };
+}
+
+function markHuntTargetDeparted(s: GameState, target: HuntTargetDef, text: string) {
+  s.flags[`hunt_target_departed:${target.id}`] = true;
+  s.relations[target.npcId] = -100;
+  s.activeHunt = null;
+  s.currentLocation = null;
+  addLog(s, text, 'bad');
+}
+
+export function attemptHuntEscape(s: GameState): ActionResult {
+  const hunt = s.activeHunt;
+  const target = hunt ? huntTargetDef(hunt.targetId) : undefined;
+  if (!hunt || !target || hunt.phase !== 'confronted') return { ok: false, msg: '目前没有需要处理的猎杀对峙。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'hunt_masked_smuggler_escape', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  const passed = internal.outcome === 'passed';
+  const effects = applyEffects(s, passed ? [{ k: 'energy', v: -12 }] : [{ k: 'energy', v: -16 }, { k: 'san', v: -3 }]);
+  const receipt: CheckReceipt = { hoursElapsed: 1, effects: effects.map((effect, index) => receiptEntry(index === 0 ? 'energy' : 'san', effect)).concat(hoursReceipt(1)) };
+  if (passed) {
+    receipt.effects.push({ id: 'hunt:escaped', applied: true, before: 'confronted', after: 'departed' });
+    markHuntTargetDeparted(s, target, '你借人流和事先看过的巷口甩开了对方。天亮前，蒙面货商撤离廷根；这条猎杀路线已经断掉。');
+  } else {
+    receipt.effects.push({ id: 'hunt:combat', applied: true, before: 'confronted', after: 'combat' });
+    const impact = applyCombatImpact(s, 22, 6, 38);
+    if (rescueFromFatalInjury(s, '你的退路被封死，第一轮袭击便让你重伤倒地。')) {
+      markHuntTargetDeparted(s, target, '附近搬运工的呼喊惊退了目标；等你醒来时，对方已经离开廷根。');
+    } else {
+      hunt.phase = 'combat';
+      hunt.combatRound = freshCombatRound(false);
+      addLog(s, `你的转向被提前看穿，损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值。目标封住最后一条退路，冲突已经无法避免。`, 'bad');
+    }
+  }
+  recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  advanceHours(s, 1);
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function huntCombatExchangeIssue(s: GameState, action: CombatRoundAction): string | null {
+  const hunt = s.activeHunt;
+  if (!hunt || hunt.phase !== 'combat') return '当前没有正在进行的正面交锋。';
+  return combatExchangeIssue(s, hunt.combatRound, action);
+}
+
+export function performHuntCombatExchange(s: GameState, action: CombatRoundAction): ActionResult {
+  const hunt = s.activeHunt;
+  const target = hunt ? huntTargetDef(hunt.targetId) : undefined;
+  if (!hunt || !target || hunt.phase !== 'combat' || !hunt.combatRound) return { ok: false, msg: '当前没有正在进行的正面交锋。' };
+  const result = performCombatExchange(s, hunt.combatRound, action, Math.floor(target.power / 3) + 2, [], undefined, 'seer_smuggler');
+  if (!result.ok) return result;
+  if (rescueFromFatalInjury(s, '正面交锋令你重伤失去意识。')) {
+    markHuntTargetDeparted(s, target, '路过者的呼喊惊退了目标；等你恢复意识时，对方已经离开廷根。');
+  }
+  return { ok: true, outcome: hunt.combatRound?.finisherReady ? 'passed' : 'blocked' };
+}
+
+export function performHuntCombatTechnique(s: GameState, techniqueId: string): ActionResult {
+  const hunt = s.activeHunt;
+  const target = hunt ? huntTargetDef(hunt.targetId) : undefined;
+  const technique = combatTechniqueById(s, techniqueId);
+  if (!hunt || !target || hunt.phase !== 'combat' || !hunt.combatRound || !technique) return { ok: false, msg: '当前无法使用这项战术。' };
+  const result = performCombatExchange(s, hunt.combatRound, technique.effect.baseAction, Math.floor(target.power / 3) + 2, [], technique, 'seer_smuggler');
+  if (!result.ok) return result;
+  if (rescueFromFatalInjury(s, '正面交锋令你重伤失去意识。')) markHuntTargetDeparted(s, target, '路过者的呼喊惊退了目标；等你恢复意识时，对方已经离开廷根。');
+  return { ok: true, outcome: hunt.combatRound?.finisherReady ? 'passed' : 'blocked' };
+}
+
+export function resolveHuntCombat(s: GameState): ActionResult {
+  const hunt = s.activeHunt;
+  const target = hunt ? huntTargetDef(hunt.targetId) : undefined;
+  if (!hunt || !target || hunt.phase !== 'combat') return { ok: false, msg: '目前没有需要结算的猎杀战斗。' };
+  if (hunt.combatRound && !hunt.combatRound.finisherReady) return { ok: false, msg: '还没有形成结束冲突的机会；先完成眼前的交锋。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const request = explorationCheckRequest(s, 'hunt_masked_smuggler_combat', startedAt);
+  const internal = evaluateCheck(EXPLORATION_CHECKS, request);
+  consumeRevolverRound(s);
+  const passed = internal.outcome === 'passed';
+  const effects = applyEffects(s, passed
+    ? [{ k: 'energy', v: -25 }, { k: 'san', v: -4 }]
+    : [{ k: 'energy', v: -35 }, { k: 'san', v: -10 }]);
+  const receipt: CheckReceipt = { hoursElapsed: 1, effects: [receiptEntry('energy', effects[0]), receiptEntry('san', effects[1]), hoursReceipt(1), { id: passed ? 'hunt:combat_resolved' : 'hunt:survived', applied: true }] };
+  const impact = applyCombatImpact(s, passed ? 24 : 36, passed ? 8 : 14, passed ? 40 : 46);
+  const rescued = rescueFromFatalInjury(s, '你在正面冲突中伤重失去意识，路过者把你送去救治。');
+  advanceHours(s, 1);
+  const initiatingAttemptId = hunt.initiatingAttemptId;
+  const attempt = recordCheckAttempt(s, internal, request.context, receipt, startedAt);
+  if (rescued) {
+    markHuntTargetDeparted(s, target, `等你恢复意识时，目标早已离开廷根；这场战斗令你损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值。`);
+  } else if (passed && hunt.confrontationCause === 'failed_strike') {
+    if (!initiatingAttemptId || !completeHuntDeath(s, target, attempt.attemptId, initiatingAttemptId)) {
+      return { ok: false, msg: '战斗缺少可核验的起因，无法结算死亡与非凡特性。' };
+    }
+  } else if (passed) {
+    markHuntTargetDeparted(s, target, '你挡开攻击后没有追击，冲进巡夜人的灯光范围。目标当夜离开廷根，没有死亡，也没有留下可取得的非凡特性。');
+  } else {
+    markHuntTargetDeparted(s, target, '你带伤撑到有人经过的街口。目标不愿惊动执法者，没有继续追击；他随后离开廷根，你也没有得到任何战利品。');
+  }
+  return { ok: true, outcome: passed ? 'passed' : 'blocked' };
+}
+
+export function infamyLabel(value: number): string {
+  if (value < 20) return '没有成形的恶名';
+  if (value < 50) return '地下圈子有危险传闻';
+  return '恶名已经传开';
+}
+
+export function lawAttentionLabel(value: number): string {
+  if (value < 10) return '尚无明确调查';
+  if (value < 30) return '执法者开始留意';
+  return '已经进入调查视线';
+}
+
+const attemptEndedAbsoluteHour = (attempt: CheckAttemptRecord) =>
+  (attempt.startedDay - 1) * 24 + attempt.startedHour + attempt.receipt.hoursElapsed;
+
+const murderAbsoluteHour = (record: MurderRecord) => (record.day - 1) * 24 + record.hour;
+
+function appliedReceiptEffect(attempt: CheckAttemptRecord, effectId: string): boolean {
+  return attempt.receipt.effects.some(effect => effect.id === effectId && effect.applied === true);
+}
+
+function receiptActualDelta(attempt: CheckAttemptRecord, effectId: string): number | null {
+  const effect = attempt.receipt.effects.find(candidate => candidate.id === effectId && candidate.applied === true);
+  return typeof effect?.actualDelta === 'number' ? effect.actualDelta : null;
+}
+
+function authoritativeDockPreparationAttempt(
+  s: GameState,
+  preparationId: DockCombatPreparationId,
+  attempt: CheckAttemptRecord,
+  requireCurrentPrerequisites = true,
+): boolean {
+  const def = DOCK_COMBAT_PREPARATIONS.find(candidate => candidate.id === preparationId);
+  if (!def || attempt.checkId !== def.checkId || attempt.outcome !== 'passed'
+    || (requireCurrentPrerequisites && !hasDockCombatPreparationPrerequisites(s, preparationId))) return false;
+  const energy = attempt.receipt.effects.find(effect => effect.id === 'energy');
+  const hours = attempt.receipt.effects.find(effect => effect.id === 'hours');
+  const preparation = attempt.receipt.effects.find(effect => effect.id === `combat-prep:${preparationId}`);
+  const expectedEnergyCost = energyCostAtHour(s, def.energyCost, attempt.startedHour);
+  return energy?.applied === true && energy.actualDelta === -expectedEnergyCost
+    && typeof energy.before === 'number' && typeof energy.after === 'number'
+    && energy.before > expectedEnergyCost && energy.after >= 1
+    && energy.after - energy.before === energy.actualDelta
+    && hours?.applied === true && hours.actualDelta === 1 && hours.before === 0 && hours.after === 1
+    && preparation?.applied === true && preparation.before === false && preparation.after === true;
+}
+
+function dockPreparationsBeforeAttempt(s: GameState, settlement: CheckAttemptRecord): DockCombatPreparationId[] {
+  const settlementStart = (settlement.startedDay - 1) * 24 + settlement.startedHour;
+  return DOCK_COMBAT_PREPARATIONS.flatMap(def => s.checkAttempts.some(attempt =>
+    authoritativeDockPreparationAttempt(s, def.id, attempt, false)
+    && attemptEndedAbsoluteHour(attempt) <= settlementStart) ? [def.id] : []);
+}
+
+function canonicalAreaSuspicionRecord(s: GameState, raw: unknown): AreaSuspicionRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<AreaSuspicionRecord>;
+  if (typeof value.settlementAttemptId !== 'string' || typeof value.source !== 'string'
+    || !validAreaId(value.areaId ?? '') || !Number.isInteger(value.amount)
+    || !Number.isInteger(value.day) || !Number.isInteger(value.hour)) return null;
+  const attempt = s.checkAttempts.find(candidate => candidate.attemptId === value.settlementAttemptId);
+  if (!attempt || value.day !== attempt.startedDay || value.hour !== attempt.startedHour) return null;
+  const dockSources: Record<Exclude<AreaSuspicionSource, 'hunt_death'>, string> = {
+    dock_escape_failed: 'dock_manifest_cleaner_escape',
+    dock_defensive_physical: 'dock_manifest_cleaner_combat',
+    dock_active_physical: 'dock_manifest_cleaner_active_combat',
+    dock_defensive_spiritual: 'dock_manifest_cleaner_spiritual_combat',
+    dock_active_spiritual: 'dock_manifest_cleaner_active_spiritual_combat',
+  };
+  if (value.source !== 'hunt_death' && Object.hasOwn(dockSources, value.source)) {
+    const source = value.source as Exclude<AreaSuspicionSource, 'hunt_death'>;
+    const resolutionEffect = source === 'dock_escape_failed'
+      ? attempt.outcome === 'blocked' && appliedReceiptEffect(attempt, 'encounter:combat')
+      : appliedReceiptEffect(attempt, attempt.outcome === 'passed' ? 'threat:resolved' : 'encounter:survived');
+    const expectedAmount = dockAreaSuspicionAmount(source, dockPreparationsBeforeAttempt(s, attempt));
+    if (value.areaId !== 'docks' || attempt.checkId !== dockSources[source] || !resolutionEffect
+      || value.amount !== expectedAmount) return null;
+    return {
+      id: `${source}:${attempt.attemptId}`, areaId: 'docks', source, amount: expectedAmount,
+      day: attempt.startedDay, hour: attempt.startedHour, settlementAttemptId: attempt.attemptId,
+    };
+  }
+  if (value.source !== 'hunt_death') return null;
+  const murder = s.murderRecords.find(record => record.settlementAttemptId === attempt.attemptId);
+  const target = murder ? huntTargetDef(murder.targetId) : undefined;
+  if (!murder || !target || value.areaId !== target.locationId || value.amount !== 20) return null;
+  return {
+    id: `hunt_death:${attempt.attemptId}`, areaId: target.locationId, source: 'hunt_death', amount: 20,
+    day: attempt.startedDay, hour: attempt.startedHour, settlementAttemptId: attempt.attemptId,
+  };
+}
+
+function areaSuspicionSemanticKey(s: GameState, record: AreaSuspicionRecord): string | null {
+  if (record.source === 'dock_escape_failed') return 'dock_manifest_cleaner:escape_failed';
+  if (record.source.startsWith('dock_')) return 'dock_manifest_cleaner:combat_resolution';
+  const murder = s.murderRecords.find(candidate => candidate.settlementAttemptId === record.settlementAttemptId);
+  return murder ? `hunt_death:${murder.targetId}` : null;
+}
+
+function authoritativeIdentityResourceDelta(attempt: CheckAttemptRecord, effectId: string, expected: number) {
+  const effect = attempt.receipt.effects.find(candidate => candidate.id === effectId);
+  return effect?.applied === true && effect.actualDelta === expected
+    && typeof effect.before === 'number' && typeof effect.after === 'number'
+    && effect.after - effect.before === expected;
+}
+
+function canonicalIdentityTraceDiscovery(s: GameState, raw: unknown): IdentityTraceDiscovery | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<IdentityTraceDiscovery>;
+  if (typeof value.sourceRecordId !== 'string' || typeof value.investigationAttemptId !== 'string') return null;
+  const source = s.areaSuspicionRecords.find(record => record.id === value.sourceRecordId);
+  const attempt = s.checkAttempts.find(record => record.attemptId === value.investigationAttemptId);
+  if (!source || !attempt) return null;
+  const kind = identityTraceKind(source.source);
+  const rule = IDENTITY_TRACE_RULES[kind];
+  const expectedEnergy = energyCostAtHour(s, 10, attempt.startedHour);
+  if (value.kind !== kind || attempt.checkId !== rule.investigationCheckId || attempt.outcome !== 'passed'
+    || attempt.receipt.hoursElapsed !== 2 || attemptEndedAbsoluteHour(attempt) > absoluteHour(s)
+    || !authoritativeIdentityResourceDelta(attempt, 'energy', -expectedEnergy)
+    || !appliedReceiptEffect(attempt, 'hours') || !appliedReceiptEffect(attempt, 'identity:trace')) return null;
+  return { sourceRecordId: source.id, kind, investigationAttemptId: attempt.attemptId };
+}
+
+function canonicalIdentityTraceResolution(s: GameState, raw: unknown): IdentityTraceResolution | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<IdentityTraceResolution>;
+  if (typeof value.sourceRecordId !== 'string' || typeof value.resolutionAttemptId !== 'string') return null;
+  const source = s.areaSuspicionRecords.find(record => record.id === value.sourceRecordId);
+  const discovery = s.identityTraceDiscoveries.find(record => record.sourceRecordId === value.sourceRecordId);
+  const discoveryAttempt = discovery
+    ? s.checkAttempts.find(record => record.attemptId === discovery.investigationAttemptId) : undefined;
+  const attempt = s.checkAttempts.find(record => record.attemptId === value.resolutionAttemptId);
+  if (!source || !discovery || !discoveryAttempt || !attempt) return null;
+  const kind = identityTraceKind(source.source);
+  const rule = IDENTITY_TRACE_RULES[kind];
+  const expectedHours = kind === 'witness_description' ? 2 : kind === 'public_confrontation' ? 3 : 4;
+  const expectedEnergy = energyCostAtHour(s, 12, attempt.startedHour);
+  if (value.method !== rule.method || value.amount !== rule.reduction
+    || attempt.checkId !== rule.resolutionCheckId || attempt.outcome !== 'passed'
+    || attempt.receipt.hoursElapsed !== expectedHours || attemptEndedAbsoluteHour(attempt) > absoluteHour(s)
+    || attemptEndedAbsoluteHour(discoveryAttempt) > (attempt.startedDay - 1) * 24 + attempt.startedHour
+    || !authoritativeIdentityResourceDelta(attempt, 'energy', -expectedEnergy)
+    || !authoritativeIdentityResourceDelta(attempt, 'money', -rule.fee)
+    || !appliedReceiptEffect(attempt, 'hours') || !appliedReceiptEffect(attempt, 'identity:resolved')) return null;
+  if (kind === 'public_confrontation'
+    && !authoritativeIdentityResourceDelta(attempt, 'item:plain_disguise_kit', -1)) return null;
+  return {
+    sourceRecordId: source.id, method: rule.method, amount: rule.reduction, resolutionAttemptId: attempt.attemptId,
+  };
+}
+
+function canonicalIdentityCover(s: GameState, raw: unknown): IdentityCover | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<IdentityCover>;
+  if (typeof value.preparationAttemptId !== 'string' || !Number.isInteger(value.createdDay)
+    || !Number.isInteger(value.createdHour) || !Number.isInteger(value.expiresAbsoluteHour)) return null;
+  const attempt = s.checkAttempts.find(record => record.attemptId === value.preparationAttemptId);
+  if (!attempt || attempt.checkId !== 'identity_prepare_cover' || attempt.outcome !== 'passed'
+    || attempt.startedDay !== value.createdDay || attempt.startedHour !== value.createdHour
+    || attempt.receipt.hoursElapsed !== 2 || attemptEndedAbsoluteHour(attempt) > absoluteHour(s)
+    || value.expiresAbsoluteHour !== attemptEndedAbsoluteHour(attempt) + 24
+    || !authoritativeIdentityResourceDelta(attempt, 'energy', -energyCostAtHour(s, 8, attempt.startedHour))
+    || !authoritativeIdentityResourceDelta(attempt, 'item:plain_disguise_kit', -1)
+    || !appliedReceiptEffect(attempt, 'hours') || !appliedReceiptEffect(attempt, 'identity:cover')) return null;
+  return value.expiresAbsoluteHour > absoluteHour(s) ? {
+    preparationAttemptId: attempt.attemptId, createdDay: attempt.startedDay, createdHour: attempt.startedHour,
+    expiresAbsoluteHour: value.expiresAbsoluteHour,
+  } : null;
+}
+
+function authoritativeDivinationClubAcceptAttempt(
+  attempts: readonly CheckAttemptRecord[],
+  commissionId: DivinationClubCommissionId,
+): CheckAttemptRecord | null {
+  const def = DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === commissionId);
+  if (!def) return null;
+  return [...attempts].reverse().find(attempt => attempt.checkId === def.acceptCheckId
+    && attempt.outcome === 'passed' && appliedReceiptEffect(attempt, 'energy')
+    && appliedReceiptEffect(attempt, `clue:${def.briefingClueId}`)
+    && appliedReceiptEffect(attempt, 'hours')) ?? null;
+}
+
+function authoritativeDivinationClubCompletionAttempt(
+  attempts: readonly CheckAttemptRecord[],
+  commissionId: DivinationClubCommissionId,
+): CheckAttemptRecord | null {
+  const def = DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === commissionId);
+  if (!def) return null;
+  return [...attempts].reverse().find(attempt => attempt.checkId === def.checkId && attempt.outcome === 'passed'
+    && receiptActualDelta(attempt, 'money') === def.reward
+    && receiptActualDelta(attempt, 'digestion') === def.digestionGain
+    && receiptActualDelta(attempt, 'club_reputation') === def.reputationGain
+    && appliedReceiptEffect(attempt, `clue:${def.outcomeClueId}`)
+    && appliedReceiptEffect(attempt, `acting:club:${def.id}`)) ?? null;
+}
+
+function auditedLegacyDivinationClubCompletions(rawClub: unknown, rawAttempts: unknown): Set<DivinationClubCommissionId> {
+  const result = new Set<DivinationClubCommissionId>();
+  if (!rawClub || typeof rawClub !== 'object' || !Array.isArray(rawAttempts)) return result;
+  const completed = (rawClub as Partial<GameState['divinationClub']>).completedCommissionIds;
+  if (!Array.isArray(completed)) return result;
+  for (const commissionId of ['lost_keepsake', 'journey_omen'] as const) {
+    if (!completed.includes(commissionId)) continue;
+    const def = DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === commissionId)!;
+    const legacyDef = LEGACY_DIVINATION_CLUB_CHECKS.find(candidate => candidate.id === def.checkId && candidate.version === 1)!;
+    const attempt = rawAttempts.map(rawAttempt => sanitizeCheckAttemptRecord([legacyDef], rawAttempt))
+      .find((candidate): candidate is CheckAttemptRecord => !!candidate && candidate.checkId === def.checkId
+        && candidate.outcome === 'passed' && receiptActualDelta(candidate, 'money') === def.reward
+        && receiptActualDelta(candidate, 'digestion') === def.digestionGain
+        && receiptActualDelta(candidate, 'club_reputation') === def.reputationGain);
+    if (attempt) result.add(commissionId);
+  }
+  return result;
+}
+
+/** 只接受能够由重算后的检定链解释的猎杀结算，避免死亡与掉落记录循环互证。 */
+function authoritativeHuntSettlement(s: GameState, record: MurderRecord, target: HuntTargetDef): boolean {
+  const settlement = s.checkAttempts.find(attempt => attempt.attemptId === record.settlementAttemptId);
+  if (!settlement || settlement.outcome !== 'passed' || attemptEndedAbsoluteHour(settlement) !== murderAbsoluteHour(record)) return false;
+  if (settlement.checkId === 'hunt_masked_smuggler_strike') {
+    return !record.initiatingAttemptId
+      && appliedReceiptEffect(settlement, 'hunt:death')
+      && appliedReceiptEffect(settlement, 'infamy')
+      && appliedReceiptEffect(settlement, 'law_attention')
+      && appliedReceiptEffect(settlement, 'nemesis');
+  }
+  if (settlement.checkId !== 'hunt_masked_smuggler_combat' || !record.initiatingAttemptId
+    || !appliedReceiptEffect(settlement, 'hunt:combat_resolved')) return false;
+  const initiating = s.checkAttempts.find(attempt => attempt.attemptId === record.initiatingAttemptId);
+  return !!initiating && initiating.checkId === 'hunt_masked_smuggler_strike' && initiating.outcome === 'blocked'
+    && appliedReceiptEffect(initiating, 'hunt:combat')
+    && attemptEndedAbsoluteHour(initiating) <= (settlement.startedDay - 1) * 24 + settlement.startedHour
+    && initiating.context.target.kind === 'case' && initiating.context.target.id === `hunt:${target.id}:strike`;
+}
+
+function authoritativeRevengeResolution(record: MurderRecord, target: HuntTargetDef, currentDay: number): boolean {
+  const resolution = record.revengeResolution;
+  if (!resolution) return false;
+  const context = resolution.context;
+  const receipt = resolution.receipt;
+  if (!context || !receipt
+    || !Number.isInteger(resolution.startedDay) || resolution.startedDay < record.day || resolution.startedDay > currentDay
+    || !Number.isInteger(resolution.startedHour) || resolution.startedHour < 0 || resolution.startedHour > 23
+    || !Number.isInteger(resolution.completedDay) || resolution.completedDay < resolution.startedDay || resolution.completedDay > currentDay
+    || !Number.isInteger(resolution.completedHour) || resolution.completedHour < 0 || resolution.completedHour > 23
+    || (resolution.completedDay - 1) * 24 + resolution.completedHour !== (resolution.startedDay - 1) * 24 + resolution.startedHour + 4
+    || !Number.isInteger(resolution.nemesisPower) || resolution.nemesisPower < target.avenger.power
+    || !Number.isInteger(resolution.attackScore)
+    || !Number.isInteger(context.phy) || context.phy < 0 || context.phy > 100
+    || !Number.isInteger(context.combat) || context.combat < 0 || context.combat > 10
+    || !Number.isInteger(context.spirit) || context.spirit < 0 || context.spirit > 100
+    || typeof context.hadRevolver !== 'boolean' || typeof context.wasHunter !== 'boolean'
+    || receipt.hoursElapsed !== 4 || receipt.energyCost !== 35 || receipt.moneyGain !== 80
+    || receipt.corruptionGain !== 4 || receipt.sanityCost !== 4
+    || (receipt.combatSkillGain !== 0 && receipt.combatSkillGain !== 1)
+    || receipt.combatSkillGain !== (context.combat < 10 ? 1 : 0)) return false;
+  if (context.injuryPenalty !== undefined && ![0, 4, 8].includes(context.injuryPenalty)) return false;
+  const recomputedAttack = context.injuryPenalty === undefined
+    ? context.phy + context.combat * 4 + (context.hadRevolver ? 15 : 0)
+      + (context.wasHunter ? 8 : 0) + Math.round(context.spirit * 0.3)
+    : 8 + Math.floor(context.phy / 2) + context.combat * 3 + (context.hadRevolver ? 18 : 0)
+      + (context.wasHunter ? 10 : 0) - context.injuryPenalty + Math.round(context.spirit * 0.3);
+  return resolution.attackScore === recomputedAttack && recomputedAttack >= resolution.nemesisPower + 10;
+}
+
 // ============ 宿敌系统 ============
 function nemesisDaily(s: GameState) {
   const n = s.nemesis;
@@ -4533,14 +8346,18 @@ function nemesisDaily(s: GameState) {
   n.power = Math.round(n.power + 0.5);
   const roll = rnd(100);
   if (roll < 30) {
-    // 刺杀（确定性检定：体质 + 格斗×4 + 武器/途径加成 vs 威胁度）
-    const def = s.stats.phy + s.skills.combat * 4 + ((s.items.revolver ?? 0) > 0 ? 15 : 0) + (s.pathwayId === 'hunter' ? 8 : 0);
+    const profile = getCombatProfile(s);
+    const def = profile.physicalDefense + profile.dodge + Math.floor(profile.physicalAttack / 2);
     addLog(s, '⚠️ 深夜传来异响——有人撬开了你的窗！', 'bad');
     if (def >= n.power) {
-      addLog(s, '你早有防备，掀翻台灯砸向破窗而入的黑影。对方负伤逃走，但这场冲突显然不会就此结束。', 'good');
+      const impact = applyCombatImpact(s, 10 + Math.floor(n.power / 6), 0, 38);
+      rescueFromFatalInjury(s, '你虽然挡住刺杀，仍因失血倒下。');
+      addLog(s, `你早有防备，掀翻台灯砸向破窗而入的黑影。短暂交锋损失了${impact.hpDamage}点生命；对方负伤逃走。`, 'good');
       n.hostility = clamp(n.hostility + 6);
     } else {
-      addLog(s, '冰冷的刀刃划过肋侧，你拼死反抗才把人逼退。伤口和惊惧让你许久无法站稳。', 'bad');
+      const impact = applyCombatImpact(s, 24 + Math.floor(n.power / 4), 8, 46);
+      rescueFromFatalInjury(s, '刺客离开后，邻居发现了重伤昏迷的你。');
+      addLog(s, `冰冷的刀刃划过肋侧，你损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值，拼死反抗才把人逼退。`, 'bad');
       applyEffects(s, [{ k: 'energy', v: -30 }, { k: 'san', v: -6 }]);
     }
   } else if (roll < 55) {
@@ -4556,6 +8373,8 @@ function nemesisDaily(s: GameState) {
 
 /** 花钱通过麦克打听宿敌底细 */
 export function nemesisIntel(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能处理宿敌事务。' };
   const n = s.nemesis;
   if (!n || !n.alive) return { ok: false, msg: '没有宿敌。' };
@@ -4571,6 +8390,8 @@ export function nemesisIntel(s: GameState): ActionResult {
 
 /** 求教会庇护 */
 export function nemesisShelter(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能处理宿敌事务。' };
   const n = s.nemesis;
   if (!n || !n.alive) return { ok: false, msg: '没有宿敌。' };
@@ -4584,25 +8405,48 @@ export function nemesisShelter(s: GameState): ActionResult {
 
 /** 做个了断（确定性战斗检定） */
 export function nemesisFight(s: GameState): ActionResult {
+  const woundIssue = woundActionIssue(s, 'active_combat');
+  if (woundIssue) return { ok: false, msg: woundIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能处理宿敌事务。' };
   const n = s.nemesis;
   if (!n || !n.alive) return { ok: false, msg: '没有宿敌。' };
   if (!n.known) return { ok: false, msg: '对方藏在暗处，先查清底细再动手。' };
   if (s.stats.energy < 40) return { ok: false, msg: '你现在的状态不适合主动寻仇，勉强出手等于送死。' };
+  const startedAt = { day: s.day, hour: s.hour };
+  const combatProfile = getCombatProfile(s);
   applyEffects(s, [{ k: 'energy', v: -35 }]);
   advanceHours(s, 4);
-  const atk = s.stats.phy + s.skills.combat * 4 + ((s.items.revolver ?? 0) > 0 ? 15 : 0) + (s.pathwayId === 'hunter' ? 8 : 0) + Math.round(s.stats.spi * 0.3);
+  const attackContext = {
+    phy: s.stats.phy, combat: s.skills.combat, spirit: s.stats.spi,
+    hadRevolver: (s.items.revolver ?? 0) > 0, wasHunter: hasInheritedSequence9Ability(s, 'hunter'),
+    injuryPenalty: combatProfile.injuryPenalty,
+  };
+  const atk = combatProfile.physicalAttack + Math.round(s.stats.spi * 0.3);
   const diff = n.power + 10; // 对方有准备
   addLog(s, `你查清了${n.name}的落脚点，在雨夜里摸了过去。接下来只能看准备与临场反应。`, 'system');
   if (atk >= diff) {
+    const impact = applyCombatImpact(s, 20 + Math.floor(n.power / 5), 4, 42);
+    rescueFromFatalInjury(s, '对手倒下后，你也因伤势失去意识。');
     addLog(s, `✦ 短促而惨烈的搏杀后，一切结束了。${n.name}倒在积水中，你在尸体旁站了很久。`, 'good');
+    addLog(s, `这场决战损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值。`, 'info');
     applyEffects(s, [{ k: 'money', v: 80 }, { k: 'cor', v: 4 }, { k: 'san', v: -4 }]);
-    if (s.skills.combat < 10) s.skills.combat += 1;
+    const combatSkillGain: 0 | 1 = s.skills.combat < 10 ? 1 : 0;
+    if (combatSkillGain) s.skills.combat += 1;
     if (n.archetype !== '黑帮清道夫') addLog(s, '你只找到几封无法验证来源的密信，没有可直接使用的魔药配方。', 'info');
     addLog(s, '一条人命。你告诉自己：在这座城市的规则里，这已经是仁慈的结局。', 'system');
+    const avengedMurder = s.murderRecords.find(record => huntTargetDef(record.targetId)?.avenger.name === n.name);
+    if (avengedMurder) {
+      avengedMurder.revengeResolution = {
+        startedDay: startedAt.day, startedHour: startedAt.hour, completedDay: s.day, completedHour: s.hour,
+        nemesisPower: n.power, attackScore: atk, context: attackContext,
+        receipt: { hoursElapsed: 4, energyCost: 35, moneyGain: 80, corruptionGain: 4, sanityCost: 4, combatSkillGain },
+      };
+    }
     s.nemesis = null;
   } else {
-    addLog(s, '✖ 对方比你想象的更强。你拼死逃出那条巷子，肋骨断了三根；更糟的是，对方不会把这次失败当作结束。', 'bad');
+    const impact = applyCombatImpact(s, 34 + Math.floor(n.power / 4), 10, 48);
+    rescueFromFatalInjury(s, '你在巷口倒下后被更夫发现，对手已经离开。');
+    addLog(s, `✖ 对方比你想象的更强。你损失了${impact.hpDamage}点生命、${impact.spiritDamage}点精神值，拼死逃出那条巷子；对方不会把这次失败当作结束。`, 'bad');
     applyEffects(s, [{ k: 'energy', v: -40 }, { k: 'san', v: -10 }, { k: 'cor', v: 5 }]);
     n.hostility = clamp(n.hostility + 15);
   }
@@ -4611,6 +8455,8 @@ export function nemesisFight(s: GameState): ActionResult {
 
 /** 解除诅咒（找尼尔逊或艾拉） */
 export function removeCurse(s: GameState): ActionResult {
+  const criticalIssue = criticalActivityIssue(s);
+  if (criticalIssue) return { ok: false, msg: criticalIssue };
   if (s.atWork) return { ok: false, msg: '工作期间不能外出解除诅咒。' };
   if (!s.tags.includes('cursed')) return { ok: false, msg: '你身上没有诅咒。' };
   if (s.pence < 60) return { ok: false, msg: '解除诅咒需要5苏勒的材料与酬劳。' };
@@ -4720,13 +8566,13 @@ function rebuildDivinationCredentials(s: GameState, rawCredentials: unknown[], r
   }
 }
 
-function normalizedRecordedDivinationAttempt(s: GameState, value: unknown): DivinationAttempt | null {
+function normalizedRecordedDivinationAttempt(s: GameState, value: unknown, loadedVersion = CURRENT_SCHEMA_VERSION): DivinationAttempt | null {
   if (!value || typeof value !== 'object') return null;
   const raw = value as Partial<DivinationAttempt>;
   if (!['location', 'item'].includes(raw.targetKind ?? '') || typeof raw.targetId !== 'string') return null;
   if (!['cards', 'dream'].includes(raw.method ?? '') || !['self', 'nelson', 'evelyn'].includes(raw.provider ?? '')) return null;
   if (!['inconclusive', 'omen', 'hint', 'obscured', 'backlash'].includes(raw.outcome ?? '')) return null;
-  if (!Number.isInteger(raw.day) || (raw.day ?? 0) < 1 || !Number.isInteger(raw.hour) || (raw.hour ?? -1) < 0 || (raw.hour ?? 24) > 23 || !Number.isFinite(raw.score)) return null;
+  if (!Number.isInteger(raw.day) || (raw.day ?? 0) < 1 || !Number.isInteger(raw.hour) || (raw.hour ?? -1) < 0 || (raw.hour ?? 24) > 23) return null;
   const targetKind = raw.targetKind as DivinationTargetKind;
   const method = raw.method as DivinationMethod;
   const provider = raw.provider as DivinationProvider;
@@ -4734,13 +8580,60 @@ function normalizedRecordedDivinationAttempt(s: GameState, value: unknown): Divi
   const target = divinationTargetDefinition(targetKind, raw.targetId);
   if (!target || (targetKind === 'location' && !isLocationUnlocked(s, raw.targetId))) return null;
   if (!recordedDivinationProviderAllowed(s, provider, method, target, raw.day!, raw.hour!)) return null;
-  const successOutcome = targetKind === 'location' ? 'omen' : 'hint';
-  if ((outcome === 'omen' || outcome === 'hint') && (outcome !== successOutcome || raw.score! < target.difficulty)) return null;
-  if (outcome === 'inconclusive' && (raw.score! >= target.difficulty || method !== 'cards' || target.pressure !== 'low')) return null;
-  if (outcome === 'backlash' && (raw.score! >= target.difficulty || (method !== 'dream' && target.pressure !== 'high'))) return null;
+  let scoreInput: DivinationScoreInput;
+  if (raw.scoreInput && typeof raw.scoreInput === 'object') {
+    scoreInput = raw.scoreInput as DivinationScoreInput;
+    // The legacy marker is produced only by the v23 -> v24 migration below.
+    // A schema-v23 payload cannot use it to bypass the original audit.
+    if (loadedVersion < 24 && scoreInput.version === 23) return null;
+  } else {
+    if (loadedVersion >= 24 || !Number.isFinite(raw.score)) return null;
+    const legacyScore = raw.score!;
+    const legacySuccessOutcome = targetKind === 'location' ? 'omen' : 'hint';
+    const legacyValid = (outcome === 'omen' || outcome === 'hint')
+      ? outcome === legacySuccessOutcome && legacyScore >= target.difficulty
+      : outcome === 'inconclusive'
+        ? legacyScore < target.difficulty && method === 'cards' && target.pressure === 'low'
+        : outcome === 'backlash'
+          ? legacyScore < target.difficulty && (method === 'dream' || target.pressure === 'high')
+          // v23 did not record whether the scene was jammed.  The obscured
+          // outcome itself is the only surviving evidence, so it is retained
+          // after the remaining provider/target/time audit has passed.
+          : outcome === 'obscured';
+    if (!legacyValid) return null;
+    scoreInput = {
+      version: 23,
+      provenance: 'validated_v23_attempt',
+      validatedScore: legacyScore,
+      targetKind,
+      targetId: raw.targetId,
+      method,
+      provider,
+      outcome,
+      day: raw.day!,
+      hour: raw.hour!,
+    };
+  }
+  if (scoreInput.version === 23 && (scoreInput.targetKind !== targetKind || scoreInput.targetId !== raw.targetId
+    || scoreInput.method !== method || scoreInput.provider !== provider || scoreInput.outcome !== outcome
+    || scoreInput.day !== raw.day || scoreInput.hour !== raw.hour)) return null;
+  const score = scoreDivinationInput(target, method, provider, scoreInput);
+  if (score === null) return null;
+  if (scoreInput.version === 1) {
+    const expectedOutcome: DivinationOutcome = scoreInput.jammed ? 'obscured'
+      : score >= target.difficulty ? (targetKind === 'location' ? 'omen' : 'hint')
+        : target.antiDivination && score >= target.difficulty - 6 ? 'obscured'
+          : method === 'dream' || target.pressure === 'high' ? 'backlash' : 'inconclusive';
+    if (outcome !== expectedOutcome) return null;
+  }
   return {
     targetKind, targetId: raw.targetId, method, provider, outcome,
-    day: raw.day!, hour: raw.hour!, score: raw.score!,
+    day: raw.day!, hour: raw.hour!, score,
+    scoreInput: scoreInput.version === 1 ? {
+      ...scoreInput,
+      toolIds: [...scoreInput.toolIds],
+      clueIds: [...scoreInput.clueIds],
+    } : { ...scoreInput },
   };
 }
 
@@ -4749,12 +8642,13 @@ function rebuildPersistedDivinationAndItemKnowledge(
   rawAttempts: unknown[],
   rawInsights: unknown[],
   rawItemKnowledge: Record<string, unknown>,
+  loadedVersion: number,
 ) {
   const usedInsights = new Set<number>();
   const attempts: DivinationAttempt[] = [];
   const insights: DivinationInsight[] = [];
   for (const candidate of rawAttempts) {
-    const attempt = normalizedRecordedDivinationAttempt(s, candidate);
+    const attempt = normalizedRecordedDivinationAttempt(s, candidate, loadedVersion);
     if (!attempt) continue;
     const matchingInsightIndex = rawInsights.findIndex((value, index) => {
       if (usedInsights.has(index) || !value || typeof value !== 'object') return false;
@@ -4824,6 +8718,10 @@ export function loadGame(): GameState | null {
       pathwayLeads?: GameState['pathwayLeads'];
       leads?: GameState['leads'];
       organizationRoutes?: GameState['organizationRoutes'];
+      nightwatchEarlyLoop?: GameState['nightwatchEarlyLoop'];
+      divinationClub?: GameState['divinationClub'];
+      elliotCase?: GameState['elliotCase'];
+      seerTraining?: GameState['seerTraining'];
       diaryPages?: GameState['diaryPages'];
       materialSources?: GameState['materialSources'];
       sequence8Progress?: GameState['sequence8Progress'];
@@ -4835,6 +8733,7 @@ export function loadGame(): GameState | null {
       landmarkEncounters?: LandmarkEncounterRecord[];
       clues?: GameState['clues'];
       deepInvestigations?: GameState['deepInvestigations'];
+      investigationWorkspaces?: GameState['investigationWorkspaces'];
       caseThreats?: GameState['caseThreats'];
       pendingEncounter?: GameState['pendingEncounter'];
       explorationAttempts?: GameState['explorationAttempts'];
@@ -4848,16 +8747,81 @@ export function loadGame(): GameState | null {
       itemKnowledge?: GameState['itemKnowledge'];
       tradeFair?: GameState['tradeFair'];
       confirmedBeyonderDeaths?: GameState['confirmedBeyonderDeaths'];
+      openingScenarioId?: GameState['openingScenarioId'];
+      strangeNotebook?: GameState['strangeNotebook'];
+      activeHunt?: GameState['activeHunt'];
+      murderRecords?: GameState['murderRecords'];
+      infamy?: number;
+      lawAttention?: number;
+      areaSuspicionRecords?: GameState['areaSuspicionRecords'];
+      identityTraceDiscoveries?: GameState['identityTraceDiscoveries'];
+      identityTraceResolutions?: GameState['identityTraceResolutions'];
+      identityCover?: GameState['identityCover'];
+      areaSuspicion?: GameState['areaSuspicion'];
+      wantedAreas?: GameState['wantedAreas'];
       canReadRoselleScript?: boolean;
       jobId?: string | null;
       atWork?: boolean;
       eventCounter?: number;
       recentEventVariants?: Record<string, number[]>;
       forcedEventQueue?: string[];
+      combatVitals?: GameState['combatVitals'];
+      npcVisitSession?: GameState['npcVisitSession'];
     };
     const loadedVersion = Number.isInteger(s.schemaVersion) ? s.schemaVersion! : 6;
     const hadVisitedLocations = Array.isArray(s.visitedLocations);
     s.items = s.items && typeof s.items === 'object' ? s.items : {};
+    s.flags = s.flags && typeof s.flags === 'object' ? s.flags : {};
+    s.log = Array.isArray(s.log) ? s.log.map(entry => ({
+      ...entry,
+      text: typeof entry?.text === 'string'
+        ? entry.text.replace('；没有任何内容凭空授予非凡能力。', '；能相互印证的段落已经逐条抄进调查笔记。')
+        : '',
+    })) : [];
+    if (loadedVersion < 23) {
+      s.openingScenarioId = 'ordinary_morning';
+      s.strangeNotebook = {
+        status: 'absent', influenceStage: 0, acquiredAbsoluteHour: 7,
+        nextManifestationAbsoluteHour: Number.MAX_SAFE_INTEGER, odditiesRecorded: false,
+      };
+      s.items[STRANGE_NOTEBOOK_ITEM_ID] = 0;
+    } else {
+      const openingScenarioId = OPENING_SCENARIOS.some(opening => opening.id === s.openingScenarioId)
+        ? s.openingScenarioId : 'ordinary_morning';
+      s.openingScenarioId = openingScenarioId;
+      const rawNotebook = s.strangeNotebook;
+      const validStatus = rawNotebook && ['held', 'missing', 'surrendered'].includes(rawNotebook.status);
+      const validStage = rawNotebook && Number.isInteger(rawNotebook.influenceStage)
+        && rawNotebook.influenceStage >= 0 && rawNotebook.influenceStage <= 4;
+      if (openingScenarioId !== 'strange_notebook' || !validStatus || !validStage) {
+        s.openingScenarioId = openingScenarioId === 'strange_notebook' ? 'ordinary_morning' : openingScenarioId;
+        s.strangeNotebook = {
+          status: 'absent', influenceStage: 0, acquiredAbsoluteHour: 7,
+          nextManifestationAbsoluteHour: Number.MAX_SAFE_INTEGER, odditiesRecorded: false,
+        };
+        s.items[STRANGE_NOTEBOOK_ITEM_ID] = 0;
+      } else {
+        const now = absoluteHour(s);
+        const validMissingReturn = rawNotebook.status === 'missing'
+          && Number.isFinite(rawNotebook.returnAbsoluteHour)
+          && Number.isInteger(rawNotebook.returnAbsoluteHour)
+          && rawNotebook.returnAbsoluteHour! > now
+          && rawNotebook.returnAbsoluteHour! <= now + 12;
+        const sanitizedStatus = rawNotebook.status === 'missing' && !validMissingReturn ? 'held' : rawNotebook.status;
+        s.strangeNotebook = {
+          status: sanitizedStatus,
+          influenceStage: rawNotebook.influenceStage,
+          acquiredAbsoluteHour: Number.isFinite(rawNotebook.acquiredAbsoluteHour) ? Math.max(0, Math.floor(rawNotebook.acquiredAbsoluteHour)) : 7,
+          nextManifestationAbsoluteHour: Number.isFinite(rawNotebook.nextManifestationAbsoluteHour) ? Math.max(now, Math.floor(rawNotebook.nextManifestationAbsoluteHour)) : now + 12,
+          odditiesRecorded: !!rawNotebook.odditiesRecorded,
+          ...(validMissingReturn ? { returnAbsoluteHour: rawNotebook.returnAbsoluteHour } : {}),
+          ...(rawNotebook.status === 'surrendered' && (rawNotebook.handedOffLocationId === 'st_selena_church' || rawNotebook.handedOffLocationId === 'blackthorn_security')
+            ? { handedOffLocationId: rawNotebook.handedOffLocationId, handedOffDay: rawNotebook.handedOffDay, handedOffHour: rawNotebook.handedOffHour } : {}),
+        };
+        if (s.strangeNotebook.status === 'held') s.items[STRANGE_NOTEBOOK_ITEM_ID] = Math.max(1, Math.floor(s.items[STRANGE_NOTEBOOK_ITEM_ID] ?? 0));
+        else s.items[STRANGE_NOTEBOOK_ITEM_ID] = 0;
+      }
+    }
     if (loadedVersion < 19) {
       const seq9ItemRenames: Record<string, string> = {
         deer_heart: 'blood_red_chestnut', iron_fern: 'activated_marsh_crystal',
@@ -4882,25 +8846,322 @@ export function loadGame(): GameState | null {
       occult: legacySkills?.occult ?? 0,
       sneak: legacySkills?.sneak ?? 0,
     };
+    s.combatLoadout = sanitizedCombatLoadout(s, s.combatLoadout, loadedVersion < 31);
+    const migratedMaxHp = 40 + s.stats.phy * 2;
+    const migratedMaxSpirit = 20 + s.stats.spi * 2 + Math.floor(s.stats.mnd / 2);
+    if (loadedVersion < 25) {
+      s.combatVitals = { hp: migratedMaxHp, spirit: migratedMaxSpirit };
+      s.npcVisitSession = null;
+    } else {
+      const rawVitals = s.combatVitals;
+      s.combatVitals = {
+        hp: Number.isInteger(rawVitals?.hp) ? Math.max(0, Math.min(migratedMaxHp, rawVitals.hp)) : migratedMaxHp,
+        spirit: Number.isInteger(rawVitals?.spirit) ? Math.max(0, Math.min(migratedMaxSpirit, rawVitals.spirit)) : migratedMaxSpirit,
+      };
+      const rawSession = s.npcVisitSession;
+      const sessionNpc = rawSession && typeof rawSession.npcId === 'string' ? findAnyNPC(s, rawSession.npcId) : undefined;
+      const sessionStartAbsolute = rawSession ? (rawSession.startedDay - 1) * 24 + rawSession.startedHour : -1;
+      const sessionEndAbsolute = rawSession ? (rawSession.day - 1) * 24 + rawSession.hour : -1;
+      s.npcVisitSession = rawSession && sessionNpc && isMet(s, rawSession.npcId)
+        && (s.relations[rawSession.npcId] ?? -100) >= VISIT_FAVOR
+        && rawSession.day === s.day && rawSession.hour === s.hour
+        && Number.isInteger(rawSession.startedDay) && rawSession.startedDay >= 1
+        && Number.isInteger(rawSession.startedHour) && rawSession.startedHour >= 0 && rawSession.startedHour <= 23
+        && sessionStartAbsolute + 1 === sessionEndAbsolute
+        && npcAvailable(sessionNpc, rawSession.startedDay, rawSession.startedHour)
+        ? {
+          npcId: rawSession.npcId, startedDay: rawSession.startedDay, startedHour: rawSession.startedHour,
+          day: rawSession.day, hour: rawSession.hour,
+        } : null;
+    }
     const seenClueIds = new Set<string>();
     s.clues = Array.isArray(s.clues) ? s.clues.filter(clue => {
       if (!clue || typeof clue.id !== 'string' || seenClueIds.has(clue.id) || !CLUE_DEFS.some(def => def.id === clue.id)) return false;
       seenClueIds.add(clue.id);
       return true;
     }) : [];
+    if (s.openingScenarioId === 'strange_notebook' && s.strangeNotebook.status === 'surrendered') {
+      const handoff = s.strangeNotebook;
+      const receipt = s.clues.find(clue => clue.id === 'strange_notebook_official_receipt');
+      const validHandoff = s.flags.strange_notebook_handed_off === true
+        && (handoff.handedOffLocationId === 'st_selena_church' || handoff.handedOffLocationId === 'blackthorn_security')
+        && Number.isInteger(handoff.handedOffDay) && handoff.handedOffDay! >= 1 && handoff.handedOffDay! <= s.day
+        && Number.isInteger(handoff.handedOffHour) && handoff.handedOffHour! >= 0 && handoff.handedOffHour! <= 23
+        && receipt?.sourceKind === 'location' && receipt.sourceId === handoff.handedOffLocationId
+        && receipt.acquiredDay === handoff.handedOffDay && receipt.acquiredHour === handoff.handedOffHour;
+      if (!validHandoff) {
+        s.strangeNotebook.status = 'held';
+        delete s.strangeNotebook.handedOffLocationId;
+        delete s.strangeNotebook.handedOffDay;
+        delete s.strangeNotebook.handedOffHour;
+        s.strangeNotebook.nextManifestationAbsoluteHour = Math.min(s.strangeNotebook.nextManifestationAbsoluteHour, absoluteHour(s) + 8);
+        s.items[STRANGE_NOTEBOOK_ITEM_ID] = Math.max(1, Math.floor(s.items[STRANGE_NOTEBOOK_ITEM_ID] ?? 0));
+        delete s.flags.strange_notebook_handed_off;
+        s.clues = s.clues.filter(clue => clue.id !== 'strange_notebook_official_receipt');
+      }
+    }
     s.explorationAttempts = Array.isArray(s.explorationAttempts)
       ? s.explorationAttempts.filter(attempt => attempt && typeof attempt.checkId === 'string'
         && ['passed', 'blocked'].includes(attempt.outcome))
       : [];
+    const legacyClubCompletionIds = loadedVersion >= 23
+      ? auditedLegacyDivinationClubCompletions(s.divinationClub, s.checkAttempts)
+      : new Set<DivinationClubCommissionId>();
+    const rawProtectedCheckAttemptIds = new Set<string>();
+    if (loadedVersion >= 23 && Array.isArray(s.murderRecords)) {
+      for (const record of s.murderRecords) {
+        if (typeof record?.settlementAttemptId === 'string') rawProtectedCheckAttemptIds.add(record.settlementAttemptId);
+        if (typeof record?.initiatingAttemptId === 'string') rawProtectedCheckAttemptIds.add(record.initiatingAttemptId);
+      }
+    }
+    if (loadedVersion >= 23 && typeof s.activeHunt?.initiatingAttemptId === 'string') {
+      rawProtectedCheckAttemptIds.add(s.activeHunt.initiatingAttemptId);
+    }
+    if (loadedVersion >= 27 && Array.isArray(s.areaSuspicionRecords)) {
+      for (const record of s.areaSuspicionRecords) {
+        if (typeof record?.settlementAttemptId === 'string') rawProtectedCheckAttemptIds.add(record.settlementAttemptId);
+      }
+    }
+    if (loadedVersion >= 28 && Array.isArray(s.identityTraceDiscoveries)) {
+      for (const record of s.identityTraceDiscoveries) {
+        if (typeof record?.investigationAttemptId === 'string') rawProtectedCheckAttemptIds.add(record.investigationAttemptId);
+      }
+    }
+    if (loadedVersion >= 28 && Array.isArray(s.identityTraceResolutions)) {
+      for (const record of s.identityTraceResolutions) {
+        if (typeof record?.resolutionAttemptId === 'string') rawProtectedCheckAttemptIds.add(record.resolutionAttemptId);
+      }
+    }
+    if (loadedVersion >= 28 && typeof s.identityCover?.preparationAttemptId === 'string') {
+      rawProtectedCheckAttemptIds.add(s.identityCover.preparationAttemptId);
+    }
+    if (loadedVersion >= 32 && s.investigationWorkspaces && typeof s.investigationWorkspaces === 'object') {
+      for (const workspace of Object.values(s.investigationWorkspaces)) {
+        if (!workspace || !Array.isArray(workspace.assessments)) continue;
+        for (const assessment of workspace.assessments) {
+          if (typeof assessment?.attemptId === 'string') rawProtectedCheckAttemptIds.add(assessment.attemptId);
+        }
+      }
+    }
+    if (Array.isArray(s.checkAttempts)) {
+      for (const attempt of s.checkAttempts) {
+        if (attempt && typeof attempt.attemptId === 'string' && attempt.outcome === 'passed'
+          && DIVINATION_CLUB_COMMISSIONS.some(def => attempt.checkId === def.acceptCheckId
+            || attempt.checkId === def.fieldCheckId || attempt.checkId === def.checkId)) {
+          rawProtectedCheckAttemptIds.add(attempt.attemptId);
+        }
+        if (attempt && typeof attempt.attemptId === 'string'
+          && [...Object.values(DOCK_WITNESS_CHECK_IDS), ...Object.values(DOCK_WITNESS_FOLLOWUP_CHECK_IDS),
+            ...Object.values(DOCK_GRAY_HAT_CHECK_IDS), ...Object.values(DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS),
+            ...Object.values(DOCK_OLD_YARD_CHECK_IDS),
+            ...Object.values(DOCK_TRANSFER_FOLLOWUP_CHECK_IDS),
+            'dock_manifest_cleaner_escape', 'dock_manifest_cleaner_combat', 'dock_manifest_cleaner_active_combat',
+            'dock_manifest_cleaner_spiritual_combat', 'dock_manifest_cleaner_active_spiritual_combat'].includes(attempt.checkId)) {
+          rawProtectedCheckAttemptIds.add(attempt.attemptId);
+        }
+      }
+    }
     const seenCheckAttemptIds = new Set<string>();
-    s.checkAttempts = (loadedVersion < 21 ? [] : (Array.isArray(s.checkAttempts) ? s.checkAttempts : []))
-      .map(attempt => sanitizeCheckAttemptRecord(EXPLORATION_CHECKS, attempt))
+    const sanitizedCheckAttempts = (loadedVersion < 21 ? [] : (Array.isArray(s.checkAttempts) ? s.checkAttempts : []))
+      .map(attempt => {
+        const value = attempt as Partial<CheckAttemptRecord> | null;
+        const legacyDef = value && LEGACY_DIVINATION_CLUB_CHECKS.find(def => def.id === value.checkId
+          && def.version === value.definitionVersion);
+        return sanitizeCheckAttemptRecord(legacyDef ? [legacyDef] : EXPLORATION_CHECKS, attempt);
+      })
       .filter((attempt): attempt is CheckAttemptRecord => {
         if (!attempt || seenCheckAttemptIds.has(attempt.attemptId)) return false;
         seenCheckAttemptIds.add(attempt.attemptId);
         return true;
-      })
-      .slice(-200);
+      });
+    const recentCheckAttempts = sanitizedCheckAttempts.slice(-200);
+    const recentCheckAttemptIds = new Set(recentCheckAttempts.map(attempt => attempt.attemptId));
+    s.checkAttempts = [
+      ...sanitizedCheckAttempts.filter(attempt => rawProtectedCheckAttemptIds.has(attempt.attemptId)
+        && !recentCheckAttemptIds.has(attempt.attemptId)),
+      ...recentCheckAttempts,
+    ];
+    const crisisClueAudit: Record<string, {
+      checkId: string; outcome: 'passed' | 'blocked'; sourceKind: ClueSourceKind; sourceId: string;
+    }> = {
+      dock_witness_warned: {
+        checkId: DOCK_WITNESS_CHECK_IDS.warn_worker, outcome: 'passed', sourceKind: 'npc', sourceId: 'mike',
+      },
+      dock_watcher_route: {
+        checkId: DOCK_WITNESS_CHECK_IDS.shadow_watcher, outcome: 'passed', sourceKind: 'event', sourceId: 'dock_witness_crisis:shadow_watcher',
+      },
+      dock_witness_disappeared: {
+        checkId: DOCK_WITNESS_CHECK_IDS.shadow_watcher, outcome: 'blocked', sourceKind: 'event', sourceId: 'dock_witness_crisis:shadow_watcher',
+      },
+      dock_witness_protected: {
+        checkId: DOCK_WITNESS_CHECK_IDS.request_protection, outcome: 'passed', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_witness_statement: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.warned_witness, outcome: 'passed', sourceKind: 'npc', sourceId: 'mike',
+      },
+      dock_witness_fragment: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.warned_witness, outcome: 'blocked', sourceKind: 'npc', sourceId: 'mike',
+      },
+      dock_transfer_watch_record: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.watched_transfer, outcome: 'passed', sourceKind: 'location', sourceId: 'canal',
+      },
+      dock_transfer_decoy: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.watched_transfer, outcome: 'blocked', sourceKind: 'location', sourceId: 'canal',
+      },
+      dock_witness_locker_token: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.missing_witness, outcome: 'passed', sourceKind: 'location', sourceId: 'docks',
+      },
+      dock_witness_last_errand: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.missing_witness, outcome: 'blocked', sourceKind: 'location', sourceId: 'docks',
+      },
+      dock_sealed_statement_excerpt: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.protected_witness, outcome: 'passed', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_official_case_summary: {
+        checkId: DOCK_WITNESS_FOLLOWUP_CHECK_IDS.protected_witness, outcome: 'blocked', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_gray_hat_exchange_pattern: {
+        checkId: DOCK_GRAY_HAT_CHECK_IDS.observe_exchange, outcome: 'passed', sourceKind: 'location', sourceId: 'canal',
+      },
+      dock_gray_hat_abandoned_route: {
+        checkId: DOCK_GRAY_HAT_CHECK_IDS.observe_exchange, outcome: 'blocked', sourceKind: 'location', sourceId: 'canal',
+      },
+      dock_gray_hat_countermark: {
+        checkId: DOCK_GRAY_HAT_CHECK_IDS.bait_manifest, outcome: 'passed', sourceKind: 'location', sourceId: 'docks',
+      },
+      dock_gray_hat_trap_exposed: {
+        checkId: DOCK_GRAY_HAT_CHECK_IDS.bait_manifest, outcome: 'blocked', sourceKind: 'location', sourceId: 'docks',
+      },
+      dock_gray_hat_joint_watch: {
+        checkId: DOCK_GRAY_HAT_CHECK_IDS.joint_watch, outcome: 'passed', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_gray_hat_watch_delayed: {
+        checkId: DOCK_GRAY_HAT_CHECK_IDS.joint_watch, outcome: 'blocked', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_gray_hat_retreat_route: {
+        checkId: DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS.trace_retreat, outcome: 'passed', sourceKind: 'event', sourceId: 'dock_encounter_aftermath:trace_retreat',
+      },
+      dock_gray_hat_trail_lost: {
+        checkId: DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS.trace_retreat, outcome: 'blocked', sourceKind: 'event', sourceId: 'dock_encounter_aftermath:trace_retreat',
+      },
+      dock_gray_hat_token_handoff: {
+        checkId: DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS.handoff_token, outcome: 'passed', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_gray_hat_evidence_preserved: {
+        checkId: DOCK_ENCOUNTER_AFTERMATH_CHECK_IDS.preserve_evidence, outcome: 'passed', sourceKind: 'event', sourceId: 'dock_encounter_aftermath:preserve_evidence',
+      },
+      dock_old_yard_perimeter_map: {
+        checkId: DOCK_OLD_YARD_CHECK_IDS.survey_perimeter, outcome: 'passed', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_old_yard_public_boundary: {
+        checkId: DOCK_OLD_YARD_CHECK_IDS.survey_perimeter, outcome: 'blocked', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_old_yard_porter_schedule: {
+        checkId: DOCK_OLD_YARD_CHECK_IDS.question_porters, outcome: 'passed', sourceKind: 'npc', sourceId: 'old_yard_porter',
+      },
+      dock_old_yard_workers_silent: {
+        checkId: DOCK_OLD_YARD_CHECK_IDS.question_porters, outcome: 'blocked', sourceKind: 'npc', sourceId: 'old_yard_porter',
+      },
+      dock_old_yard_night_transfer: {
+        checkId: DOCK_OLD_YARD_CHECK_IDS.watch_night_transfer, outcome: 'passed', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_old_yard_watch_disturbed: {
+        checkId: DOCK_OLD_YARD_CHECK_IDS.watch_night_transfer, outcome: 'blocked', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_wagon_coal_yard_route: {
+        checkId: DOCK_TRANSFER_FOLLOWUP_CHECK_IDS.tail_wagon, outcome: 'passed', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_wagon_lost_at_bridge: {
+        checkId: DOCK_TRANSFER_FOLLOWUP_CHECK_IDS.tail_wagon, outcome: 'blocked', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_crate_tar_seal: {
+        checkId: DOCK_TRANSFER_FOLLOWUP_CHECK_IDS.inspect_crate, outcome: 'passed', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_crate_packing_trace: {
+        checkId: DOCK_TRANSFER_FOLLOWUP_CHECK_IDS.inspect_crate, outcome: 'blocked', sourceKind: 'location', sourceId: 'old_loading_yard',
+      },
+      dock_official_interception_record: {
+        checkId: DOCK_TRANSFER_FOLLOWUP_CHECK_IDS.request_interception, outcome: 'passed', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+      dock_interception_declined: {
+        checkId: DOCK_TRANSFER_FOLLOWUP_CHECK_IDS.request_interception, outcome: 'blocked', sourceKind: 'location', sourceId: 'blackthorn_security',
+      },
+    };
+    s.clues = s.clues.filter(clue => {
+      const audit = crisisClueAudit[clue.id];
+      if (!audit) return true;
+      if (clue.sourceKind !== audit.sourceKind || clue.sourceId !== audit.sourceId) return false;
+      return s.checkAttempts.some(attempt => attempt.checkId === audit.checkId && attempt.outcome === audit.outcome
+        && attempt.startedDay === clue.acquiredDay && attempt.startedHour === clue.acquiredHour
+        && attempt.receipt.effects.some(effect => effect.id === `clue:${clue.id}` && effect.applied));
+    });
+    if (!hasClue(s, 'dock_gray_hat_retreat_route')) {
+      const oldYardClues = new Set(Object.values(DOCK_OLD_YARD_RESULT_CLUES).flat());
+      s.clues = s.clues.filter(clue => !oldYardClues.has(clue.id));
+    }
+    if (!hasClue(s, 'dock_old_yard_night_transfer')) {
+      const transferClues = new Set(Object.values(DOCK_TRANSFER_FOLLOWUP_RESULT_CLUES).flat());
+      s.clues = s.clues.filter(clue => !transferClues.has(clue.id));
+    }
+    if (!hasClue(s, 'dock_crate_tar_seal')) s.items.tarred_cargo_seal = 0;
+    const encounterSettlementCheckIds = new Set([
+      'dock_manifest_cleaner_combat', 'dock_manifest_cleaner_active_combat',
+      'dock_manifest_cleaner_spiritual_combat', 'dock_manifest_cleaner_active_spiritual_combat',
+    ]);
+    s.clues = s.clues.filter(clue => {
+      if (!['dock_gray_hat_escape_recollection', 'dock_gray_hat_dropped_token', 'dock_gray_hat_scene_lost'].includes(clue.id)) return true;
+      if (clue.sourceKind !== 'event' || clue.sourceId !== 'encounter:dock_manifest_cleaner') return false;
+      return s.checkAttempts.some(attempt => attempt.startedDay === clue.acquiredDay && attempt.startedHour === clue.acquiredHour
+        && (clue.id === 'dock_gray_hat_escape_recollection'
+          ? attempt.checkId === 'dock_manifest_cleaner_escape' && attempt.outcome === 'passed'
+            && attempt.receipt.effects.some(effect => effect.id === 'encounter:escaped' && effect.applied)
+          : clue.id === 'dock_gray_hat_dropped_token'
+            ? encounterSettlementCheckIds.has(attempt.checkId) && attempt.outcome === 'passed'
+              && attempt.receipt.effects.some(effect => effect.id === 'threat:resolved' && effect.applied)
+            : attempt.checkId === 'dock_manifest_cleaner_escape' && attempt.outcome === 'blocked'
+              || encounterSettlementCheckIds.has(attempt.checkId)));
+    });
+    const rawInvestigationWorkspaces = loadedVersion >= 32 && s.investigationWorkspaces
+      && typeof s.investigationWorkspaces === 'object' ? s.investigationWorkspaces : {};
+    s.investigationWorkspaces = {};
+    const rawDockWorkspace = rawInvestigationWorkspaces.dock_manifest;
+    if (rawDockWorkspace && rawDockWorkspace.caseId === 'dock_manifest') {
+      const validEvidenceIds = new Set(INVESTIGATION_EVIDENCE_DEFS
+        .filter(def => hasClue(s, def.clueId)).map(def => def.clueId));
+      const selectedClueIds = Array.isArray(rawDockWorkspace.selectedClueIds)
+        ? [...new Set(rawDockWorkspace.selectedClueIds.filter(id => validEvidenceIds.has(id)))].sort().slice(0, 3)
+        : [];
+      const assessments = [] as InvestigationWorkspace['assessments'];
+      const usedAttemptIds = new Set<string>();
+      for (const rawAssessment of Array.isArray(rawDockWorkspace.assessments) ? rawDockWorkspace.assessments : []) {
+        const hypothesis = INVESTIGATION_HYPOTHESIS_DEFS.find(def => def.id === rawAssessment?.hypothesisId);
+        const method = INVESTIGATION_METHOD_DEFS.find(def => def.id === rawAssessment?.methodId);
+        if (!hypothesis || !method || !hypothesis.methodIds.includes(method.id)
+          || !Array.isArray(rawAssessment.clueIds) || rawAssessment.clueIds.length < 2 || rawAssessment.clueIds.length > 3
+          || rawAssessment.clueIds.some(id => !validEvidenceIds.has(id))
+          || !hypothesis.requiredClueIds.every(id => rawAssessment.clueIds.includes(id))
+          || typeof rawAssessment.attemptId !== 'string' || usedAttemptIds.has(rawAssessment.attemptId)) continue;
+        const attempt = s.checkAttempts.find(candidate => candidate.attemptId === rawAssessment.attemptId
+          && candidate.checkId === investigationHypothesisCheckId(hypothesis.id, method.id));
+        if (!attempt || attempt.startedDay !== rawAssessment.day || attempt.startedHour !== rawAssessment.hour
+          || attemptEndedAbsoluteHour(attempt) > absoluteHour(s)
+          || JSON.stringify([...attempt.context.clueIds].sort()) !== JSON.stringify([...new Set(rawAssessment.clueIds)].sort())
+          || !attempt.receipt.effects.some(effect => effect.id === `hypothesis:${hypothesis.id}:assessment` && effect.applied)) continue;
+        const internal = evaluateCheck(EXPLORATION_CHECKS, {
+          checkId: attempt.checkId, definitionVersion: attempt.definitionVersion, context: attempt.context,
+          startedAt: { day: attempt.startedDay, hour: attempt.startedHour },
+        });
+        const outcome = investigationOutcome(internal);
+        if (rawAssessment.outcome !== outcome) continue;
+        usedAttemptIds.add(attempt.attemptId);
+        assessments.push({
+          hypothesisId: hypothesis.id, methodId: method.id,
+          clueIds: [...new Set(rawAssessment.clueIds)].sort(), outcome,
+          attemptId: attempt.attemptId, day: attempt.startedDay, hour: attempt.startedHour,
+        });
+      }
+      s.investigationWorkspaces.dock_manifest = { caseId: 'dock_manifest', selectedClueIds, assessments: assessments.slice(-30) };
+    }
     if (loadedVersion < 22) {
       s.deepInvestigations = {};
       s.caseThreats = {};
@@ -4930,6 +9191,14 @@ export function loadGame(): GameState | null {
         const validSources = new Set([
           ...DEEP_INVESTIGATION_DEFS.map(def => def.id),
           'divination:self:dock_scale_evidence',
+          ...INVESTIGATION_HYPOTHESIS_DEFS.flatMap(hypothesis => hypothesis.methodIds
+            .map(methodId => `hypothesis:${hypothesis.id}:${methodId}`)),
+          ...Object.keys(DOCK_WITNESS_CHECK_IDS).map(choiceId => `witness_crisis:${choiceId}`),
+          ...Object.keys(DOCK_WITNESS_FOLLOWUP_CHECK_IDS).map(routeId => `witness_followup:${routeId}`),
+          ...Object.keys(DOCK_GRAY_HAT_CHECK_IDS).map(operationId => `gray_hat_operation:${operationId}`),
+          ...Object.keys(DOCK_OLD_YARD_CHECK_IDS).filter(actionId => actionId !== 'survey_perimeter')
+            .map(actionId => `old_loading_yard:${actionId}`),
+          'dock_transfer_followup:tail_wagon',
         ]);
         s.caseThreats[DOCK_THREAT_ID] = {
           threatId: DOCK_THREAT_ID,
@@ -4946,7 +9215,14 @@ export function loadGame(): GameState | null {
       const threat = s.caseThreats[DOCK_THREAT_ID];
       const validPendingSource = pending?.sourceKind === 'deep_investigation'
         ? DEEP_INVESTIGATION_DEFS.some(def => def.id === pending.sourceId)
-        : pending?.sourceKind === 'divination' && pending.sourceId === 'divination:self:dock_scale_evidence';
+        : pending?.sourceKind === 'divination' ? pending.sourceId === 'divination:self:dock_scale_evidence'
+          : pending?.sourceKind === 'hypothesis' ? INVESTIGATION_HYPOTHESIS_DEFS.some(hypothesis => hypothesis.methodIds
+            .some(methodId => pending.sourceId === `hypothesis:${hypothesis.id}:${methodId}`))
+            : pending?.sourceKind === 'case_choice' && (
+              Object.keys(DOCK_WITNESS_CHECK_IDS).some(choiceId => pending.sourceId === `witness_crisis:${choiceId}`)
+              || Object.keys(DOCK_WITNESS_FOLLOWUP_CHECK_IDS).some(routeId => pending.sourceId === `witness_followup:${routeId}`)
+              || Object.keys(DOCK_GRAY_HAT_CHECK_IDS).some(operationId => pending.sourceId === `gray_hat_operation:${operationId}`)
+            );
       if (!pending || pending.encounterId !== DOCK_ENCOUNTER_ID || pending.threatId !== DOCK_THREAT_ID
         || !['escape_choice', 'combat'].includes(pending.phase) || !validPendingSource
         || !Number.isInteger(pending.startedDay) || pending.startedDay < 1 || pending.startedDay > s.day
@@ -4955,6 +9231,25 @@ export function loadGame(): GameState | null {
         || !threat || threat.status !== 'active' || threat.encounterCount !== 1
         || !threat.noticedSourceIds.includes(pending.sourceId) || dockCaseDispositionClue(s)) {
         s.pendingEncounter = null;
+      } else {
+        const pendingStarted = (pending.startedDay - 1) * 24 + pending.startedHour;
+        const now = absoluteHour(s);
+        const rawPreparations = loadedVersion >= 26 && Array.isArray(pending.preparations)
+          ? pending.preparations : [];
+        const uniquePreparations = [...new Set(rawPreparations)]
+          .filter((id): id is DockCombatPreparationId => DOCK_COMBAT_PREPARATIONS.some(def => def.id === id));
+        pending.preparations = uniquePreparations.filter(preparationId => {
+          return s.checkAttempts.some(attempt => authoritativeDockPreparationAttempt(s, preparationId, attempt)
+            && (attempt.startedDay - 1) * 24 + attempt.startedHour >= pendingStarted
+            && attemptEndedAbsoluteHour(attempt) <= now);
+        });
+        if (pending.phase === 'combat') {
+          const sanitizedRound = loadedVersion >= 29 ? sanitizeCombatRound(pending.combatRound, false) : null;
+          if (loadedVersion >= 29) pending.combatRound = sanitizedRound ?? freshCombatRound(false);
+          else delete pending.combatRound;
+        } else {
+          delete pending.combatRound;
+        }
       }
     }
     s.relations = s.relations && typeof s.relations === 'object' ? s.relations : {};
@@ -5087,6 +9382,144 @@ export function loadGame(): GameState | null {
       const route = oldOrganizationRoutes[org.id];
       if (route && typeof route === 'object') s.organizationRoutes[org.id] = { ...s.organizationRoutes[org.id], ...route, history: Array.isArray(route.history) ? route.history : [] };
     }
+    const rawNightwatchLoop = s.nightwatchEarlyLoop;
+    s.nightwatchEarlyLoop = createNightwatchEarlyLoopState();
+    if (rawNightwatchLoop && typeof rawNightwatchLoop === 'object') {
+      const seenRoutineCycles = new Set<string>();
+      s.nightwatchEarlyLoop.records = Array.isArray(rawNightwatchLoop.records) ? rawNightwatchLoop.records.flatMap(record => {
+        const def = record && NIGHTWATCH_ROUTINE_ACTIONS.find(candidate => candidate.id === record.actionId);
+        if (!def || !Number.isInteger(record.day) || record.day < 1 || record.day > s.day) return [];
+        const cycleKey = nightwatchRoutineCycleKey(record.day, def.cooldown);
+        const uniqueKey = `${record.actionId}:${cycleKey}`;
+        if (record.cycleKey !== cycleKey || seenRoutineCycles.has(uniqueKey)) return [];
+        seenRoutineCycles.add(uniqueKey);
+        return [{ actionId: def.id, day: record.day, cycleKey }];
+      }) : [];
+      s.nightwatchEarlyLoop.reputation = Number.isInteger(rawNightwatchLoop.reputation)
+        ? clamp(rawNightwatchLoop.reputation, 0, 100) : 0;
+      for (const skill of Object.keys(SKILL_NAMES) as SkillKey[]) {
+        const progress = rawNightwatchLoop.trainingProgress?.[skill];
+        if (Number.isInteger(progress) && progress! >= 0 && progress! < 3) s.nightwatchEarlyLoop.trainingProgress[skill] = progress;
+      }
+    }
+    const rawClub = s.divinationClub;
+    s.divinationClub = createDivinationClubState();
+    if (rawClub && typeof rawClub === 'object' && rawClub.joined === true && hasSequence9DivinationClubAccess(s)) {
+      s.divinationClub.joined = true;
+      for (const def of DIVINATION_CLUB_COMMISSIONS) {
+        const acceptAttempt = authoritativeDivinationClubAcceptAttempt(s.checkAttempts, def.id);
+        const briefing = s.clues.find(clue => clue.id === def.briefingClueId);
+        const briefingAuthorized = !!briefing && briefing.sourceKind === 'npc' && briefing.sourceId === def.clientId
+          && ((!!acceptAttempt && briefing.acquiredDay === acceptAttempt.startedDay
+            && briefing.acquiredHour === acceptAttempt.startedHour) || legacyClubCompletionIds.has(def.id));
+        if (briefing && !briefingAuthorized) {
+          s.clues = s.clues.filter(clue => clue.id !== def.briefingClueId);
+        }
+        const fieldAttempt = [...s.checkAttempts].reverse().find(attempt => attempt.checkId === def.fieldCheckId
+          && attempt.outcome === 'passed' && appliedReceiptEffect(attempt, `clue:${def.fieldClueId}`));
+        const fieldClue = s.clues.find(clue => clue.id === def.fieldClueId);
+        if (!acceptAttempt || !fieldAttempt || !fieldClue || fieldClue.sourceKind !== 'location' || fieldClue.sourceId !== def.fieldLocationId) {
+          s.clues = s.clues.filter(clue => clue.id !== def.fieldClueId);
+        }
+      }
+      const completed = new Set<DivinationClubCommissionId>();
+      for (const def of DIVINATION_CLUB_COMMISSIONS) {
+        const completionAttempt = authoritativeDivinationClubCompletionAttempt(s.checkAttempts, def.id);
+        const acceptAttempt = authoritativeDivinationClubAcceptAttempt(s.checkAttempts, def.id);
+        const outcomeClue = s.clues.find(clue => clue.id === def.outcomeClueId);
+        const newCompletion = !!acceptAttempt && !!completionAttempt && !!outcomeClue
+          && outcomeClue.sourceKind === 'npc' && outcomeClue.sourceId === def.clientId;
+        if (newCompletion || legacyClubCompletionIds.has(def.id)) completed.add(def.id);
+        if (!newCompletion) s.clues = s.clues.filter(clue => clue.id !== def.outcomeClueId);
+      }
+      s.divinationClub.completedCommissionIds = DIVINATION_CLUB_COMMISSIONS
+        .map(def => def.id).filter(id => completed.has(id));
+      s.divinationClub.reputation = clamp(s.divinationClub.completedCommissionIds.reduce((total, id) => {
+        return total + (DIVINATION_CLUB_COMMISSIONS.find(def => def.id === id)?.reputationGain ?? 0);
+      }, 0), 0, 100);
+      const activeDef = DIVINATION_CLUB_COMMISSIONS.find(def => def.id === rawClub.activeCommissionId);
+      const activeIndex = activeDef ? DIVINATION_CLUB_COMMISSIONS.findIndex(def => def.id === activeDef.id) : -1;
+      const earlierComplete = activeIndex >= 0 && DIVINATION_CLUB_COMMISSIONS.slice(0, activeIndex)
+        .every(def => s.divinationClub.completedCommissionIds.includes(def.id));
+      const briefing = activeDef && s.clues.find(clue => clue.id === activeDef.briefingClueId);
+      const acceptAttempt = activeDef && authoritativeDivinationClubAcceptAttempt(s.checkAttempts, activeDef.id);
+      if (activeDef && earlierComplete && !s.divinationClub.completedCommissionIds.includes(activeDef.id)
+        && !!acceptAttempt && briefing?.sourceKind === 'npc' && briefing.sourceId === activeDef.clientId
+        && briefing.acquiredDay === acceptAttempt.startedDay && briefing.acquiredHour === acceptAttempt.startedHour) {
+        s.divinationClub.activeCommissionId = activeDef.id;
+      }
+    }
+    const rawElliot = s.elliotCase;
+    s.elliotCase = createElliotCaseState();
+    const elliotStageOrder = ['unknown', 'commissioned', 'location_known', 'presence_confirmed', 'backup_ready', 'rescued', 'closed'] as const;
+    if (rawElliot && typeof rawElliot === 'object' && elliotStageOrder.includes(rawElliot.stage)
+      && rawElliot.employerId === 'vickroyer' && rawElliot.assignedPartnerId === 'leonard'
+      && hasClue(s, 'elliot_commission_brief') && hasClue(s, 'elliot_worn_coat') && hasClue(s, 'elliot_partner_assignment')) {
+      let maxStage: GameState['elliotCase']['stage'] = 'commissioned';
+      if (hasClue(s, 'elliot_hideout_address')) maxStage = 'location_known';
+      if (hasClue(s, 'elliot_presence_confirmed')) maxStage = 'presence_confirmed';
+      if (hasClue(s, 'elliot_backup_ready')) maxStage = 'backup_ready';
+      if (hasClue(s, 'elliot_rescue_record')) maxStage = rawElliot.rewardClaimed === true ? 'closed' : 'rescued';
+      const requestedIndex = elliotStageOrder.indexOf(rawElliot.stage);
+      const maxIndex = elliotStageOrder.indexOf(maxStage);
+      const stage = elliotStageOrder[Math.min(requestedIndex, maxIndex)];
+      s.elliotCase = {
+        stage, employerId: 'vickroyer', assignedPartnerId: 'leonard',
+        locatorMode: rawElliot.locatorMode === 'divination' || rawElliot.locatorMode === 'records' ? rawElliot.locatorMode : null,
+        rewardClaimed: stage === 'closed',
+      };
+    }
+    if (!hasClue(s, 'elliot_hideout_address')) {
+      s.visitedLocations = (s.visitedLocations ?? []).filter(locationId => locationId !== 'forston_hideout');
+      if (s.currentLocation?.locationId === 'forston_hideout') s.currentLocation = null;
+    }
+    const rawSeerTraining = s.seerTraining;
+    s.seerTraining = createSeerTrainingState();
+    if (rawSeerTraining && typeof rawSeerTraining === 'object' && isFormalNightwatchSeerStudent(s)) {
+      const validPassedAttempt = (checkId: string, receiptId: string) => s.checkAttempts.some(attempt => attempt.checkId === checkId
+        && attempt.outcome === 'passed' && appliedReceiptEffect(attempt, receiptId));
+      const ritualPracticeAuthority = rawSeerTraining.ritualPracticeComplete === true
+        && validPassedAttempt('seer_ritual_safety_practice', 'seer_training:ritual_practice');
+      const caseReviewAuthority = Array.isArray(rawSeerTraining.spiritChannelingCaseIds)
+        && rawSeerTraining.spiritChannelingCaseIds.includes('elliot_kidnapping')
+        && s.elliotCase.employerId === 'vickroyer' && hasClue(s, 'elliot_commission_brief')
+        && validPassedAttempt('seer_spirit_channeling_review', 'seer_training:case_review');
+      const blankCharmAuthority = rawSeerTraining.blankCharmPracticeComplete === true
+        && validPassedAttempt('seer_blank_charm_structure', 'seer_training:blank_charm');
+      s.seerTraining.meditationPracticeDays = Array.isArray(rawSeerTraining.meditationPracticeDays)
+        ? [...new Set(rawSeerTraining.meditationPracticeDays.filter(day => Number.isInteger(day) && day >= 1 && day <= s.day))]
+        : [];
+      const rawLessonRecords = Array.isArray(rawSeerTraining.lessonRecords) ? rawSeerTraining.lessonRecords : [];
+      let previousLessonEnd = -1;
+      const currentAbsoluteHour = (s.day - 1) * 24 + s.hour;
+      for (const node of SEER_TRAINING_NODES) {
+        if (!Array.isArray(rawSeerTraining.learnedNodeIds) || !rawSeerTraining.learnedNodeIds.includes(node.id)) break;
+        const record = rawLessonRecords.find(candidate => candidate?.nodeId === node.id);
+        const lessonStart = record && Number.isInteger(record.day) && Number.isInteger(record.hour)
+          ? (record.day - 1) * 24 + record.hour : -1;
+        const lessonEnd = lessonStart + node.hours;
+        if (!record || !Number.isInteger(record.day) || record.day < 1 || record.day > s.day
+          || !Number.isInteger(record.hour) || record.hour < 0 || record.hour > 23
+          || weekdayOf(record.day) === 0 || record.hour < 9 || record.hour + node.hours > 17
+          || lessonStart < previousLessonEnd || lessonEnd > currentAbsoluteHour
+          || node.prerequisites.some(id => !s.seerTraining.learnedNodeIds.includes(id))) break;
+        if (node.requiredPractice === 'meditation' && s.seerTraining.meditationPracticeDays.length === 0) break;
+        if (node.requiredPractice === 'ritual_safety' && !ritualPracticeAuthority) break;
+        if (node.requiredPractice === 'spirit_channeling_review' && !caseReviewAuthority) break;
+        s.seerTraining.learnedNodeIds.push(node.id);
+        s.seerTraining.lessonRecords.push({ nodeId: node.id, day: record.day, hour: record.hour });
+        previousLessonEnd = lessonEnd;
+      }
+      if (!s.seerTraining.learnedNodeIds.includes('meditation_control')) s.seerTraining.meditationPracticeDays = [];
+      s.seerTraining.focusPreparation = rawSeerTraining.focusPreparation === true
+        && s.seerTraining.learnedNodeIds.includes('meditation_control') && s.seerTraining.meditationPracticeDays.length > 0;
+      s.seerTraining.ritualPracticeComplete = ritualPracticeAuthority
+        && s.seerTraining.learnedNodeIds.includes('ritual_safety');
+      s.seerTraining.spiritChannelingCaseIds = caseReviewAuthority
+        && s.seerTraining.learnedNodeIds.includes('spirit_channeling') ? ['elliot_kidnapping'] : [];
+      s.seerTraining.blankCharmPracticeComplete = blankCharmAuthority
+        && s.seerTraining.learnedNodeIds.includes('charm_theory');
+    }
     const rawTradeFair = s.tradeFair && typeof s.tradeFair === 'object' ? s.tradeFair : undefined;
     const cleanTradeFair = createTradeFairState();
     if (loadedVersion >= 19 && rawTradeFair) {
@@ -5120,19 +9553,153 @@ export function loadGame(): GameState | null {
       if (!s.intel.includes('black_market')) s.intel.push('black_market');
     }
 
-    const seenDeaths = new Set<string>();
-    s.confirmedBeyonderDeaths = loadedVersion >= 19 && Array.isArray(s.confirmedBeyonderDeaths)
-      ? s.confirmedBeyonderDeaths.filter(record => {
-        if (!record || seenDeaths.has(record.sourceId)) return false;
-        const def = BEYONDER_DEATH_SOURCES.find(candidate => candidate.id === record.sourceId);
-        if (!def || !s.firedOnce.includes(def.eventId) || record.npcId !== def.npcId
-          || record.pathwayId !== def.pathwayId || record.sequence !== def.sequence
-          || record.characteristicItemId !== def.characteristicItemId
-          || !Number.isInteger(record.confirmedDay) || record.confirmedDay < 1
-          || !Number.isInteger(record.confirmedHour) || record.confirmedHour < 0 || record.confirmedHour > 23) return false;
-        seenDeaths.add(record.sourceId);
+    const seenMurders = new Set<string>();
+    s.murderRecords = loadedVersion >= 23 && Array.isArray(s.murderRecords)
+      ? s.murderRecords.filter(record => {
+        if (!record || seenMurders.has(record.targetId)) return false;
+        const target = huntTargetDef(record.targetId);
+        if (!target || record.npcId !== target.npcId || record.deathSourceId !== target.deathSourceId
+          || record.infamyGain !== 25 || record.lawAttentionGain !== 8 || record.avengerName !== target.avenger.name
+          || typeof record.settlementAttemptId !== 'string' || record.settlementAttemptId.length < 1
+          || (record.initiatingAttemptId !== undefined && (typeof record.initiatingAttemptId !== 'string' || record.initiatingAttemptId.length < 1))
+          || !Number.isInteger(record.day) || record.day < 1
+          || record.day > s.day || !Number.isInteger(record.hour) || record.hour < 0 || record.hour > 23
+          || !authoritativeHuntSettlement(s, record, target)) return false;
+        seenMurders.add(record.targetId);
         return true;
       }) : [];
+    s.infamy = s.murderRecords.reduce((sum, record) => sum + record.infamyGain, 0);
+    s.lawAttention = s.murderRecords.reduce((sum, record) => sum + record.lawAttentionGain, 0);
+
+    const rawHunt = loadedVersion >= 23 && s.activeHunt && typeof s.activeHunt === 'object' ? s.activeHunt : null;
+    const target = rawHunt ? huntTargetDef(rawHunt.targetId) : undefined;
+    const preparationClues: Record<HuntPreparationKey, string> = {
+      routine: 'masked_smuggler_routine', secludedMeeting: 'masked_smuggler_secluded_meeting',
+      escapeRoute: 'masked_smuggler_escape_route', ambush: 'masked_smuggler_ambush_position',
+    };
+    const preparations = rawHunt?.preparations && typeof rawHunt.preparations === 'object'
+      ? Object.fromEntries((Object.keys(preparationClues) as HuntPreparationKey[]).map(key => [key, rawHunt.preparations[key] === true && hasClue(s, preparationClues[key])])) as ActiveHunt['preparations']
+      : null;
+    const validHuntPhase = rawHunt && ['investigating', 'preparing', 'ready', 'confronted', 'combat'].includes(rawHunt.phase);
+    const validConfrontation = rawHunt?.phase !== 'confronted' && rawHunt?.phase !== 'combat'
+      || rawHunt.confrontationCause === 'alerted' || rawHunt.confrontationCause === 'failed_strike';
+    const identityConfirmed = !!rawHunt?.identityConfirmed && hasClue(s, 'masked_smuggler_trade_tell');
+    const allPrepared = preparations ? Object.values(preparations).every(Boolean) : false;
+    const initiatingAttempt = typeof rawHunt?.initiatingAttemptId === 'string'
+      ? s.checkAttempts.find(attempt => attempt.attemptId === rawHunt.initiatingAttemptId) : undefined;
+    const validInitiatingAttempt = !!initiatingAttempt && initiatingAttempt.checkId === 'hunt_masked_smuggler_strike'
+      && initiatingAttempt.outcome === 'blocked' && appliedReceiptEffect(initiatingAttempt, 'hunt:combat');
+    const needsInitiatingAttempt = rawHunt?.phase === 'combat' && rawHunt.confrontationCause === 'failed_strike';
+    const huntCombatRound = rawHunt?.phase === 'combat' && loadedVersion >= 29
+      ? sanitizeCombatRound(rawHunt.combatRound, rawHunt.confrontationCause === 'failed_strike') ?? freshCombatRound(rawHunt.confrontationCause === 'failed_strike')
+      : null;
+    s.activeHunt = target && preparations && validHuntPhase && validConfrontation
+      && Number.isInteger(rawHunt!.suspicion) && rawHunt!.suspicion >= 0 && rawHunt!.suspicion <= 3
+      && !(rawHunt!.phase === 'ready' && !allPrepared)
+      && (!needsInitiatingAttempt || validInitiatingAttempt)
+      ? {
+        targetId: target.id, phase: identityConfirmed ? rawHunt!.phase : 'investigating', identityConfirmed,
+        preparations: identityConfirmed ? preparations : freshActiveHunt(target.id).preparations,
+        suspicion: rawHunt!.suspicion,
+        ...((rawHunt!.phase === 'confronted' || rawHunt!.phase === 'combat') && rawHunt!.confrontationCause
+          ? { confrontationCause: rawHunt!.confrontationCause } : {}),
+        ...(needsInitiatingAttempt ? { initiatingAttemptId: initiatingAttempt!.attemptId } : {}),
+        ...(huntCombatRound ? { combatRound: huntCombatRound } : {}),
+      } : null;
+
+    const seenDeaths = new Set<string>();
+    s.confirmedBeyonderDeaths = loadedVersion >= 19 && Array.isArray(s.confirmedBeyonderDeaths)
+      ? s.confirmedBeyonderDeaths.flatMap(rawRecord => {
+        if (!rawRecord || seenDeaths.has(rawRecord.sourceId)) return [];
+        const def = BEYONDER_DEATH_SOURCES.find(candidate => candidate.id === rawRecord.sourceId);
+        const cause = loadedVersion >= 23 && (rawRecord.cause === 'event' || rawRecord.cause === 'hunt') ? rawRecord.cause : 'event';
+        const validAuthority = cause === 'event'
+          ? !!def?.eventId && s.firedOnce.includes(def.eventId)
+          : !!def?.huntTargetId && typeof rawRecord.settlementAttemptId === 'string'
+            && s.murderRecords.some(record => record.targetId === def.huntTargetId && record.deathSourceId === def.id
+              && record.settlementAttemptId === rawRecord.settlementAttemptId
+              && record.day === rawRecord.confirmedDay && record.hour === rawRecord.confirmedHour);
+        if (!def || !validAuthority || rawRecord.npcId !== def.npcId
+          || rawRecord.pathwayId !== def.pathwayId || rawRecord.sequence !== def.sequence
+          || rawRecord.characteristicItemId !== def.characteristicItemId
+          || !Number.isInteger(rawRecord.confirmedDay) || rawRecord.confirmedDay < 1
+          || !Number.isInteger(rawRecord.confirmedHour) || rawRecord.confirmedHour < 0 || rawRecord.confirmedHour > 23) return [];
+        seenDeaths.add(rawRecord.sourceId);
+        return [{ ...rawRecord, cause }];
+      }) : [];
+    s.murderRecords = s.murderRecords.filter(record => s.confirmedBeyonderDeaths.some(death => death.sourceId === record.deathSourceId && death.cause === 'hunt'));
+    s.infamy = s.murderRecords.reduce((sum, record) => sum + record.infamyGain, 0);
+    s.lawAttention = s.murderRecords.reduce((sum, record) => sum + record.lawAttentionGain, 0);
+    const seenAreaSettlementIds = new Set<string>();
+    const seenAreaSemanticKeys = new Set<string>();
+    s.areaSuspicionRecords = loadedVersion >= 27 && Array.isArray(s.areaSuspicionRecords)
+      ? s.areaSuspicionRecords.flatMap(rawRecord => {
+        const record = canonicalAreaSuspicionRecord(s, rawRecord);
+        const semanticKey = record ? areaSuspicionSemanticKey(s, record) : null;
+        if (!record || !semanticKey || seenAreaSettlementIds.has(record.settlementAttemptId)
+          || seenAreaSemanticKeys.has(semanticKey)) return [];
+        seenAreaSettlementIds.add(record.settlementAttemptId);
+        seenAreaSemanticKeys.add(semanticKey);
+        return [record];
+      }) : [];
+    const seenIdentityDiscoverySources = new Set<string>();
+    const seenIdentityDiscoveryAttempts = new Set<string>();
+    s.identityTraceDiscoveries = loadedVersion >= 28 && Array.isArray(s.identityTraceDiscoveries)
+      ? s.identityTraceDiscoveries.flatMap(rawRecord => {
+        const record = canonicalIdentityTraceDiscovery(s, rawRecord);
+        if (!record || seenIdentityDiscoverySources.has(record.sourceRecordId)
+          || seenIdentityDiscoveryAttempts.has(record.investigationAttemptId)) return [];
+        seenIdentityDiscoverySources.add(record.sourceRecordId);
+        seenIdentityDiscoveryAttempts.add(record.investigationAttemptId);
+        return [record];
+      }) : [];
+    const seenIdentityResolutionSources = new Set<string>();
+    const seenIdentityResolutionAttempts = new Set<string>();
+    s.identityTraceResolutions = loadedVersion >= 28 && Array.isArray(s.identityTraceResolutions)
+      ? s.identityTraceResolutions.flatMap(rawRecord => {
+        const record = canonicalIdentityTraceResolution(s, rawRecord);
+        if (!record || seenIdentityResolutionSources.has(record.sourceRecordId)
+          || seenIdentityResolutionAttempts.has(record.resolutionAttemptId)) return [];
+        seenIdentityResolutionSources.add(record.sourceRecordId);
+        seenIdentityResolutionAttempts.add(record.resolutionAttemptId);
+        return [record];
+      }) : [];
+    s.identityCover = loadedVersion >= 28 ? canonicalIdentityCover(s, s.identityCover) : null;
+    rebuildAreaSuspicion(s);
+    const unresolvedMurders = s.murderRecords.filter(record => {
+      const target = huntTargetDef(record.targetId);
+      return !target || !authoritativeRevengeResolution(record, target, s.day);
+    });
+    if (unresolvedMurders.length > 0) {
+      const latestMurder = [...unresolvedMurders].sort((a, b) => murderAbsoluteHour(b) - murderAbsoluteHour(a))[0];
+      const avenger = huntTargetDef(latestMurder.targetId)?.avenger;
+      if (avenger) {
+        const savedNemesis = s.nemesis;
+        const validSavedProgress = savedNemesis?.name === avenger.name
+          && savedNemesis.archetype === avenger.archetype && savedNemesis.motive === avenger.motive
+          && savedNemesis.alive === true && typeof savedNemesis.known === 'boolean'
+          && Number.isInteger(savedNemesis.power) && savedNemesis.power >= avenger.power && savedNemesis.power <= avenger.power + s.day
+          && Number.isFinite(savedNemesis.hostility) && savedNemesis.hostility >= 0 && savedNemesis.hostility <= 100;
+        s.nemesis = validSavedProgress
+          ? { ...structuredClone(avenger), power: savedNemesis!.power, hostility: Math.floor(savedNemesis!.hostility), known: savedNemesis!.known }
+          : structuredClone(avenger);
+      }
+    } else {
+      const resolvedAvengerNames = new Set(s.murderRecords.flatMap(record => {
+        const target = huntTargetDef(record.targetId);
+        return target && authoritativeRevengeResolution(record, target, s.day) ? [target.avenger.name] : [];
+      }));
+      if (s.nemesis && resolvedAvengerNames.has(s.nemesis.name)) s.nemesis = null;
+    }
+    for (const item of ITEMS.filter(candidate => candidate.seq9Product?.kind === 'characteristic')) {
+      const verifiedPurchases = verifiedTradeFairItemQuantity(s, item.id);
+      const verifiedDeaths = s.confirmedBeyonderDeaths.filter(record => record.characteristicItemId === item.id).length;
+      s.items[item.id] = Math.min(
+        Math.max(0, Math.floor(s.items[item.id] ?? 0)),
+        verifiedPurchases + verifiedDeaths,
+      );
+    }
+    if (s.activeHunt && s.confirmedBeyonderDeaths.some(death => death.npcId === huntTargetDef(s.activeHunt!.targetId)?.npcId)) s.activeHunt = null;
     s.tradeFair.identifiedCharacteristicIds = loadedVersion >= 19 && Array.isArray(rawTradeFair?.identifiedCharacteristicIds)
       ? [...new Set(rawTradeFair.identifiedCharacteristicIds.filter(itemId => {
         const item = findItem(itemId);
@@ -5377,10 +9944,10 @@ export function loadGame(): GameState | null {
           s.leads[def.id] = { ...createStructuredLeads()[def.id], notes: [] };
         } else if (!identifiedTrusted && ['identified', 'verified'].includes(lead.stage)) {
           lead.stage = 'decoded';
-          lead.notes.push('v8→v9：缺少可验证的NPC信任记录，需重新当面辨认');
+          lead.notes.push('旧记录整理：缺少可信的人脉记录，需要重新当面辨认');
         } else if (!verifiedTrusted && lead.stage === 'verified') {
           lead.stage = 'identified';
-          lead.notes.push('v8→v9：缺少完整交叉证据，需重新完成真实性核验');
+          lead.notes.push('旧记录整理：缺少完整旁证，需要重新确认来源');
         }
 
         const committedLead = route.selectedPathway ? pathwayLead(s, route.selectedPathway) : undefined;
@@ -5500,6 +10067,26 @@ export function loadGame(): GameState | null {
     } else if (!s.pathwayId) {
       s.sequence8Progress = null;
     }
+    if (s.sequence8Progress?.pathwayId === 'seer') {
+      for (const [principleId, records] of Object.entries(s.sequence8Progress.evidence)) {
+        s.sequence8Progress.evidence[principleId] = records.filter(record => {
+          if (!record.actionId.startsWith('club_commission:') && !record.contextKey.startsWith('divination_club:')) return true;
+          const commissionId = record.actionId.slice('club_commission:'.length) as DivinationClubCommissionId;
+          const def = DIVINATION_CLUB_COMMISSIONS.find(candidate => candidate.id === commissionId);
+          return !!def && def.actingPrincipleId === principleId && record.principleId === principleId
+            && record.contextKey === `divination_club:${def.id}`
+            && s.divinationClub.completedCommissionIds.includes(def.id)
+            && !!authoritativeDivinationClubCompletionAttempt(s.checkAttempts, def.id);
+        });
+      }
+      const actingDef = SEQUENCE8_ACTING_DEFS.seer;
+      const actingComplete = actingDef.principles.every(principle =>
+        (s.sequence8Progress!.evidence[principle.id]?.length ?? 0) >= s.sequence8Progress!.requiredEvidencePerPrinciple);
+      if (s.sequence8Progress.stage === 'review_ready' && (!actingComplete || s.digestion < 100)) {
+        s.sequence8Progress.stage = 'acting';
+      }
+      updateReviewReady(s, s.sequence8Progress);
+    }
     if (loadedVersion < 11) {
       const clocktowerStep = organizationRoute(s, 'nightwatch').routeStep;
       const witnessedSteps = new Set([
@@ -5558,13 +10145,15 @@ export function loadGame(): GameState | null {
     // v19及更早只有占卜家可能合法完成灵视检视；其他角色在新规则生效前留下的
     // itemKnowledge 不能因为迁移后获得通用灵视而被追认。合法占卜结果仍由 attempt 独立重建。
     const trustedLegacyItemKnowledge = loadedVersion < 20 && !hasSeerDivinationSequence(s) ? {} : rawItemKnowledge;
-    rebuildPersistedDivinationAndItemKnowledge(s, rawDivinationAttempts, rawDivinationInsights, trustedLegacyItemKnowledge);
+    rebuildPersistedDivinationAndItemKnowledge(s, rawDivinationAttempts, rawDivinationInsights, trustedLegacyItemKnowledge, loadedVersion);
     // v13 开始委托板不得泄露尚未掌握的去向；已接委托作为有效入口保留。
     s.board = Array.isArray(s.board)
       ? s.board.filter(commission => commission && typeof commission.locationId === 'string'
         && isLocationUnlocked(s, commission.locationId)
         && !!LOCATIONS.find(location => location.id === commission.locationId)?.actions.includes('explore'))
       : [];
+    if (!isFormalNightwatchSeerStudent(s)) s.seerTraining = createSeerTrainingState();
+    if (s.seerTraining.lessonRecords.length === 0) delete s.relations.old_neil;
     if (!['ordinary', 'witness', 'informed'].includes(s.awareness)) s.awareness = isBeyonder(s) ? 'informed' : 'ordinary';
     s.schemaVersion = CURRENT_SCHEMA_VERSION;
     return s;

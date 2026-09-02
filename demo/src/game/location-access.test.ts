@@ -37,8 +37,8 @@ beforeEach(() => {
 
 describe('地点解锁与可见列表', () => {
   it('普通新档开放公共市集与酒馆，docker 因失踪情报额外开放码头', () => {
-    expect(ids(fresh())).toEqual(['market', 'tavern']);
-    expect(ids(newGame('码头之子', 'docker', []))).toEqual(['market', 'tavern', 'docks']);
+    expect(ids(fresh())).toEqual(['market', 'north_clinic', 'tavern']);
+    expect(ids(newGame('码头之子', 'docker', []))).toEqual(['market', 'north_clinic', 'tavern', 'docks']);
   });
 
   it('锁定地点与无效 id 返回同一泛化信息且完全不改状态', () => {
@@ -54,18 +54,30 @@ describe('地点解锁与可见列表', () => {
   it('明确情报和线索只开放对应去向，货运旁证进一步开放运河路线', () => {
     const reports = fresh();
     acquireClue(reports, 'dock_missing_reports');
-    expect(ids(reports)).toEqual(['market', 'tavern', 'docks']);
+    expect(ids(reports)).toEqual(['market', 'north_clinic', 'tavern', 'docks']);
 
     acquireClue(reports, 'dock_manifest_discrepancy');
-    expect(ids(reports)).toEqual(['market', 'tavern', 'docks', 'canal']);
+    expect(ids(reports)).toEqual(['market', 'north_clinic', 'tavern', 'docks', 'canal']);
 
     const tower = fresh();
     acquireClue(tower, 'clocktower_public_complaints');
-    expect(ids(tower)).toEqual(['market', 'tavern', 'old_tower']);
+    expect(ids(tower)).toEqual(['market', 'north_clinic', 'tavern', 'old_tower']);
 
     const market = fresh();
     market.intel.push('black_market');
-    expect(ids(market)).toEqual(['market', 'tavern', 'black_market']);
+    expect(ids(market)).toEqual(['market', 'north_clinic', 'tavern', 'black_market']);
+  });
+
+  it('俱乐部签名陈述只解锁该次外勤登记的公共去向', () => {
+    const journey = fresh();
+    acquireClue(journey, 'club_journey_statement', 'npc', 'club_client_owen');
+    expect(isLocationUnlocked(journey, 'river_sea_church')).toBe(true);
+    expect(isLocationUnlocked(journey, 'dewill_library')).toBe(false);
+
+    const nightmare = fresh();
+    acquireClue(nightmare, 'club_nightmare_statement', 'npc', 'club_client_adele');
+    expect(isLocationUnlocked(nightmare, 'dewill_library')).toBe(true);
+    expect(isLocationUnlocked(nightmare, 'river_sea_church')).toBe(false);
   });
 
   it('黑市的时段信息只在已解锁后返回', () => {
@@ -88,7 +100,7 @@ describe('地点解锁与可见列表', () => {
     expect(isLocationUnlocked(s, 'manor')).toBe(false);
     expect(requestManorAddress(s).ok).toBe(true);
     expect(isLocationUnlocked(s, 'manor')).toBe(true);
-    expect(ids(s)).toEqual(['market', 'tavern', 'manor']);
+    expect(ids(s)).toEqual(['market', 'north_clinic', 'tavern', 'manor']);
   });
 
   it('旧 visited 永久保留，当前已接委托目标也继续可达', () => {
@@ -97,7 +109,7 @@ describe('地点解锁与可见列表', () => {
     s.activeCommission = commission('active_factory', 'factory');
     expect(isLocationUnlocked(s, 'sewer')).toBe(true);
     expect(isLocationUnlocked(s, 'factory')).toBe(true);
-    expect(ids(s)).toEqual(['market', 'tavern', 'sewer', 'factory']);
+    expect(ids(s)).toEqual(['market', 'north_clinic', 'tavern', 'sewer', 'factory']);
   });
 
   it('NPC 当前地点与作息共用脱敏，地点解锁后恢复精确名称', () => {
@@ -160,7 +172,7 @@ describe('委托范围与 v13 迁移', () => {
     localStorage.setItem('lotm-demo-save-v6', JSON.stringify(old));
 
     const loaded = loadGame()!;
-    expect(loaded.schemaVersion).toBe(22);
+    expect(loaded.schemaVersion).toBe(32);
     expect(loaded.visitedLocations).toEqual(['sewer']);
     expect(loaded.activeCommission?.locationId).toBe('factory');
     expect(loaded.board.map(item => item.id)).toEqual(['visited_sewer', 'active_target']);
